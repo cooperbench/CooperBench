@@ -4,6 +4,9 @@ on:
     branches:
       - main
       - docs/*
+  pull_request:
+    branches:
+      - main
 env:
   COLUMNS: 150
 
@@ -17,10 +20,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: checkout gh-pages
-        uses: actions/checkout@v4
         with:
-          ref: gh-pages
+          fetch-depth: 0
 
       - uses: actions/setup-python@v4
         with:
@@ -29,16 +30,17 @@ jobs:
       - name: install
         run: pip install uv
 
-      - name: checkout current branch
-        uses: actions/checkout@v4
-
       - name: Set git credentials
         run: |
           git config --global user.name "${{ github.actor }}"
           git config --global user.email "${{ github.actor }}@users.noreply.github.com"
 
       - run: uv run --extra doc mike deploy -b gh-pages dev --push
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+      - name: Build docs for PR validation
+        run: uv run --extra doc mike deploy -b gh-pages dev
+        if: github.event_name == 'pull_request'
 
       - if: startsWith(github.ref, 'refs/heads/docs')
         id: check-version
@@ -48,6 +50,6 @@ jobs:
           skip_env_check: true
 
       - run: uv run --extra doc mike deploy -b gh-pages ${{ steps.check-version.outputs.VERSION }} latest --update-aliases --push
-        if: startsWith(github.ref, 'refs/heads/docs') && !fromJSON(steps.check-version.outputs.IS_PRERELEASE)
+        if: startsWith(github.ref, 'refs/heads/docs') && !fromJSON(steps.check-version.outputs.IS_PRERELEASE) && github.event_name == 'push'
         env:
            VERSION: v${{ steps.check-version.outputs.VERSION }}
