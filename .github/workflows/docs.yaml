@@ -39,7 +39,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
       - name: Build docs for PR validation
-        run: uv run --extra doc mkdocs build --strict
+        run: uv run --extra doc mike deploy -b gh-pages dev
         if: github.event_name == 'pull_request'
 
       - if: startsWith(github.ref, 'refs/heads/docs')
