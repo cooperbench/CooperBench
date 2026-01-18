@@ -1,0 +1,43 @@
+[project]
+name = "your-package-name"
+description = "Your package description"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic",
+]
+dynamic = ["version"]
+
+[tool.hatch]
+version = {path = "src/your_package_name/__about__.py"}
+
+[project.optional-dependencies]
+typing = [
+    "mypy",
+]
+doc = [
+    "mike",
+    "mkdocs-exclude",
+    "mkdocs-material[imaging]",
+    "mkdocstrings[python]",
+    "mkdocs-material[doc]>=9.5.43",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "mypy",
+    "pytest"
+]
+
+[tool.mypy]
+plugins = [
+    "pydantic.mypy",
+    "pydantic.v1.mypy",
+]
+exclude = [
+    "docs"
+]

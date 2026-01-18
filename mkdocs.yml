@@ -1,0 +1,100 @@
+site_name: Your Package Name
+site_description: Your package description
+strict: true
+site_url: https://python_template.zhuhao.me
+repo_url: https://github.com/ProKil/python_project_template
+repo_name: Python Project Template
+
+theme:
+  name: "material"
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+  - media: "(prefers-color-scheme)"
+    scheme: default
+    primary: deep purple
+    accent: amber
+    toggle:
+      icon: material/lightbulb
+      name: "Switch to light mode"
+  - media: "(prefers-color-scheme: light)"
+    scheme: default
+    primary: deep purple
+    accent: amber
+    toggle:
+      icon: material/lightbulb-outline
+      name: "Switch to dark mode"
+  - media: "(prefers-color-scheme: dark)"
+    scheme: slate
+    primary: deep purple
+    accent: amber
+    toggle:
+      icon: material/lightbulb-auto-outline
+      name: "Switch to system preference"
+  features:
+    - content.tabs.link
+    - content.code.annotate
+    - content.code.copy
+    - announce.dismiss
+    - navigation.tabs
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.preview
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.suggest
+    - toc.follow
+
+extra:
+  version:
+    provider: mike
+  analytics:
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/thumb-up-outline
+          name: This page was helpful
+          data: 1
+          note: >-
+            Thanks for your feedback!
+        - icon: material/thumb-down-outline
+          name: This page could be improved
+          data: 0
+          note: >-
+            Thanks for your feedback!
+nav:
+- Get Started:
+  - What is this: index.md
+
+plugins:
+- social
+- search
+- mike:
+    alias_type: symlink
+    canonical_version: latest
+- exclude:
+    glob:
+    - theme/announce.html
+    - plugins/*
+    - __pycache__/*
+- mkdocstrings:
+    handlers:
+      python:
+        paths: [.]
+        options:
+          members_order: source
+          separate_signature: true
+          filters: ["!^_"]
+          docstring_options:
+            ignore_init_summary: true
+          merge_init_into_class: true
+          show_signature_annotations: true
+          signature_crossrefs: true
+          extensions:
+            - docs/plugins/griffe_doclinks.py
+        import:
+          - url: https://docs.python.org/3/objects.inv
+            domains: [py, std]
