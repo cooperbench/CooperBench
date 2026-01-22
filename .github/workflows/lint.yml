@@ -11,23 +11,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      
+
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
-      
+
       - name: Install dependencies
         run: uv pip install -e ".[dev,llm]" --system
-      
-      - name: Run ruff check
+
+      - name: Ruff check
         run: ruff check src/cooperbench/
-      
-      - name: Run ruff format check
+
+      - name: Ruff format
         run: ruff format --check src/cooperbench/
-      
-      - name: Run mypy
+
+      - name: Mypy
         run: mypy src/cooperbench/
