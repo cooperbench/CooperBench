@@ -1,43 +1,105 @@
 [project]
-name = "your-package-name"
-description = "Your package description"
+name = "cooperbench"
+description = "Multi-agent coordination benchmark for collaborative code generation"
 readme = "README.md"
-requires-python = ">=3.10"
-dependencies = [
-    "pydantic",
-]
+license = {text = "MIT"}
+requires-python = ">=3.11"
 dynamic = ["version"]
-
-[tool.hatch]
-version = {path = "src/your_package_name/__about__.py"}
+dependencies = [
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+    "jinja2>=3.1",
+    "huggingface-hub>=0.20",
+    "tenacity>=8.0",
+]
 
 [project.optional-dependencies]
-typing = [
-    "mypy",
+llm = [
+    "litellm>=1.0",
+    "anthropic>=0.30",
+    "openai>=1.0",
 ]
-doc = [
-    "mike",
-    "mkdocs-exclude",
-    "mkdocs-material[imaging]",
-    "mkdocstrings[python]",
-    "mkdocs-material[doc]>=9.5.43",
+execution = [
+    "openhands-ai",
 ]
+serve = [
+    "modal",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.23",
+    "mypy>=1.10",
+    "ruff>=0.4",
+]
+all = ["cooperbench[llm,execution,serve,dev]"]
+
+[project.scripts]
+cooperbench = "cooperbench.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
-    "mypy",
-    "pytest"
+[tool.hatch.version]
+path = "src/cooperbench/__about__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cooperbench"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "ANN",    # flake8-annotations
+    "S",      # flake8-bandit
+    "C4",     # flake8-comprehensions
+    "DTZ",    # flake8-datetimez
+    "ISC",    # flake8-implicit-str-concat
+    "PIE",    # flake8-pie
+    "PT",     # flake8-pytest-style
+    "RET",    # flake8-return
+    "SIM",    # flake8-simplify
+    "ARG",    # flake8-unused-arguments
+    "PL",     # pylint
+    "RUF",    # ruff-specific
+]
+ignore = [
+    "ANN101",   # missing type annotation for self
+    "ANN102",   # missing type annotation for cls
+    "ANN401",   # dynamically typed expressions (Any)
+    "PLR0913",  # too many arguments
+    "S101",     # use of assert
 ]
 
+[tool.ruff.lint.isort]
+known-first-party = ["cooperbench"]
+
 [tool.mypy]
-plugins = [
-    "pydantic.mypy",
-    "pydantic.v1.mypy",
-]
-exclude = [
-    "docs"
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["tests/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src/cooperbench"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
 ]
