@@ -1,15 +1,13 @@
 # CooperBench
 
-[![PyPI version](https://badge.fury.io/py/cooperbench.svg)](https://badge.fury.io/py/cooperbench)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![arXiv](https://img.shields.io/badge/arXiv-2601.13295-b31b1b.svg)](https://arxiv.org/abs/2601.13295)
+[![Website](https://img.shields.io/badge/Website-cooperbench.com-blue.svg)](https://cooperbench.com)
+[![Dataset](https://img.shields.io/badge/HuggingFace-Dataset-yellow.svg)](https://huggingface.co/datasets/cooperbench/cooperbench)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 **Can AI agents work together as teammates?** CooperBench is the first benchmark designed to measure how well AI agents can cooperate when handling individual tasks with potential conflicts.
 
 We find that **coordinating agents perform much worse than a single agent** given the same total workload. This coordination deficit presents a fundamental barrier to deploying AI systems that can work alongside humans or other agents.
-
-📄 [Paper](https://arxiv.org/abs/2601.13295) · 🌐 [Website](https://cooperbench.com) · 🤗 [Dataset](https://huggingface.co/datasets/cooperbench/cooperbench) · 💻 [GitHub](https://github.com/cooperbench/CooperBench)
 
 ## Installation
 
