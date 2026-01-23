@@ -2,9 +2,11 @@
 Test runner for CooperBench evaluation.
 
 Executes feature tests in Docker containers for isolated, reproducible test execution.
+Supports pulling pre-built images from Docker Hub with automatic fallback to local builds.
 """
 
 import logging
+import os
 import re
 import shutil
 import tempfile
@@ -16,10 +18,15 @@ from docker.models.images import Image
 
 logger = logging.getLogger(__name__)
 
-_client = None
+_client: docker.DockerClient | None = None
+
+# Docker Hub registry configuration
+REGISTRY = os.environ.get("COOPERBENCH_REGISTRY", "akhatua")
+IMAGE_PREFIX = os.environ.get("COOPERBENCH_IMAGE_PREFIX", "cooperbench")
+USE_REGISTRY = os.environ.get("COOPERBENCH_USE_REGISTRY", "true").lower() == "true"
 
 
-def _get_client():
+def _get_client() -> docker.DockerClient:
     """Get or create Docker client."""
     global _client
     if _client is None:
@@ -27,16 +34,30 @@ def _get_client():
     return _client
 
 
-def _get_image_name(repo_name: str, task_id: int) -> str:
-    """Generate Docker image name for a task."""
+def _get_registry_image_name(repo_name: str, task_id: int) -> str:
+    """Generate Docker Hub registry image name.
+
+    Format: {registry}/{prefix}-{repo}:task{id}
+    Example: akhatua/cooperbench-pallets-click:task2068
+    """
+    # Normalize repo name: pallets_click_task -> pallets-click
+    repo_clean = repo_name.replace("_task", "").replace("_", "-")
+    return f"{REGISTRY}/{IMAGE_PREFIX}-{repo_clean}:task{task_id}"
+
+
+def _get_local_image_name(repo_name: str, task_id: int) -> str:
+    """Generate local Docker image name."""
     return f"{repo_name}_{task_id}"
 
 
-def _build_image(repo_name: str, task_id: int, dockerfile_dir: Path) -> Image:
-    """Build Docker image for a task if it doesn't exist.
+def _get_or_build_image(repo_name: str, task_id: int, dockerfile_dir: Path) -> Image:
+    """Get image from registry or build locally.
+
+    Tries to pull from Docker Hub first (if USE_REGISTRY is True),
+    falls back to local build if not found or pull fails.
 
     Args:
-        repo_name: Repository name
+        repo_name: Repository name (e.g., "pallets_click_task")
         task_id: Task identifier
         dockerfile_dir: Directory containing Dockerfile
 
@@ -44,15 +65,38 @@ def _build_image(repo_name: str, task_id: int, dockerfile_dir: Path) -> Image:
         Docker image object
     """
     client = _get_client()
-    image_name = _get_image_name(repo_name, task_id)
+    local_name = _get_local_image_name(repo_name, task_id)
 
+    # Check if we already have the image locally
     try:
-        image = client.images.get(image_name)
-        logger.debug(f"Using existing image: {image_name}")
+        image = client.images.get(local_name)
+        logger.debug(f"Using existing local image: {local_name}")
+        return image
     except docker.errors.ImageNotFound:
-        logger.info(f"Building image: {image_name}")
-        image, _ = client.images.build(path=str(dockerfile_dir), tag=image_name)
+        pass
 
+    # Try pulling from registry if enabled
+    if USE_REGISTRY:
+        registry_name = _get_registry_image_name(repo_name, task_id)
+        try:
+            logger.info(f"Pulling from registry: {registry_name}")
+            image = client.images.pull(registry_name)
+            # Tag with local name for consistency
+            image.tag(local_name)
+            logger.info(f"Successfully pulled: {registry_name}")
+            return image
+        except docker.errors.ImageNotFound:
+            logger.debug(f"Image not found in registry: {registry_name}")
+        except docker.errors.APIError as e:
+            logger.warning(f"Failed to pull from registry: {e}")
+
+    # Fall back to local build
+    dockerfile = dockerfile_dir / "Dockerfile"
+    if not dockerfile.exists():
+        raise ValueError(f"Dockerfile not found in {dockerfile_dir}")
+
+    logger.info(f"Building image locally: {local_name}")
+    image, _ = client.images.build(path=str(dockerfile_dir), tag=local_name)
     return image
 
 
@@ -118,13 +162,6 @@ def run_tests(
         repo_name = repo_name or parent_name
         task_id = task_id or int(task_dir_name.replace("task", ""))
 
-    # Check for Dockerfile
-    dockerfile = task_dir / "Dockerfile"
-    if not dockerfile.exists():
-        error_msg = f"Dockerfile not found in {task_dir}"
-        logger.error(error_msg)
-        return False, error_msg if return_errors else None
-
     # Find feature patch if not explicitly provided
     if feature_patch_path is None:
         # Look for patch in agent workspace or derive from workspace path
@@ -143,7 +180,7 @@ def run_tests(
 
     try:
         client = _get_client()
-        image = _build_image(repo_name, task_id, task_dir)
+        image = _get_or_build_image(repo_name, task_id, task_dir)
 
         # Create temp directory for patches
         patch_dir = Path(tempfile.mkdtemp(prefix="eval_patches_"))
@@ -234,12 +271,8 @@ def run_tests_with_patch(
     Returns:
         Tuple of (success, output)
     """
-    dockerfile = task_dir / "Dockerfile"
-    if not dockerfile.exists():
-        raise ValueError(f"Dockerfile not found in {task_dir}")
-
     client = _get_client()
-    image = _build_image(repo_name, task_id, task_dir)
+    image = _get_or_build_image(repo_name, task_id, task_dir)
 
     patch_dir = Path(tempfile.mkdtemp(prefix="eval_patches_"))
     shutil.copy2(feature_patch, patch_dir / feature_patch.name)

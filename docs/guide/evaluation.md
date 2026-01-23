@@ -138,15 +138,68 @@ Patches can be loaded from:
 }
 ```
 
-## Test Script
+## Docker-Based Testing
 
-Each task has a `run_tests.sh` script that:
+Tests run in isolated Docker containers for reproducibility. Each task has a `Dockerfile` and `runner.sh` that:
 
-1. Applies the test patch
-2. Runs the test suite
-3. Returns exit code 0 for pass, non-zero for fail
+1. Start from a base image with required toolchain (Python, Node, Go, Rust)
+2. Clone the repository at a specific commit
+3. Apply feature and test patches
+4. Run the test suite
+
+### Pre-built Images
+
+Pre-built Docker images are hosted on Docker Hub under `akhatua/cooperbench-*`:
 
 ```bash
-# Called internally by the evaluation
-./run_tests.sh <workspace_path> <tests_patch_path>
+# List all available images
+./scripts/list_images.sh
+
+# Example images
+# akhatua/cooperbench-pallets-click:task2068
+# akhatua/cooperbench-dspy:task8635
+# akhatua/cooperbench-react-hook-form:task85
 ```
+
+The test runner automatically pulls from Docker Hub if available, falling back to local builds.
+
+### Configuration
+
+Control Docker behavior via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COOPERBENCH_USE_REGISTRY` | `true` | Try pulling from Docker Hub first |
+| `COOPERBENCH_REGISTRY` | `akhatua` | Docker Hub username/org |
+| `COOPERBENCH_IMAGE_PREFIX` | `cooperbench` | Image name prefix |
+
+```bash
+# Force local builds only
+COOPERBENCH_USE_REGISTRY=false cooperbench evaluate ...
+
+# Use a different registry
+COOPERBENCH_REGISTRY=myorg cooperbench evaluate ...
+```
+
+### Building Images Locally
+
+If images aren't available on Docker Hub, they're built automatically. You can also pre-build all images:
+
+```bash
+# Build a single image
+cd dataset/pallets_click_task/task2068
+docker build -t pallets_click_task_2068 .
+
+# Build and push all images to Docker Hub (current arch)
+./scripts/push_images.sh
+
+# Build for both amd64 and arm64 (slower, for distribution)
+./scripts/push_images.sh --multi-arch
+```
+
+### Image Naming
+
+| Source | Format | Example |
+|--------|--------|---------|
+| Docker Hub | `{registry}/{prefix}-{repo}:{task}` | `akhatua/cooperbench-pallets-click:task2068` |
+| Local | `{repo}_{task}` | `pallets_click_task_2068` |

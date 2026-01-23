@@ -5,6 +5,42 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
 dynamic = ["version"]
+authors = [
+    {name = "Arpandeep Khatua"},
+    {name = "Hao Zhu"},
+    {name = "Peter Tran"},
+    {name = "Arya Prabhudesai"},
+    {name = "Frederic Sadrieh"},
+    {name = "Johann K. Lieberwirth"},
+    {name = "Xinkai Yu"},
+    {name = "Yicheng Fu"},
+    {name = "Michael J. Ryan"},
+    {name = "Jiaxin Pei"},
+    {name = "Diyi Yang"},
+]
+keywords = [
+    "benchmark",
+    "multi-agent",
+    "llm",
+    "code-generation",
+    "collaboration",
+    "coordination",
+    "ai-agents",
+    "software-engineering",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2.0",
     "python-dotenv>=1.0",
@@ -38,12 +74,29 @@ all = ["cooperbench[llm,execution,serve,dev]"]
 [project.scripts]
 cooperbench = "cooperbench.cli:main"
 
+[project.urls]
+Homepage = "https://cooperbench.com"
+Documentation = "https://cooperbench.com"
+Repository = "https://github.com/cooperbench/CooperBench"
+Issues = "https://github.com/cooperbench/CooperBench/issues"
+Dataset = "https://huggingface.co/datasets/cooperbench/cooperbench"
+Paper = "https://arxiv.org/abs/2601.13295"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
 path = "src/cooperbench/__about__.py"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "dataset/",
+    "logs/",
+    "docs/",
+    "scripts/",
+    ".github/",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cooperbench"]

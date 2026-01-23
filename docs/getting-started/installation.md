@@ -36,8 +36,8 @@ pip install cooperbench[all]
 
 ```bash
 # Clone with submodules (required for coop execution)
-git clone --recurse-submodules https://github.com/cooperbench/cooperbench.git
-cd cooperbench
+git clone --recurse-submodules https://github.com/cooperbench/CooperBench.git
+cd CooperBench
 pip install -e ".[all]"
 ```
 
