@@ -1,8 +1,10 @@
 # CooperBench
 
+
 [![arXiv](https://img.shields.io/badge/arXiv-2601.13295-b31b1b.svg)](https://arxiv.org/abs/2601.13295)
 [![Website](https://img.shields.io/badge/Website-cooperbench.com-blue.svg)](https://cooperbench.com)
 [![Dataset](https://img.shields.io/badge/HuggingFace-Dataset-yellow.svg)](https://huggingface.co/datasets/cooperbench/cooperbench)
+[![PyPI](https://img.shields.io/pypi/v/cooperbench.svg)](https://pypi.org/project/cooperbench/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 **Can AI agents work together as teammates?** CooperBench is the first benchmark designed to measure how well AI agents can cooperate when handling individual tasks with potential conflicts.
@@ -11,36 +13,32 @@ We find that **coordinating agents perform much worse than a single agent** give
 
 ## Installation
 
-```bash
-pip install cooperbench
-```
-
-### With Optional Dependencies
+### Quick Install (Planning Only)
 
 ```bash
-# LLM support (litellm, anthropic, openai)
 pip install cooperbench[llm]
-
-# Execution support (openhands-ai)
-pip install cooperbench[execution]
-
-# Cloud deployment (modal)
-pip install cooperbench[serve]
-
-# Development tools
-pip install cooperbench[dev]
-
-# Everything
-pip install cooperbench[all]
+# or
+uv pip install cooperbench[llm]
 ```
 
-### From Source
+### Full Install (Planning + Execution + Evaluation)
+
+Execution requires custom OpenHands Docker images. Install from source:
 
 ```bash
-git clone https://github.com/cooperbench/cooperbench.git
+# Clone with submodules
+git clone --recurse-submodules https://github.com/cooperbench/cooperbench.git
 cd cooperbench
 pip install -e ".[all]"
+
+# Build custom OpenHands images (requires Docker)
+cd src/cooperbench/execution/openhands_colab
+./build
 ```
+
+This builds two Docker images:
+- `colab/openhands_colab:latest` - OpenHands core with MCP support
+- `colab/openhands_runtime_colab:latest` - Runtime environment
 
 ## Experiment Settings
 
@@ -55,61 +53,32 @@ CooperBench supports four experiment modes:
 
 ## CLI Usage
 
-### Planning Phase
+### Quick Start
 
-Generate implementation plans from feature descriptions:
+Run the full pipeline (plan → execute → evaluate) in one command:
 
 ```bash
-# Single agent, single feature
-cooperbench plan \
-    --setting single \
-    --repo-name pallets_jinja_task \
-    --task-id 1621 \
-    --feature1-id 1 \
-    --model1 anthropic/claude-sonnet-4-5-20250929 \
-    --not-save-to-hf
-
-# Cooperative planning (two agents)
-cooperbench plan \
+cooperbench run \
     --setting coop \
     --repo-name pallets_jinja_task \
     --task-id 1621 \
     --feature1-id 1 \
     --feature2-id 2 \
     --model1 anthropic/claude-sonnet-4-5-20250929 \
-    --model2 anthropic/claude-sonnet-4-5-20250929 \
-    --not-save-to-hf
+    --model2 anthropic/claude-sonnet-4-5-20250929
 ```
 
-### Execution Phase
-
-Execute plans to generate code changes:
+Or run individual phases:
 
 ```bash
-cooperbench execute \
-    --setting single \
-    --repo-name pallets_jinja_task \
-    --task-id 1621 \
-    --feature1-id 1 \
-    --model1 anthropic/claude-sonnet-4-5-20250929 \
-    --plan-location logs \
-    --not-save-to-hf
-```
+cooperbench plan --setting coop --repo-name pallets_jinja_task --task-id 1621 \
+    --feature1-id 1 --feature2-id 2 --model1 gpt-5 --model2 gpt-5
 
-### Evaluation Phase
+cooperbench execute --setting coop --repo-name pallets_jinja_task --task-id 1621 \
+    --feature1-id 1 --feature2-id 2 --model1 gpt-5 --model2 gpt-5
 
-Test generated patches:
-
-```bash
-cooperbench evaluate \
-    --setting single \
-    --repo-name pallets_jinja_task \
-    --task-id 1621 \
-    --feature1-id 1 \
-    --model1 anthropic/claude-sonnet-4-5-20250929 \
-    --eval-type test \
-    --patch-location logs \
-    --not-save-to-hf
+cooperbench evaluate --setting coop --repo-name pallets_jinja_task --task-id 1621 \
+    --feature1-id 1 --feature2-id 2 --model1 gpt-5 --model2 gpt-5 --eval-type merge
 ```
 
 ### CLI Options
@@ -124,7 +93,7 @@ cooperbench evaluate \
 | `--feature1-id, -i` | First feature ID |
 | `--feature2-id, -j` | Second feature ID (non-single modes) |
 | `--k` | Experiment run identifier (default: 1) |
-| `--not-save-to-hf` | Don't save results to HuggingFace |
+| `--save-to-hf` | Save results to HuggingFace |
 | `--create-pr` | Create PR when saving to HF |
 
 ## Python API
@@ -132,53 +101,13 @@ cooperbench evaluate \
 ### Basic Usage
 
 ```python
-from cooperbench import BenchSetting, FileInterface
-
-# Create interface for single-agent experiment
-interface = FileInterface(
-    setting=BenchSetting.SINGLE,
-    repo_name="pallets_jinja_task",
-    task_id=1621,
-    k=1,
-    feature1_id=1,
-    model1="anthropic/claude-sonnet-4-5-20250929",
-    save_to_hf=False,
-)
-
-print(interface.setting.value)  # "single"
-```
-
-### Running Planning
-
-```python
 import asyncio
 from cooperbench import BenchSetting, FileInterface
 from cooperbench.planning import create_plan
+from cooperbench.execution import create_execution
+from cooperbench.evaluation import evaluate
 
-async def run_planning():
-    interface = FileInterface(
-        setting=BenchSetting.SINGLE,
-        repo_name="pallets_jinja_task",
-        task_id=1621,
-        k=1,
-        feature1_id=1,
-        model1="anthropic/claude-sonnet-4-5-20250929",
-        save_to_hf=False,
-    )
-    
-    await create_plan(interface, max_iterations=25)
-
-asyncio.run(run_planning())
-```
-
-### Multi-Agent Coordination
-
-```python
-import asyncio
-from cooperbench import BenchSetting, FileInterface
-from cooperbench.planning import create_plan
-
-async def run_coop_planning():
+async def run_experiment():
     interface = FileInterface(
         setting=BenchSetting.COOP,
         repo_name="pallets_jinja_task",
@@ -188,36 +117,13 @@ async def run_coop_planning():
         feature2_id=2,
         model1="anthropic/claude-sonnet-4-5-20250929",
         model2="anthropic/claude-sonnet-4-5-20250929",
-        save_to_hf=False,
     )
     
     await create_plan(interface, max_iterations=25)
+    await create_execution(interface, plan_location="logs")
+    await evaluate(interface, eval_type="merge", patch_location="logs")
 
-asyncio.run(run_coop_planning())
-```
-
-### Running Evaluation
-
-```python
-import asyncio
-from cooperbench import BenchSetting, FileInterface
-from cooperbench.evaluation import evaluate
-
-async def run_evaluation():
-    interface = FileInterface(
-        setting=BenchSetting.SINGLE,
-        repo_name="pallets_jinja_task",
-        task_id=1621,
-        k=1,
-        feature1_id=1,
-        model1="anthropic/claude-sonnet-4-5-20250929",
-        save_to_hf=False,
-    )
-    
-    # eval_type: "test" for single/solo, "merge" for coop
-    await evaluate(interface, eval_type="test", patch_location="logs")
-
-asyncio.run(run_evaluation())
+asyncio.run(run_experiment())
 ```
 
 ## Dataset Structure

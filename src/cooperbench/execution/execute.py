@@ -233,7 +233,7 @@ async def main() -> None:
     parser.add_argument("--model2", "-m2", help="Model for second agent")
     parser.add_argument("--feature1-id", "-i", type=int, required=True, help="First feature ID")
     parser.add_argument("--feature2-id", "-j", type=int, help="Second feature ID")
-    parser.add_argument("--not-save-to-hf", action="store_true", help="Do not save to HuggingFace")
+    parser.add_argument("--save-to-hf", action="store_true", help="Save results to HuggingFace")
     parser.add_argument("--create-pr", action="store_true", help="Create PR when saving to HF")
     parser.add_argument("--k", type=int, default=1, help="Experiment run identifier")
     parser.add_argument(
@@ -256,7 +256,7 @@ async def main() -> None:
         model1=args.model1,
         feature2_id=args.feature2_id,
         model2=args.model2,
-        save_to_hf=not args.not_save_to_hf,
+        save_to_hf=args.save_to_hf,
         create_pr=args.create_pr,
     )
 

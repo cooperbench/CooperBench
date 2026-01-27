@@ -29,6 +29,59 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def _print_merge_summary(results: dict, file_interface: FileInterface) -> None:
+    """Print a summary of merge evaluation results and save to file."""
+    GREEN = "\033[32m"
+    RED = "\033[31m"
+    YELLOW = "\033[33m"
+    RESET = "\033[0m"
+    
+    def mark(passed: bool | None) -> str:
+        if passed is True:
+            return f"{GREEN}✓ pass{RESET}"
+        elif passed is False:
+            return f"{RED}✗ fail{RESET}"
+        return f"{YELLOW}? skip{RESET}"
+    
+    merge_status = results.get("merge_status", "unknown")
+    conflict_score = results.get("conflict_score", 0)
+    f1 = results.get("feature1", {})
+    f2 = results.get("feature2", {})
+    
+    naive_f1 = f1.get("naive_merge_test_passed")
+    naive_f2 = f2.get("naive_merge_test_passed")
+    union_f1 = f1.get("union_merge_test_passed")
+    union_f2 = f2.get("union_merge_test_passed")
+    llm_f1 = f1.get("llm_merge_test_passed")
+    llm_f2 = f2.get("llm_merge_test_passed")
+    
+    # Determine overall result
+    any_passed = (
+        ((naive_f1 is True) and (naive_f2 is True)) or
+        ((union_f1 is True) and (union_f2 is True)) or
+        ((llm_f1 is True) and (llm_f2 is True))
+    )
+    overall = "pass" if any_passed else "fail"
+    
+    # Save simple result file
+    from cooperbench.core.paths import get_log_path
+    result_path = get_log_path(file_interface.file_paths["json_merge_report"]).parent / "result.txt"
+    result_path.write_text(f"{overall}\n")
+    
+    status_color = GREEN if merge_status == "clean" else RED
+    result_color = GREEN if any_passed else RED
+    print(f"\nMerge: {status_color}{merge_status}{RESET} (conflict_score={conflict_score})")
+    
+    if naive_f1 is not None:
+        print(f"  naive:  f1={mark(naive_f1)} f2={mark(naive_f2)}")
+    if union_f1 is not None:
+        print(f"  union:  f1={mark(union_f1)} f2={mark(union_f2)}")
+    if llm_f1 is not None:
+        print(f"  llm:    f1={mark(llm_f1)} f2={mark(llm_f2)}")
+    
+    print(f"Result: {result_color}{overall}{RESET}")
+
+
 async def evaluate(
     file_interface: FileInterface,
     eval_type: Literal["merge", "test", "aggregate"],
@@ -53,7 +106,7 @@ async def evaluate(
 
         if eval_type == "merge":
             results = await run_merge_evaluation(file_interface, file_location, filter_patch)
-            print(f"\nMerge evaluation completed. Conflict score: {results['conflict_score']}")
+            _print_merge_summary(results, file_interface)
         elif eval_type == "test":
             if file_interface.setting == BenchSetting.SOLO:
                 results = await run_solo_evaluation(file_interface, file_location, filter_patch)
@@ -421,7 +474,7 @@ async def run_merge_evaluation(
                 logger.warning("No conflicts found for LLM merge (unexpected)")
 
     report["duration"] = time.time() - start_time
-    file_interface.save_json_merge_report(json.dumps(generate_json_report(report), indent=2))
+    file_interface.save_json_merge_report(generate_json_report(report))
 
     return report
 
@@ -663,7 +716,7 @@ async def main() -> None:
     parser.add_argument("--feature1-id", "-i", required=True, type=int, help="First feature ID")
     parser.add_argument("--feature2-id", "-j", type=int, help="Second feature ID (or end of range for aggregate)")
     parser.add_argument("--k", type=int, default=1, help="Experiment run identifier")
-    parser.add_argument("--not-save-to-hf", action="store_true", help="Do not save to HuggingFace")
+    parser.add_argument("--save-to-hf", action="store_true", help="Save results to HuggingFace")
     parser.add_argument("--create-pr", action="store_true", help="Create PR when saving to HF")
     parser.add_argument(
         "--file-location",
@@ -696,7 +749,7 @@ async def main() -> None:
         model1=args.model1,
         feature2_id=args.feature2_id,
         model2=args.model2,
-        save_to_hf=not args.not_save_to_hf,
+        save_to_hf=args.save_to_hf,
         create_pr=args.create_pr,
     )
 

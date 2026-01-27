@@ -74,10 +74,29 @@ fi
 rm -rf "$LOG_DIR"
 mkdir -p "$LOG_DIR"
 
-# Check if image exists in registry
+# Check if image exists in registry (with correct architectures for multi-arch)
 image_exists() {
     local image="$1"
-    docker manifest inspect "$image" > /dev/null 2>&1
+    
+    # Get the manifest
+    local manifest
+    manifest=$(docker manifest inspect "$image" 2>/dev/null) || return 1
+    
+    if $MULTI_ARCH; then
+        # For multi-arch, verify BOTH amd64 and arm64 are present
+        local has_amd64 has_arm64
+        has_amd64=$(echo "$manifest" | grep -c '"architecture": "amd64"' || true)
+        has_arm64=$(echo "$manifest" | grep -c '"architecture": "arm64"' || true)
+        
+        if [[ $has_amd64 -gt 0 && $has_arm64 -gt 0 ]]; then
+            return 0  # Both architectures present
+        else
+            return 1  # Missing one or both architectures
+        fi
+    else
+        # For single-arch, just check if manifest exists
+        return 0
+    fi
 }
 
 # Build and push a single image
@@ -101,7 +120,14 @@ build_and_push() {
         else
             docker build -t "$image_name" "$dir" 2>&1
             docker push "$image_name" 2>&1
+            # Clean up local image after successful push
+            echo "Cleaning up local image..."
+            docker rmi "$image_name" 2>&1 || true
         fi
+        
+        # Prune dangling images and build cache to save space
+        echo "Pruning dangling images..."
+        docker image prune -f 2>&1 || true
         
         echo ""
         echo "Finished: $(date)"
@@ -173,6 +199,8 @@ declare -a PIDS
 declare -a PID_IMAGES
 
 running=0
+builds_since_cleanup=0
+CLEANUP_INTERVAL=10  # Prune build cache every N builds
 
 for i in "${!TO_BUILD_IMAGES[@]}"; do
     image="${TO_BUILD_IMAGES[$i]}"
@@ -193,9 +221,17 @@ for i in "${!TO_BUILD_IMAGES[@]}"; do
                 if [[ $exit_code -eq 0 ]]; then
                     SUCCESS+=("$img")
                     echo "[DONE] $img"
+                    ((builds_since_cleanup++))
                 else
                     FAILED+=("$img")
                     echo "[FAIL] $img (see log)"
+                fi
+                
+                # Periodic build cache cleanup to prevent disk filling up
+                if [[ $builds_since_cleanup -ge $CLEANUP_INTERVAL ]]; then
+                    echo "[CLEANUP] Pruning build cache..."
+                    docker builder prune -f --keep-storage=5GB >/dev/null 2>&1 || true
+                    builds_since_cleanup=0
                 fi
                 
                 unset 'PIDS[j]'
@@ -252,6 +288,16 @@ if [[ ${#FAILED[@]} -gt 0 ]]; then
         log_file="$LOG_DIR/$(echo "$img" | tr '/:' '_').log"
         echo "    Log: $log_file"
     done
+fi
+
+# Final cleanup
+echo ""
+echo "Final cleanup..."
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f --keep-storage=2GB >/dev/null 2>&1 || true
+echo "Cleanup complete."
+
+if [[ ${#FAILED[@]} -gt 0 ]]; then
     exit 1
 fi
 

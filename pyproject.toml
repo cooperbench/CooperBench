@@ -96,10 +96,14 @@ exclude = [
     "docs/",
     "scripts/",
     ".github/",
+    "src/cooperbench/execution/openhands_colab/",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cooperbench"]
+exclude = [
+    "src/cooperbench/execution/openhands_colab/",
+]
 
 [tool.ruff]
 line-length = 120

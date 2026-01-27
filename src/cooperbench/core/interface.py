@@ -54,7 +54,7 @@ class FileInterface:
         model1: str,
         feature2_id: int | None = None,
         model2: str | None = None,
-        save_to_hf: bool = True,
+        save_to_hf: bool = False,
         create_pr: bool = False,
         defer_uploads: bool = False,
     ) -> None:

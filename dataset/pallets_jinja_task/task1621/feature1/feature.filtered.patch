@@ -1,0 +1,103 @@
+diff --git a/src/jinja2/loaders.py b/src/jinja2/loaders.py
+index d7d9bd04..7a32c76c 100644
+--- a/src/jinja2/loaders.py
++++ b/src/jinja2/loaders.py
+@@ -170,6 +170,9 @@ class FileSystemLoader(BaseLoader):
+     :param encoding: Use this encoding to read the text from template
+         files.
+     :param followlinks: Follow symbolic links in the path.
++    :param fallback_searchpath: A path, or list of paths, to fallback
++        directories that are searched when templates are not found in
++        primary searchpath.
+ 
+     .. versionchanged:: 2.8
+         Added the ``followlinks`` parameter.
+@@ -180,6 +183,7 @@ class FileSystemLoader(BaseLoader):
+         searchpath: t.Union[str, os.PathLike, t.Sequence[t.Union[str, os.PathLike]]],
+         encoding: str = "utf-8",
+         followlinks: bool = False,
++        fallback_searchpath: t.Optional[t.Union[str, os.PathLike, t.Sequence[t.Union[str, os.PathLike]]]] = None,
+     ) -> None:
+         if not isinstance(searchpath, abc.Iterable) or isinstance(searchpath, str):
+             searchpath = [searchpath]
+@@ -187,11 +191,21 @@ class FileSystemLoader(BaseLoader):
+         self.searchpath = [os.fspath(p) for p in searchpath]
+         self.encoding = encoding
+         self.followlinks = followlinks
++ 
++        # Handle fallback search paths
++        if fallback_searchpath is None:
++            self.fallback_searchpath = []
++        else:
++            if not isinstance(fallback_searchpath, abc.Iterable) or isinstance(fallback_searchpath, str):
++                fallback_searchpath = [fallback_searchpath]
++            self.fallback_searchpath = [os.fspath(p) for p in fallback_searchpath]
+ 
+     def get_source(
+         self, environment: "Environment", template: str
+     ) -> t.Tuple[str, str, t.Callable[[], bool]]:
+         pieces = split_template_path(template)
++ 
++        # First try primary search paths
+         for searchpath in self.searchpath:
+             filename = os.path.join(searchpath, *pieces)
+             f = open_if_exists(filename)
+@@ -211,10 +225,34 @@ class FileSystemLoader(BaseLoader):
+                     return False
+ 
+             return contents, filename, uptodate
++ 
++        # If not found in primary paths, try fallback paths
++        for searchpath in self.fallback_searchpath:
++            filename = os.path.join(searchpath, *pieces)
++            f = open_if_exists(filename)
++            if f is None:
++                continue
++            try:
++                contents = f.read().decode(self.encoding)
++            finally:
++                f.close()
++
++            mtime = os.path.getmtime(filename)
++
++            def uptodate() -> bool:
++                try:
++                    return os.path.getmtime(filename) == mtime
++                except OSError:
++                    return False
++
++            return contents, filename, uptodate
++ 
+         raise TemplateNotFound(template)
+ 
+     def list_templates(self) -> t.List[str]:
+         found = set()
++ 
++        # Add templates from primary search paths
+         for searchpath in self.searchpath:
+             walk_dir = os.walk(searchpath, followlinks=self.followlinks)
+             for dirpath, _, filenames in walk_dir:
+@@ -228,6 +266,22 @@ class FileSystemLoader(BaseLoader):
+                         template = template[2:]
+                     if template not in found:
+                         found.add(template)
++ 
++        # Add templates from fallback search paths
++        for searchpath in self.fallback_searchpath:
++            walk_dir = os.walk(searchpath, followlinks=self.followlinks)
++            for dirpath, _, filenames in walk_dir:
++                for filename in filenames:
++                    template = (
++                        os.path.join(dirpath, filename)[len(searchpath) :]
++                        .strip(os.path.sep)
++                        .replace(os.path.sep, "/")
++                    )
++                    if template[:2] == "./":
++                        template = template[2:]
++                    if template not in found:
++                        found.add(template)
++ 
+         return sorted(found)
+ 
+ 
+

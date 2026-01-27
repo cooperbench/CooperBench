@@ -44,6 +44,11 @@ def main() -> None:
         help="Evaluation type: test (single/solo) or merge (coop)",
     )
 
+    # Run command (plan + execute + evaluate)
+    run_parser = subparsers.add_parser("run", help="Run full pipeline: plan → execute → evaluate")
+    _add_common_args(run_parser)
+    run_parser.add_argument("--max-iterations", type=int, default=25, help="Max planning iterations")
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -56,6 +61,8 @@ def main() -> None:
         asyncio.run(_run_execute(args))
     elif args.command == "evaluate":
         asyncio.run(_run_evaluate(args))
+    elif args.command == "run":
+        asyncio.run(_run_full(args))
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -74,7 +81,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--feature1-id", "-i", required=True, type=int, help="First feature ID")
     parser.add_argument("--feature2-id", "-j", type=int, help="Second feature ID (non-single modes)")
     parser.add_argument("--k", type=int, default=1, help="Experiment run identifier")
-    parser.add_argument("--not-save-to-hf", action="store_true", help="Do not save to HuggingFace")
+    parser.add_argument("--save-to-hf", action="store_true", help="Save results to HuggingFace")
     parser.add_argument("--create-pr", action="store_true", help="Create PR when saving to HF")
 
 
@@ -93,7 +100,7 @@ async def _run_plan(args: argparse.Namespace) -> None:
         model1=args.model1,
         feature2_id=args.feature2_id,
         model2=args.model2,
-        save_to_hf=not args.not_save_to_hf,
+        save_to_hf=args.save_to_hf,
         create_pr=args.create_pr,
     )
 
@@ -115,7 +122,7 @@ async def _run_execute(args: argparse.Namespace) -> None:
         model1=args.model1,
         feature2_id=args.feature2_id,
         model2=args.model2,
-        save_to_hf=not args.not_save_to_hf,
+        save_to_hf=args.save_to_hf,
         create_pr=args.create_pr,
     )
 
@@ -137,11 +144,43 @@ async def _run_evaluate(args: argparse.Namespace) -> None:
         model1=args.model1,
         feature2_id=args.feature2_id,
         model2=args.model2,
-        save_to_hf=not args.not_save_to_hf,
+        save_to_hf=args.save_to_hf,
         create_pr=args.create_pr,
     )
 
     await evaluate(file_interface, args.eval_type, args.patch_location)
+
+
+async def _run_full(args: argparse.Namespace) -> None:
+    """Run full pipeline: plan → execute → evaluate."""
+    from cooperbench.evaluation import evaluate
+    from cooperbench.execution import create_execution
+    from cooperbench.planning import create_plan
+
+    setting = BenchSetting(args.setting)
+    eval_type = "merge" if setting in (BenchSetting.COOP, BenchSetting.COOP_ABLATION) else "test"
+
+    file_interface = FileInterface(
+        setting=setting,
+        repo_name=args.repo_name,
+        task_id=args.task_id,
+        k=args.k,
+        feature1_id=args.feature1_id,
+        model1=args.model1,
+        feature2_id=args.feature2_id,
+        model2=args.model2,
+        save_to_hf=args.save_to_hf,
+        create_pr=args.create_pr,
+    )
+
+    print("\n[1/3] Planning...")
+    await create_plan(file_interface, args.max_iterations)
+
+    print("\n[2/3] Executing...")
+    await create_execution(file_interface, "logs")
+
+    print("\n[3/3] Evaluating...")
+    await evaluate(file_interface, eval_type, "logs")
 
 
 if __name__ == "__main__":
