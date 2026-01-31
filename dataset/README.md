@@ -59,6 +59,19 @@ dataset/
 | `samuelcolvin_dirty_equals_task` | [samuelcolvin/dirty-equals](https://github.com/samuelcolvin/dirty-equals) | 1 | 9 |
 | `typst` | [typst/typst](https://github.com/typst/typst) | 1 | 10 |
 
+## Subsets
+
+Pre-defined task subsets are available in `subsets/` for quick evaluation:
+
+| Subset | Tasks | Pairs | Repos | Description |
+|--------|-------|-------|-------|-------------|
+| `lite` | 7 | 100 | 7 | Quick evaluation subset, supports up to 4 agents |
+
+**Usage:**
+```bash
+cooperbench run --subset lite --setting coop
+```
+
 ## Usage
 
 Each task represents a pull request that was split into multiple independent features. Agents are assigned features to implement, and their outputs are evaluated for correctness and merge compatibility.
