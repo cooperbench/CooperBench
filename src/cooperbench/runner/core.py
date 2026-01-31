@@ -33,6 +33,7 @@ os.environ["MSWEA_COST_TRACKING"] = "ignore_errors"
 
 def run(
     run_name: str,
+    subset: str | None = None,
     repo: str | None = None,
     task_id: int | None = None,
     features: list[int] | None = None,
@@ -49,6 +50,7 @@ def run(
 
     Args:
         run_name: Experiment name (used for log directory)
+        subset: Use a predefined subset (e.g., 'lite')
         repo: Filter by repository (e.g., "llama_index_task")
         task_id: Filter by specific task ID
         features: Specific feature pair [f1, f2] to run
@@ -61,7 +63,7 @@ def run(
         git_enabled: Enable git collaboration (agents can push/pull/merge)
         messaging_enabled: Enable messaging (send_message command)
     """
-    tasks = discover_tasks(repo_filter=repo, task_filter=task_id, features_filter=features)
+    tasks = discover_tasks(subset=subset, repo_filter=repo, task_filter=task_id, features_filter=features)
 
     if not tasks:
         console.print("[yellow]no tasks found[/yellow]")

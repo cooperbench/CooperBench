@@ -3,11 +3,13 @@
 Provides:
     console: Rich console for pretty output
     get_image_name: Generate Docker image names for tasks
+    clean_model_name: Clean model name for experiment naming
     ResourceTracker: Track resources (sandboxes) for cleanup on exit
     setup_cleanup_handlers: Register SIGINT/SIGTERM handlers
 """
 
 import atexit
+import re
 import signal
 import sys
 import threading
@@ -26,6 +28,24 @@ def get_image_name(repo_name: str, task_id: int) -> str:
     """Generate Docker Hub image name for a task."""
     repo_clean = repo_name.replace("_task", "").replace("_", "-")
     return f"{REGISTRY}/{IMAGE_PREFIX}-{repo_clean}:task{task_id}"
+
+
+def clean_model_name(model: str) -> str:
+    """Clean model name for use in experiment name.
+
+    Examples:
+        gemini/gemini-3-flash-preview -> gemini-3-flash
+        gpt-5.2 -> gpt-5-2
+        moonshotai/Kimi-K2.5 -> kimi-k2-5
+    """
+    # Remove provider prefix (e.g., "gemini/", "openai/")
+    if "/" in model:
+        model = model.split("/")[-1]
+    # Remove common suffixes
+    model = re.sub(r"-(preview|latest|turbo)$", "", model)
+    # Replace non-alphanumeric with dash
+    model = re.sub(r"[^a-zA-Z0-9]+", "-", model)
+    return model.strip("-").lower()
 
 
 T = TypeVar("T")
@@ -83,6 +103,7 @@ __all__ = [
     "REGISTRY",
     "IMAGE_PREFIX",
     "get_image_name",
+    "clean_model_name",
     "ResourceTracker",
     "setup_cleanup_handlers",
 ]

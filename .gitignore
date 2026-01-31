@@ -40,6 +40,7 @@ site/
 # Logs and runtime
 logs/
 *.log
+cooperbench_results.xlsx
 
 # Cache
 .cooperbench_cache/

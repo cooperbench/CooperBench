@@ -7,8 +7,65 @@ from cooperbench.utils import (
     IMAGE_PREFIX,
     REGISTRY,
     ResourceTracker,
+    clean_model_name,
     get_image_name,
 )
+
+
+class TestCleanModelName:
+    """Tests for clean_model_name utility."""
+
+    def test_removes_provider_prefix(self):
+        """Test that provider prefixes are removed."""
+        assert clean_model_name("gemini/gemini-3-flash-preview") == "gemini-3-flash"
+        assert clean_model_name("openai/gpt-4o") == "gpt-4o"
+        assert clean_model_name("moonshotai/Kimi-K2.5") == "kimi-k2-5"
+
+    def test_removes_preview_suffix(self):
+        """Test that -preview suffix is removed."""
+        assert clean_model_name("gemini-3-flash-preview") == "gemini-3-flash"
+        assert clean_model_name("gemini/gemini-3-pro-preview") == "gemini-3-pro"
+
+    def test_removes_latest_suffix(self):
+        """Test that -latest suffix is removed."""
+        assert clean_model_name("gpt-4o-latest") == "gpt-4o"
+
+    def test_removes_turbo_suffix(self):
+        """Test that -turbo suffix is removed."""
+        assert clean_model_name("gpt-4-turbo") == "gpt-4"
+
+    def test_replaces_dots_with_dashes(self):
+        """Test that dots are replaced with dashes."""
+        assert clean_model_name("gpt-5.2") == "gpt-5-2"
+        assert clean_model_name("minimax-m2.1") == "minimax-m2-1"
+
+    def test_lowercases_output(self):
+        """Test that output is lowercased."""
+        assert clean_model_name("Kimi-K2.5") == "kimi-k2-5"
+        assert clean_model_name("GPT-4O") == "gpt-4o"
+
+    def test_simple_model_names(self):
+        """Test simple model names pass through."""
+        assert clean_model_name("gpt-5") == "gpt-5"
+        assert clean_model_name("claude-opus-4-5") == "claude-opus-4-5"
+        assert clean_model_name("qwen-coder") == "qwen-coder"
+
+    def test_various_models(self):
+        """Test various real model names."""
+        cases = [
+            ("claude-opus-4-5", "claude-opus-4-5"),
+            ("claude-sonnet-4-5", "claude-sonnet-4-5"),
+            ("gemini/gemini-3-pro-preview", "gemini-3-pro"),
+            ("gpt-5.2", "gpt-5-2"),
+            ("moonshotai/Kimi-K2.5", "kimi-k2-5"),
+            ("minimax-m2.1", "minimax-m2-1"),
+            ("gemini/gemini-3-flash-preview", "gemini-3-flash"),
+            ("gpt-5", "gpt-5"),
+            ("gpt-4.1", "gpt-4-1"),
+            ("minimax-m2", "minimax-m2"),
+        ]
+        for input_name, expected in cases:
+            assert clean_model_name(input_name) == expected, f"Failed for {input_name}"
 
 
 class TestGetImageName:

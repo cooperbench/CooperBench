@@ -136,6 +136,10 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 # Don't collect test_ functions from imported source modules
 norecursedirs = ["src", "dataset", "logs", ".git", "__pycache__"]
+filterwarnings = [
+    "ignore::pytest.PytestConfigWarning",
+    "ignore::DeprecationWarning:litellm.*",
+]
 
 [tool.coverage.run]
 source = ["src/cooperbench"]

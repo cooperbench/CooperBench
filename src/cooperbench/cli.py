@@ -2,10 +2,33 @@
 
 Usage:
     cooperbench run -n my-experiment --setting solo -r llama_index_task
+    cooperbench run --setting solo -s lite  # auto-generates name: solo-lite-gemini-3-flash
     cooperbench eval -n my-experiment --force
 """
 
 import argparse
+
+from cooperbench.utils import clean_model_name
+
+
+def _generate_run_name(
+    setting: str,
+    model: str,
+    subset: str | None = None,
+    repo: str | None = None,
+    task: int | None = None,
+) -> str:
+    """Generate experiment name from parameters."""
+    parts = [setting, clean_model_name(model)]
+    if subset:
+        parts.append(subset)
+    if repo:
+        # Shorten repo name (e.g., llama_index_task -> llama-index)
+        repo_short = repo.replace("_task", "").replace("_", "-")
+        parts.append(repo_short)
+    if task:
+        parts.append(str(task))
+    return "-".join(parts)
 
 
 def main():
@@ -25,8 +48,12 @@ def main():
     run_parser.add_argument(
         "-n",
         "--name",
-        required=True,
-        help="Experiment name (used for log directory)",
+        help="Experiment name (auto-generated if not provided)",
+    )
+    run_parser.add_argument(
+        "-s",
+        "--subset",
+        help="Use a predefined subset (e.g., lite). See dataset/subsets/",
     )
     run_parser.add_argument(
         "-r",
@@ -99,8 +126,12 @@ def main():
     eval_parser.add_argument(
         "-n",
         "--name",
-        required=True,
-        help="Experiment name to evaluate",
+        help="Experiment name to evaluate (required for eval)",
+    )
+    eval_parser.add_argument(
+        "-s",
+        "--subset",
+        help="Use a predefined subset (e.g., lite). See dataset/subsets/",
     )
     eval_parser.add_argument(
         "-r",
@@ -147,8 +178,20 @@ def _run_command(args):
     if args.features:
         features = [int(f.strip()) for f in args.features.split(",")]
 
+    # Auto-generate name if not provided
+    run_name = args.name
+    if not run_name:
+        run_name = _generate_run_name(
+            setting=args.setting,
+            model=args.model,
+            subset=args.subset,
+            repo=args.repo,
+            task=args.task,
+        )
+
     run(
-        run_name=args.name,
+        run_name=run_name,
+        subset=args.subset,
         repo=args.repo,
         task_id=args.task,
         features=features,
@@ -167,12 +210,17 @@ def _eval_command(args):
     """Handle the 'eval' subcommand."""
     from cooperbench.eval import evaluate
 
+    if not args.name:
+        print("error: -n/--name is required for eval command")
+        return
+
     features = None
     if args.features:
         features = [int(f.strip()) for f in args.features.split(",")]
 
     evaluate(
         run_name=args.name,
+        subset=args.subset,
         repo=args.repo,
         task_id=args.task,
         features=features,

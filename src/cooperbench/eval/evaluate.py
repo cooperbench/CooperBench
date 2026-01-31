@@ -15,6 +15,7 @@ from cooperbench.utils import console
 
 def evaluate(
     run_name: str,
+    subset: str | None = None,
     repo: str | None = None,
     task_id: int | None = None,
     features: list[int] | None = None,
@@ -25,6 +26,7 @@ def evaluate(
 
     Args:
         run_name: Name of the run to evaluate
+        subset: Filter to a predefined subset (e.g., 'lite')
         repo: Filter by repository name
         task_id: Filter by task ID
         features: Specific feature pair to evaluate
@@ -33,6 +35,7 @@ def evaluate(
     """
     runs = discover_runs(
         run_name=run_name,
+        subset=subset,
         repo_filter=repo,
         task_filter=task_id,
         features_filter=features,

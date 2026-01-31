@@ -1,0 +1,18 @@
+{
+  "name": "lite",
+  "description": "100-pair subset for quick evaluation, supports up to 4 agents",
+  "stats": {
+    "tasks": 7,
+    "pairs": 100,
+    "repos": 7
+  },
+  "tasks": [
+    {"repo": "pillow_task", "task_id": 25},
+    {"repo": "huggingface_datasets_task", "task_id": 6252},
+    {"repo": "react_hook_form_task", "task_id": 85},
+    {"repo": "llama_index_task", "task_id": 17244},
+    {"repo": "dottxt_ai_outlines_task", "task_id": 1706},
+    {"repo": "go_chi_task", "task_id": 27},
+    {"repo": "dspy_task", "task_id": 8394}
+  ]
+}

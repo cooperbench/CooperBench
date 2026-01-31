@@ -5,6 +5,59 @@ from unittest.mock import patch
 
 import pytest
 
+from cooperbench.cli import _generate_run_name
+
+
+class TestGenerateRunName:
+    """Tests for _generate_run_name function."""
+
+    def test_basic_name_generation(self):
+        """Test basic run name generation."""
+        name = _generate_run_name("solo", "gpt-4o")
+        assert name == "solo-gpt-4o"
+
+    def test_with_subset(self):
+        """Test name generation with subset."""
+        name = _generate_run_name("solo", "gpt-4o", subset="lite")
+        assert name == "solo-gpt-4o-lite"
+
+    def test_with_repo(self):
+        """Test name generation with repo filter."""
+        name = _generate_run_name("coop", "gpt-4o", repo="llama_index_task")
+        assert name == "coop-gpt-4o-llama-index"
+
+    def test_with_task(self):
+        """Test name generation with task filter."""
+        name = _generate_run_name("solo", "gpt-4o", repo="pillow_task", task=25)
+        assert name == "solo-gpt-4o-pillow-25"
+
+    def test_with_all_options(self):
+        """Test name generation with all options."""
+        name = _generate_run_name(
+            "coop", "gemini/gemini-3-flash-preview", subset="lite", repo="pillow_task", task=25
+        )
+        assert name == "coop-gemini-3-flash-lite-pillow-25"
+
+    def test_cleans_model_name(self):
+        """Test that model names are cleaned."""
+        name = _generate_run_name("solo", "gemini/gemini-3-flash-preview")
+        assert "gemini-3-flash" in name
+        assert "preview" not in name
+        assert "/" not in name
+
+    def test_cleans_repo_name(self):
+        """Test that repo names are cleaned."""
+        name = _generate_run_name("solo", "gpt-4o", repo="llama_index_task")
+        assert "llama-index" in name
+        assert "_task" not in name
+
+    def test_different_settings(self):
+        """Test coop vs solo settings."""
+        solo_name = _generate_run_name("solo", "gpt-4o")
+        coop_name = _generate_run_name("coop", "gpt-4o")
+        assert solo_name.startswith("solo-")
+        assert coop_name.startswith("coop-")
+
 
 class TestCLI:
     """Tests for CLI."""

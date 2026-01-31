@@ -1,10 +1,31 @@
 """Task discovery from dataset/ directory."""
 
+import json
 from itertools import combinations
 from pathlib import Path
 
 
+def load_subset(subset_name: str) -> list[tuple[str, int]]:
+    """Load a subset definition from dataset/subsets/.
+
+    Args:
+        subset_name: Name of the subset (e.g., 'lite')
+
+    Returns:
+        List of (repo, task_id) tuples in the subset
+    """
+    subset_path = Path("dataset/subsets") / f"{subset_name}.json"
+    if not subset_path.exists():
+        raise ValueError(f"Subset '{subset_name}' not found at {subset_path}")
+
+    with open(subset_path) as f:
+        data = json.load(f)
+
+    return [(t["repo"], t["task_id"]) for t in data["tasks"]]
+
+
 def discover_tasks(
+    subset: str | None = None,
     repo_filter: str | None = None,
     task_filter: int | None = None,
     features_filter: list[int] | None = None,
@@ -12,6 +33,7 @@ def discover_tasks(
     """Discover benchmark tasks from dataset/.
 
     Args:
+        subset: Use a predefined subset (e.g., 'lite')
         repo_filter: Filter by repository name
         task_filter: Filter by task ID
         features_filter: Specific feature pair to use
@@ -21,6 +43,11 @@ def discover_tasks(
     """
     dataset_dir = Path("dataset")
     tasks = []
+
+    # Load subset filter if specified
+    subset_tasks = None
+    if subset:
+        subset_tasks = set(load_subset(subset))
 
     for repo_dir in sorted(dataset_dir.iterdir()):
         if not repo_dir.is_dir() or repo_dir.name == "README.md":
@@ -34,6 +61,10 @@ def discover_tasks(
 
             task_id = int(task_dir.name.replace("task", ""))
             if task_filter and task_filter != task_id:
+                continue
+
+            # Filter by subset if specified
+            if subset_tasks and (repo_dir.name, task_id) not in subset_tasks:
                 continue
 
             feature_ids = []
