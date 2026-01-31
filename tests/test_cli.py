@@ -31,6 +31,11 @@ class TestGenerateRunName:
         name = _generate_run_name("solo", "gpt-4o", repo="pillow_task", task=25)
         assert name == "solo-gpt-4o-pillow-25"
 
+    def test_with_task_zero(self):
+        """Test name generation with task ID 0 (valid task ID)."""
+        name = _generate_run_name("solo", "gpt-4o", repo="openai_tiktoken_task", task=0)
+        assert name == "solo-gpt-4o-openai-tiktoken-0"
+
     def test_with_all_options(self):
         """Test name generation with all options."""
         name = _generate_run_name(

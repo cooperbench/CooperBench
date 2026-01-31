@@ -7,6 +7,7 @@ Usage:
 """
 
 import argparse
+import sys
 
 from cooperbench.utils import clean_model_name
 
@@ -26,7 +27,7 @@ def _generate_run_name(
         # Shorten repo name (e.g., llama_index_task -> llama-index)
         repo_short = repo.replace("_task", "").replace("_", "-")
         parts.append(repo_short)
-    if task:
+    if task is not None:
         parts.append(str(task))
     return "-".join(parts)
 
@@ -211,8 +212,8 @@ def _eval_command(args):
     from cooperbench.eval import evaluate
 
     if not args.name:
-        print("error: -n/--name is required for eval command")
-        return
+        print("error: -n/--name is required for eval command", file=sys.stderr)
+        sys.exit(1)
 
     features = None
     if args.features:
