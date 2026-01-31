@@ -141,6 +141,7 @@ norecursedirs = ["src", "dataset", "logs", ".git", "__pycache__"]
 [tool.coverage.run]
 source = ["src/cooperbench"]
 branch = true
+omit = ["src/cooperbench/agents/*"]
 
 [tool.coverage.report]
 exclude_lines = [
