@@ -1,4 +1,0 @@
-[submodule "src/cooperbench/execution/openhands_colab"]
-	path = src/cooperbench/execution/openhands_colab
-	url = https://github.com/akhatua2/openhands_colab
-	branch = openhands_colab
