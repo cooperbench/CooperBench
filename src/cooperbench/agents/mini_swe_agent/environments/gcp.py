@@ -270,7 +270,9 @@ class GCPEnvironment:
         # --entrypoint "" clears any entrypoint in the image (matches Modal's .entrypoint([]))
         # -w sets working directory (quoted to handle paths with spaces/special chars)
         quoted_cwd = shlex.quote(self.config.cwd)
-        start_cmd = f"docker run -d --name agent --entrypoint '' -w {quoted_cwd}{env_args} {self.config.image} sleep infinity"
+        start_cmd = (
+            f"docker run -d --name agent --entrypoint '' -w {quoted_cwd}{env_args} {self.config.image} sleep infinity"
+        )
         start_result = self._ssh_exec(start_cmd)
 
         if start_result["returncode"] != 0:
