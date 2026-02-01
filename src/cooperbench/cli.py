@@ -117,6 +117,17 @@ def main():
         action="store_true",
         help="Disable messaging (send_message command)",
     )
+    run_parser.add_argument(
+        "--auto-eval",
+        action="store_true",
+        help="Automatically evaluate runs after completion",
+    )
+    run_parser.add_argument(
+        "--eval-concurrency",
+        type=int,
+        default=10,
+        help="Number of parallel evaluations when using --auto-eval (default: 10)",
+    )
 
     # === eval command ===
     eval_parser = subparsers.add_parser(
@@ -204,6 +215,8 @@ def _run_command(args):
         force=args.force,
         git_enabled=args.git,
         messaging_enabled=not args.no_messaging,
+        auto_eval=args.auto_eval,
+        eval_concurrency=args.eval_concurrency,
     )
 
 
