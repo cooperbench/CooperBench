@@ -38,9 +38,7 @@ class TestGenerateRunName:
 
     def test_with_all_options(self):
         """Test name generation with all options."""
-        name = _generate_run_name(
-            "coop", "gemini/gemini-3-flash-preview", subset="lite", repo="pillow_task", task=25
-        )
+        name = _generate_run_name("coop", "gemini/gemini-3-flash-preview", subset="lite", repo="pillow_task", task=25)
         assert name == "coop-gemini-3-flash-lite-pillow-25"
 
     def test_cleans_model_name(self):

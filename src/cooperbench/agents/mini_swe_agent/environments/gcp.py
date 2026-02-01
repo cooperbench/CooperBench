@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import platform
+import shlex
 import subprocess
 import time
 import uuid
@@ -181,9 +182,12 @@ class GCPEnvironment:
 
         operation = client.insert(request=request)
 
+        # Mark VM as created immediately after insert succeeds
+        # This ensures cleanup() will delete the VM even if _wait_for_operation times out
+        self._vm_created = True
+
         # Wait for operation to complete
         self._wait_for_operation(operation.name)
-        self._vm_created = True
         self.logger.debug(f"VM {self._vm_name} created successfully")
 
     def _wait_for_operation(self, operation_name: str, timeout: int = 300):
@@ -264,8 +268,9 @@ class GCPEnvironment:
 
         # Start container with sleep infinity
         # --entrypoint "" clears any entrypoint in the image (matches Modal's .entrypoint([]))
-        # -w sets working directory
-        start_cmd = f"docker run -d --name agent --entrypoint '' -w {self.config.cwd}{env_args} {self.config.image} sleep infinity"
+        # -w sets working directory (quoted to handle paths with spaces/special chars)
+        quoted_cwd = shlex.quote(self.config.cwd)
+        start_cmd = f"docker run -d --name agent --entrypoint '' -w {quoted_cwd}{env_args} {self.config.image} sleep infinity"
         start_result = self._ssh_exec(start_cmd)
 
         if start_result["returncode"] != 0:
@@ -282,7 +287,7 @@ class GCPEnvironment:
 
         # Create working directory if it doesn't exist
         if self.config.cwd != "/":
-            mkdir_result = self._ssh_exec(f"docker exec agent mkdir -p {self.config.cwd}")
+            mkdir_result = self._ssh_exec(f"docker exec agent mkdir -p {quoted_cwd}")
             if mkdir_result["returncode"] != 0:
                 self.logger.warning(f"Failed to create working directory: {mkdir_result['output']}")
 
@@ -349,7 +354,9 @@ class GCPEnvironment:
         # Escape the command for shell
         # We need to escape it twice: once for the local shell, once for the remote shell
         escaped_command = command.replace("'", "'\\''")
-        docker_cmd = f"docker exec agent bash -lc 'cd {cwd} && {escaped_command}'"
+        # Use docker exec -w to set working directory (handles paths with spaces/special chars)
+        quoted_cwd = shlex.quote(cwd)
+        docker_cmd = f"docker exec -w {quoted_cwd} agent bash -lc '{escaped_command}'"
 
         return self._ssh_exec(docker_cmd, timeout=exec_timeout)
 
