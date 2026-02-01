@@ -124,6 +124,7 @@ cooperbench eval -n NAME [OPTIONS]
 | `-t, --task` | Filter by task ID | all |
 | `-f, --features` | Feature pair (e.g., `1,2`) | all pairs |
 | `-c, --concurrency` | Parallel evaluations | `10` |
+| `--backend` | `modal`, `docker`, or `gcp` | `modal` |
 | `--force` | Re-evaluate existing | skip |
 
 ## Experiment Settings

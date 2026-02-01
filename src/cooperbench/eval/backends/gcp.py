@@ -252,12 +252,23 @@ fi
 # Write result
 python3 -c "
 import json
+import os
+
+def read_log(path, max_len=10000):
+    try:
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                return f.read()[:max_len]
+    except Exception:
+        pass
+    return ''
+
 result = {
     'feature1_passed': $([[ $F1_PASS == true ]] && echo 'True' || echo 'False'),
     'feature2_passed': $([[ $F2_PASS == true ]] && echo 'True' || echo 'False'),
     'merge_status': '${MERGE_STATUS:-null}',
-    'feature1_output': open('/tmp/test1.log').read()[:10000] if open('/tmp/test1.log', 'r') else '',
-    'feature2_output': open('/tmp/test2.log').read()[:10000] if open('/tmp/test2.log', 'r') else '',
+    'feature1_output': read_log('/tmp/test1.log'),
+    'feature2_output': read_log('/tmp/test2.log'),
     'error': None
 }
 with open('$RESULT_FILE', 'w') as f:
