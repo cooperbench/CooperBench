@@ -44,7 +44,7 @@ class GCPGitServer:
         self._zone = zone
         self._network = network
         self._git_url = git_url
-        self._vm_created = True
+        self._vm_created = False
         self._firewall_created = False
         self._compute_client = None
         self._logger = logging.getLogger("cooperbench.agents.mini_swe_agent.git_server.gcp")
