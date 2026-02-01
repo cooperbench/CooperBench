@@ -98,6 +98,64 @@ def setup_cleanup_handlers(tracker: ResourceTracker) -> None:
     atexit.register(tracker.cleanup_all)
 
 
+def get_run_totals(run_name: str, setting: str) -> dict:
+    """Get time metrics and cost from all result.json files.
+
+    Returns both:
+    - wall_time: elapsed time from earliest start to latest end
+    - run_time: sum of individual task durations (total agent compute time)
+
+    Args:
+        run_name: Name of the experiment run
+        setting: "solo" or "coop"
+
+    Returns:
+        {"wall_time": float, "run_time": float, "total_cost": float, "task_count": int}
+    """
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    log_dir = Path("logs") / run_name / setting
+    if not log_dir.exists():
+        return {"wall_time": 0.0, "run_time": 0.0, "total_cost": 0.0, "task_count": 0}
+
+    total_cost = 0.0
+    run_time = 0.0
+    task_count = 0
+    earliest_start = None
+    latest_end = None
+
+    for result_file in log_dir.rglob("result.json"):
+        try:
+            with open(result_file) as f:
+                result = json.load(f)
+            total_cost += result.get("total_cost", 0)
+            run_time += result.get("duration_seconds", 0)
+            task_count += 1
+
+            # Track earliest start and latest end for wall clock time
+            started_at = result.get("started_at")
+            ended_at = result.get("ended_at")
+            if started_at:
+                start_dt = datetime.fromisoformat(started_at)
+                if earliest_start is None or start_dt < earliest_start:
+                    earliest_start = start_dt
+            if ended_at:
+                end_dt = datetime.fromisoformat(ended_at)
+                if latest_end is None or end_dt > latest_end:
+                    latest_end = end_dt
+        except Exception:
+            pass
+
+    # Calculate wall clock time
+    wall_time = 0.0
+    if earliest_start and latest_end:
+        wall_time = (latest_end - earliest_start).total_seconds()
+
+    return {"wall_time": wall_time, "run_time": run_time, "total_cost": total_cost, "task_count": task_count}
+
+
 __all__ = [
     "console",
     "REGISTRY",
@@ -106,4 +164,5 @@ __all__ = [
     "clean_model_name",
     "ResourceTracker",
     "setup_cleanup_handlers",
+    "get_run_totals",
 ]

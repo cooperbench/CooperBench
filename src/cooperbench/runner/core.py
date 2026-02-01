@@ -51,7 +51,7 @@ def run(
     setting: str = "coop",
     git_enabled: bool = False,
     messaging_enabled: bool = True,
-    auto_eval: bool = False,
+    auto_eval: bool = True,
     eval_concurrency: int = 10,
     backend: str = "modal",
 ) -> None:
@@ -150,20 +150,20 @@ def run(
                 completed = 1
                 total_cost = result.get("total_cost", 0)
                 _print_single_result(result, tasks[0], is_solo)
-                # Evaluate single task if auto_eval enabled
-                if auto_eval and not result.get("skipped"):
-                    run_info = _build_run_info(result, tasks[0], setting, run_name)
-                    if run_info:
-                        from cooperbench.eval.evaluate import _evaluate_single
+            # Evaluate single task if auto_eval enabled (runs for skipped too, _evaluate_single handles existing evals)
+            if auto_eval:
+                run_info = _build_run_info(result, tasks[0], setting, run_name)
+                if run_info:
+                    from cooperbench.eval.evaluate import _evaluate_single
 
-                        eval_result = _evaluate_single(run_info, force=force)
-                        if eval_result:
-                            stats = _process_eval_result(eval_result, tasks[0])
-                            if stats:
-                                eval_passed, eval_failed, eval_errors, eval_skipped = stats
-                                eval_stats = (eval_passed, eval_failed, eval_errors, eval_skipped, [])
-                            else:
-                                eval_stats = None
+                    eval_result = _evaluate_single(run_info, force=force)
+                    if eval_result:
+                        stats = _process_eval_result(eval_result, tasks[0])
+                        if stats:
+                            eval_passed, eval_failed, eval_errors, eval_skipped = stats
+                            eval_stats = (eval_passed, eval_failed, eval_errors, eval_skipped, [])
+                        else:
+                            eval_stats = None
     else:
         # Multiple tasks - show progress
         completed, skipped, failed, total_cost, results_list, eval_stats = _run_with_progress(
@@ -171,9 +171,22 @@ def run(
         )
 
     # Summary
-    total_time = time.time() - bench_start_time
-    _save_summary(log_dir, run_name, len(tasks), completed, skipped, failed, total_cost, total_time, results_list)
-    _print_summary(completed, skipped, failed, total_cost, total_time, log_dir / setting, eval_stats)
+    session_time = time.time() - bench_start_time
+    _save_summary(log_dir, run_name, len(tasks), completed, skipped, failed, total_cost, session_time, results_list)
+
+    # Get aggregate totals from all result.json files (includes previous sessions)
+    from cooperbench.utils import get_run_totals
+
+    run_totals = get_run_totals(run_name, setting)
+
+    # Use session time if no skipped (exact), otherwise aggregate (approximate)
+    time_info = {
+        "wall": session_time if skipped == 0 else run_totals["wall_time"],
+        "run": run_totals["run_time"],
+        "approximate": skipped > 0,
+    }
+
+    _print_summary(completed, skipped, failed, run_totals["total_cost"], time_info, log_dir / setting, eval_stats)
 
 
 def _print_header(
@@ -231,7 +244,9 @@ def _build_run_info(result: dict, task_info: dict, setting: str, run_name: str) 
     """Build run_info dict for evaluation from run result."""
     log_dir = result.get("log_dir")
     if not log_dir:
-        return None
+        # Reconstruct log_dir for older results that don't have it
+        feature_str = "_".join(f"f{f}" for f in sorted(task_info["features"]))
+        log_dir = str(Path("logs") / run_name / setting / task_info["repo"] / str(task_info["task_id"]) / feature_str)
 
     return {
         "log_dir": log_dir,
@@ -243,18 +258,23 @@ def _build_run_info(result: dict, task_info: dict, setting: str, run_name: str) 
 
 
 def _process_eval_result(eval_result: dict | None, task_info: dict) -> tuple | None:
-    """Process eval result and return stats tuple (passed, failed, errors, skipped)."""
+    """Process eval result and return stats tuple (passed, failed, errors, skipped).
+
+    For skipped evals (eval.json already exists), we read the actual result
+    so pass/fail counts reflect the true state across all tasks.
+    """
     if not eval_result:
         return None
 
-    if eval_result.get("skipped"):
-        return (0, 0, 0, 1)
-    elif eval_result.get("error"):
+    # For skipped evals, extract actual pass/fail from the loaded data
+    is_skipped = eval_result.get("skipped", False)
+
+    if eval_result.get("error"):
         return (0, 0, 1, 0)
     elif eval_result.get("both_passed"):
-        return (1, 0, 0, 0)
+        return (1, 0, 0, 1 if is_skipped else 0)
     else:
-        return (0, 1, 0, 0)
+        return (0, 1, 0, 1 if is_skipped else 0)
 
 
 def _print_single_result(result: dict, task: dict, is_solo: bool) -> None:
@@ -378,8 +398,8 @@ def _run_with_progress(
                             "failed": "[red]✗ failed[/red]",
                         }[status]
 
-                        # Submit eval if enabled and task completed successfully
-                        if auto_eval and status == "done" and eval_executor:
+                        # Submit eval if enabled (for done or skipped - _evaluate_single handles existing evals)
+                        if auto_eval and status in ("done", "skip") and eval_executor:
                             run_info = _build_run_info(result, task_info, setting, run_name)
                             if run_info:
                                 eval_future = eval_executor.submit(_evaluate_single, run_info, force)
@@ -416,14 +436,14 @@ def _run_with_progress(
                                         )
 
                                         # Print eval result indented to show it's a test result
-                                        if eval_result.get("skipped"):
-                                            eval_status = "[dim]→ skip[/dim]"
-                                        elif eval_result.get("error"):
+                                        # For skipped evals (already existed), show actual result with dim indicator
+                                        is_skipped = eval_result.get("skipped", False)
+                                        if eval_result.get("error"):
                                             eval_status = "[yellow]✗ error[/yellow]"
                                         elif eval_result.get("both_passed"):
-                                            eval_status = "[green]✓ pass[/green]"
+                                            eval_status = "[dim]→ pass[/dim]" if is_skipped else "[green]✓ pass[/green]"
                                         else:
-                                            eval_status = "[red]✗ fail[/red]"
+                                            eval_status = "[dim]→ fail[/dim]" if is_skipped else "[red]✗ fail[/red]"
 
                                         progress.console.print(f"  {eval_status} {task_name} [dim][{feat_str}][/dim]")
                                 except Exception as e:
@@ -463,14 +483,14 @@ def _run_with_progress(
                                 }
                             )
 
-                            if eval_result.get("skipped"):
-                                eval_status = "[dim]→ skip[/dim]"
-                            elif eval_result.get("error"):
+                            # For skipped evals (already existed), show actual result with dim indicator
+                            is_skipped = eval_result.get("skipped", False)
+                            if eval_result.get("error"):
                                 eval_status = "[yellow]✗ error[/yellow]"
                             elif eval_result.get("both_passed"):
-                                eval_status = "[green]✓ pass[/green]"
+                                eval_status = "[dim]→ pass[/dim]" if is_skipped else "[green]✓ pass[/green]"
                             else:
-                                eval_status = "[red]✗ fail[/red]"
+                                eval_status = "[dim]→ fail[/dim]" if is_skipped else "[red]✗ fail[/red]"
 
                             progress.console.print(f"  {eval_status} {task_name} [dim][{feat_str}][/dim]")
                     except Exception as e:
@@ -517,7 +537,7 @@ def _print_summary(
     skipped: int,
     failed: int,
     total_cost: float,
-    total_time: float,
+    time_info: dict,
     log_dir: Path,
     eval_stats: tuple | None = None,
 ) -> None:
@@ -536,7 +556,8 @@ def _print_summary(
     eval_line = None
     if eval_stats:
         eval_passed, eval_failed, eval_errors, eval_skipped, _ = eval_stats
-        total_eval = eval_passed + eval_failed + eval_errors + eval_skipped
+        # total_eval counts actual pass/fail/error (skipped evals have their results counted in pass/fail)
+        total_eval = eval_passed + eval_failed + eval_errors
         if total_eval > 0:
             eval_parts = [f"{total_eval} evaluated"]
             if eval_passed > 0:
@@ -545,25 +566,28 @@ def _print_summary(
                 eval_parts.append(f"[red]{eval_failed}[/red] failed")
             if eval_errors > 0:
                 eval_parts.append(f"[yellow]{eval_errors}[/yellow] errors")
-            if eval_skipped > 0:
-                eval_parts.append(f"[dim]{eval_skipped}[/dim] skipped")
 
-            # Calculate pass rate
-            pass_rate = eval_passed / max(eval_passed + eval_failed, 1) * 100
+            # Calculate pass rate from all evaluated (pass + fail)
+            pass_rate = eval_passed / max(total_eval, 1) * 100
             eval_line = f"evals: {', '.join(eval_parts)} ({pass_rate:.1f}%)"
 
     # Format time nicely
-    mins, secs = divmod(int(total_time), 60)
-    if mins > 0:
-        time_str = f"{mins}m {secs}s"
-    else:
-        time_str = f"{secs}s"
+    def fmt_time(seconds: float) -> str:
+        mins, secs = divmod(int(seconds), 60)
+        return f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+
+    wall_str = fmt_time(time_info["wall"])
+    run_str = fmt_time(time_info["run"])
+
+    # Add ~ prefix if time is approximate (aggregated across sessions)
+    if time_info.get("approximate"):
+        wall_str = f"~{wall_str}"
 
     # Print summary
     console.print(run_line)
     if eval_line:
         console.print(eval_line)
     console.print(f"cost:  ${total_cost:.2f}")
-    console.print(f"time:  {time_str}")
+    console.print(f"time:  {wall_str} [dim](agent: {run_str})[/dim]")
     console.print()
     console.print(f"[dim]logs:[/dim] {log_dir}")

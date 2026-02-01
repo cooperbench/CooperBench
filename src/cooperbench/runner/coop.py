@@ -182,6 +182,7 @@ def execute_coop(
         "total_cost": total_cost,
         "total_steps": total_steps,
         "messages_sent": len(sent_msgs),
+        "log_dir": str(log_dir),
     }
 
     with open(log_dir / "result.json", "w") as f:

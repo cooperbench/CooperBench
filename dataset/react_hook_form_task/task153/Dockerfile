@@ -1,9 +1,13 @@
 FROM node:22-slim
 
-# Install git and other required tools
+# Install git, Python (for Modal compatibility), and other required tools
 RUN apt-get update && apt-get install -y \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED
 
 # Clone the repository and checkout the specific commit
 WORKDIR /workspace

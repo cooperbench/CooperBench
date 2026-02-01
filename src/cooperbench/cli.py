@@ -18,9 +18,13 @@ def _generate_run_name(
     subset: str | None = None,
     repo: str | None = None,
     task: int | None = None,
+    git_enabled: bool = False,
 ) -> str:
     """Generate experiment name from parameters."""
-    parts = [setting, clean_model_name(model)]
+    parts = [setting]
+    if git_enabled:
+        parts.append("git")
+    parts.append(clean_model_name(model))
     if subset:
         parts.append(subset)
     if repo:
@@ -118,15 +122,15 @@ def main():
         help="Disable messaging (send_message command)",
     )
     run_parser.add_argument(
-        "--auto-eval",
+        "--no-auto-eval",
         action="store_true",
-        help="Automatically evaluate runs after completion",
+        help="Disable automatic evaluation after completion (enabled by default)",
     )
     run_parser.add_argument(
         "--eval-concurrency",
         type=int,
         default=10,
-        help="Number of parallel evaluations when using --auto-eval (default: 10)",
+        help="Number of parallel evaluations for auto-eval (default: 10)",
     )
     run_parser.add_argument(
         "--backend",
@@ -211,6 +215,7 @@ def _run_command(args):
             subset=args.subset,
             repo=args.repo,
             task=args.task,
+            git_enabled=args.git,
         )
 
     run(
@@ -227,7 +232,7 @@ def _run_command(args):
         force=args.force,
         git_enabled=args.git,
         messaging_enabled=not args.no_messaging,
-        auto_eval=args.auto_eval,
+        auto_eval=not args.no_auto_eval,
         eval_concurrency=args.eval_concurrency,
         backend=args.backend,
     )

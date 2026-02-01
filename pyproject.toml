@@ -57,7 +57,11 @@ dependencies = [
 
 [project.optional-dependencies]
 swe-agent = [
-    "swe-agent>=1.0",
+    "swe-rex>=0.3",
+    "ghapi>=1.0",
+    "simple-parsing>=0.1",
+    "gitpython>=3.0",
+    "unidiff>=0.7",
 ]
 gcp = [
     "google-cloud-batch>=0.17",
