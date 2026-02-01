@@ -19,8 +19,8 @@ size_categories:
 
 This dataset contains the benchmark tasks for evaluating multi-agent coordination in code collaboration.
 
-**Paper**: [CooperBench: Why Coding Agents Cannot be Your Teammates Yet](https://arxiv.org/abs/2601.13295)  
-**Code**: [github.com/cooperbench/CooperBench](https://github.com/cooperbench/CooperBench)  
+**Paper**: [CooperBench: Why Coding Agents Cannot be Your Teammates Yet](https://arxiv.org/abs/2601.13295)
+**Code**: [github.com/cooperbench/CooperBench](https://github.com/cooperbench/CooperBench)
 **Website**: [cooperbench.com](https://cooperbench.com)
 
 ## Structure
@@ -65,7 +65,19 @@ Pre-defined task subsets are available in `subsets/` for quick evaluation:
 
 | Subset | Tasks | Pairs | Repos | Description |
 |--------|-------|-------|-------|-------------|
-| `lite` | 7 | 100 | 7 | Quick evaluation subset, supports up to 4 agents |
+| `lite` | 8 | 100 | 8 | Quick evaluation subset, uniform random selection |
+
+The `lite` subset is generated via uniform random sampling of whole tasks (deterministic with fixed seed):
+
+```python
+random.seed(190)  # fixed seed for reproducibility
+random.shuffle(all_tasks)
+selected = []
+for task in all_tasks:
+    if total_pairs + task.num_pairs <= 100:
+        selected.append(task)
+# Result: 8 tasks, 100 pairs, 8 repos
+```
 
 **Usage:**
 ```bash

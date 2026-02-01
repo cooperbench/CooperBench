@@ -1,18 +1,19 @@
 {
   "name": "lite",
-  "description": "100-pair subset for quick evaluation, supports up to 4 agents",
+  "description": "100-pair subset for quick evaluation (uniform random selection, seed=190)",
   "stats": {
-    "tasks": 7,
+    "tasks": 8,
     "pairs": 100,
-    "repos": 7
+    "repos": 8
   },
   "tasks": [
+    {"repo": "dottxt_ai_outlines_task", "task_id": 1371},
+    {"repo": "dspy_task", "task_id": 8394},
+    {"repo": "go_chi_task", "task_id": 56},
+    {"repo": "huggingface_datasets_task", "task_id": 7309},
+    {"repo": "llama_index_task", "task_id": 17070},
+    {"repo": "pallets_jinja_task", "task_id": 1621},
     {"repo": "pillow_task", "task_id": 25},
-    {"repo": "huggingface_datasets_task", "task_id": 6252},
-    {"repo": "react_hook_form_task", "task_id": 85},
-    {"repo": "llama_index_task", "task_id": 17244},
-    {"repo": "dottxt_ai_outlines_task", "task_id": 1706},
-    {"repo": "go_chi_task", "task_id": 27},
-    {"repo": "dspy_task", "task_id": 8394}
+    {"repo": "react_hook_form_task", "task_id": 153}
   ]
 }
