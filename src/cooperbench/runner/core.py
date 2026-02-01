@@ -20,6 +20,12 @@ from rich.progress import (
 from rich.table import Table
 
 from cooperbench.infra.redis import ensure_redis
+
+# Optional import for cleanup handler (may not exist in all versions)
+try:
+    from cooperbench.agents.mini_swe_agent.environments.modal import install_cleanup_handler
+except ImportError:
+    install_cleanup_handler = None
 from cooperbench.runner.coop import execute_coop
 from cooperbench.runner.solo import execute_solo
 from cooperbench.runner.tasks import discover_tasks
@@ -45,6 +51,8 @@ def run(
     setting: str = "coop",
     git_enabled: bool = False,
     messaging_enabled: bool = True,
+    auto_eval: bool = False,
+    eval_concurrency: int = 10,
 ) -> None:
     """Run benchmark tasks.
 
@@ -62,7 +70,13 @@ def run(
         setting: "coop" (2 agents) or "solo" (1 agent)
         git_enabled: Enable git collaboration (agents can push/pull/merge)
         messaging_enabled: Enable messaging (send_message command)
+        auto_eval: Automatically evaluate runs after completion
+        eval_concurrency: Max parallel evaluations (default: 10)
     """
+    # Install cleanup handler to terminate Modal sandboxes on Ctrl+C
+    if install_cleanup_handler:
+        install_cleanup_handler()
+
     tasks = discover_tasks(subset=subset, repo_filter=repo, task_filter=task_id, features_filter=features)
 
     if not tasks:
@@ -120,6 +134,7 @@ def run(
                 messaging_enabled=messaging_enabled,
             )
 
+    eval_stats = None
     if is_single:
         # Single task - show detailed output
         result = execute_task(tasks[0])
@@ -131,14 +146,30 @@ def run(
                 completed = 1
                 total_cost = result.get("total_cost", 0)
                 _print_single_result(result, tasks[0], is_solo)
+                # Evaluate single task if auto_eval enabled
+                if auto_eval and not result.get("skipped"):
+                    run_info = _build_run_info(result, tasks[0], setting, run_name)
+                    if run_info:
+                        from cooperbench.eval.evaluate import _evaluate_single
+
+                        eval_result = _evaluate_single(run_info, force=force)
+                        if eval_result:
+                            stats = _process_eval_result(eval_result, tasks[0])
+                            if stats:
+                                eval_passed, eval_failed, eval_errors, eval_skipped = stats
+                                eval_stats = (eval_passed, eval_failed, eval_errors, eval_skipped, [])
+                            else:
+                                eval_stats = None
     else:
         # Multiple tasks - show progress
-        completed, skipped, failed, total_cost, results_list = _run_with_progress(tasks, execute_task, concurrency)
+        completed, skipped, failed, total_cost, results_list, eval_stats = _run_with_progress(
+            tasks, execute_task, concurrency, auto_eval, eval_concurrency, setting, run_name, force
+        )
 
     # Summary
     total_time = time.time() - bench_start_time
     _save_summary(log_dir, run_name, len(tasks), completed, skipped, failed, total_cost, total_time, results_list)
-    _print_summary(completed, skipped, failed, total_cost, total_time, log_dir / setting)
+    _print_summary(completed, skipped, failed, total_cost, total_time, log_dir / setting, eval_stats)
 
 
 def _print_header(
@@ -192,6 +223,36 @@ def _save_config(
         json.dump(run_config, f, indent=2)
 
 
+def _build_run_info(result: dict, task_info: dict, setting: str, run_name: str) -> dict | None:
+    """Build run_info dict for evaluation from run result."""
+    log_dir = result.get("log_dir")
+    if not log_dir:
+        return None
+
+    return {
+        "log_dir": log_dir,
+        "setting": setting,
+        "repo": task_info["repo"],
+        "task_id": task_info["task_id"],
+        "features": task_info["features"],
+    }
+
+
+def _process_eval_result(eval_result: dict | None, task_info: dict) -> tuple | None:
+    """Process eval result and return stats tuple (passed, failed, errors, skipped)."""
+    if not eval_result:
+        return None
+
+    if eval_result.get("skipped"):
+        return (0, 0, 0, 1)
+    elif eval_result.get("error"):
+        return (0, 0, 1, 0)
+    elif eval_result.get("both_passed"):
+        return (1, 0, 0, 0)
+    else:
+        return (0, 1, 0, 0)
+
+
 def _print_single_result(result: dict, task: dict, is_solo: bool) -> None:
     """Print detailed result for a single task."""
     total_cost = result.get("total_cost", 0)
@@ -235,69 +296,189 @@ def _print_single_result(result: dict, task: dict, is_solo: bool) -> None:
     console.print(f"[dim]total:[/dim] ${total_cost:.2f} [dim]time:[/dim] {result.get('duration', 0):.0f}s")
 
 
-def _run_with_progress(tasks: list, execute_task, concurrency: int) -> tuple:
-    """Run multiple tasks with progress display."""
+def _run_with_progress(
+    tasks: list,
+    execute_task,
+    concurrency: int,
+    auto_eval: bool,
+    eval_concurrency: int,
+    setting: str,
+    run_name: str,
+    force: bool,
+) -> tuple:
+    """Run multiple tasks with progress display and optional inline evaluation."""
+    from cooperbench.eval.evaluate import _evaluate_single
+
     results_list = []
     completed = 0
     failed = 0
     skipped = 0
     total_cost = 0
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[dim]{task.completed}/{task.total}[/dim]"),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        TextColumn("[dim]eta[/dim]"),
-        TimeRemainingColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
-        task_progress = progress.add_task("running", total=len(tasks))
+    # Eval tracking
+    eval_executor = None
+    eval_futures = {}  # {future: (task_info, result, task_name, feat_str)}
+    eval_passed = 0
+    eval_failed = 0
+    eval_errors = 0
+    eval_skipped = 0
+    eval_results = []
 
-        with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            future_to_task = {executor.submit(execute_task, t): t for t in tasks}
+    if auto_eval:
+        eval_executor = ThreadPoolExecutor(max_workers=eval_concurrency)
 
-            for future in as_completed(future_to_task):
-                task_info = future_to_task[future]
-                feat_str = ",".join(str(f) for f in task_info["features"])
-                task_name = f"{task_info['repo']}/{task_info['task_id']}"
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[dim]{task.completed}/{task.total}[/dim]"),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TextColumn("[dim]eta[/dim]"),
+            TimeRemainingColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task_progress = progress.add_task("running", total=len(tasks))
 
-                try:
-                    result = future.result()
-                    if result is None:
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                future_to_task = {executor.submit(execute_task, t): t for t in tasks}
+
+                for future in as_completed(future_to_task):
+                    task_info = future_to_task[future]
+                    feat_str = ",".join(str(f) for f in task_info["features"])
+                    task_name = f"{task_info['repo']}/{task_info['task_id']}"
+
+                    try:
+                        result = future.result()
+                        if result is None:
+                            failed += 1
+                            status = "failed"
+                            cost = 0
+                        elif result.get("skipped"):
+                            skipped += 1
+                            status = "skip"
+                            cost = result.get("total_cost", 0)
+                        else:
+                            completed += 1
+                            cost = result.get("total_cost", 0)
+                            status = "done"
+
+                        total_cost += cost
+                        results_list.append({"task": f"{task_name}/{feat_str}", "status": status, "cost": cost})
+
+                        status_display = {
+                            "done": "[green]✓ done[/green]",
+                            "skip": "[dim]→ done[/dim]",
+                            "failed": "[red]✗ failed[/red]",
+                        }[status]
+
+                        # Submit eval if enabled and task completed successfully
+                        if auto_eval and status == "done" and eval_executor:
+                            run_info = _build_run_info(result, task_info, setting, run_name)
+                            if run_info:
+                                eval_future = eval_executor.submit(_evaluate_single, run_info, force)
+                                eval_futures[eval_future] = (task_info, result, task_name, feat_str)
+                            progress.console.print(f"{status_display} {task_name} [dim][{feat_str}][/dim]")
+                        else:
+                            progress.console.print(f"{status_display} {task_name} [dim][{feat_str}][/dim]")
+
+                        # Check for completed evals (non-blocking)
+                        if eval_futures:
+                            completed_evals = [f for f in list(eval_futures.keys()) if f.done()]
+                            for eval_future in completed_evals:
+                                task_info, result, task_name, feat_str = eval_futures.pop(eval_future)
+                                try:
+                                    eval_result = eval_future.result()
+                                    eval_stats = _process_eval_result(eval_result, task_info)
+                                    if eval_stats:
+                                        ep, ef, ee, es = eval_stats[:4]
+                                        eval_passed += ep
+                                        eval_failed += ef
+                                        eval_errors += ee
+                                        eval_skipped += es
+
+                                        # Store eval result
+                                        eval_results.append(
+                                            {
+                                                "task": f"{task_name}/{feat_str}",
+                                                "status": "pass"
+                                                if eval_result.get("both_passed")
+                                                else "fail"
+                                                if not eval_result.get("error")
+                                                else "error",
+                                            }
+                                        )
+
+                                        # Print eval result indented to show it's a test result
+                                        if eval_result.get("skipped"):
+                                            eval_status = "[dim]→ skip[/dim]"
+                                        elif eval_result.get("error"):
+                                            eval_status = "[yellow]✗ error[/yellow]"
+                                        elif eval_result.get("both_passed"):
+                                            eval_status = "[green]✓ pass[/green]"
+                                        else:
+                                            eval_status = "[red]✗ fail[/red]"
+
+                                        progress.console.print(f"  {eval_status} {task_name} [dim][{feat_str}][/dim]")
+                                except Exception as e:
+                                    eval_errors += 1
+                                    progress.console.print(f"  → [yellow]✗ eval error[/yellow] [dim]{e}[/dim]")
+
+                    except Exception as e:
                         failed += 1
-                        status = "failed"
-                        cost = 0
-                    elif result.get("skipped"):
-                        skipped += 1
-                        status = "skip"
-                        cost = result.get("total_cost", 0)
-                    else:
-                        completed += 1
-                        cost = result.get("total_cost", 0)
-                        status = "done"
+                        results_list.append({"task": f"{task_name}/{feat_str}", "status": "error", "error": str(e)})
+                        progress.console.print(f"[red]✗ error[/red] {task_name} [dim]{e}[/dim]")
 
-                    total_cost += cost
-                    results_list.append({"task": f"{task_name}/{feat_str}", "status": status, "cost": cost})
+                    progress.update(task_progress, advance=1)
 
-                    status_display = {
-                        "done": "[green]✓ done[/green]",
-                        "skip": "[dim]→ done[/dim]",
-                        "failed": "[red]✗ failed[/red]",
-                    }[status]
-                    progress.console.print(f"{status_display} {task_name} [dim][{feat_str}][/dim]")
+            # Wait for all remaining evals to complete
+            if eval_futures:
+                for eval_future in as_completed(eval_futures.keys()):
+                    task_info, result, task_name, feat_str = eval_futures.pop(eval_future)
+                    try:
+                        eval_result = eval_future.result()
+                        eval_stats = _process_eval_result(eval_result, task_info)
+                        if eval_stats:
+                            ep, ef, ee, es = eval_stats[:4]
+                            eval_passed += ep
+                            eval_failed += ef
+                            eval_errors += ee
+                            eval_skipped += es
 
-                except Exception as e:
-                    failed += 1
-                    results_list.append({"task": f"{task_name}/{feat_str}", "status": "error", "error": str(e)})
-                    progress.console.print(f"[red]✗ error[/red] {task_name} [dim]{e}[/dim]")
+                            # Store eval result
+                            eval_results.append(
+                                {
+                                    "task": f"{task_name}/{feat_str}",
+                                    "status": "pass"
+                                    if eval_result.get("both_passed")
+                                    else "fail"
+                                    if not eval_result.get("error")
+                                    else "error",
+                                }
+                            )
 
-                progress.update(task_progress, advance=1)
+                            if eval_result.get("skipped"):
+                                eval_status = "[dim]→ skip[/dim]"
+                            elif eval_result.get("error"):
+                                eval_status = "[yellow]✗ error[/yellow]"
+                            elif eval_result.get("both_passed"):
+                                eval_status = "[green]✓ pass[/green]"
+                            else:
+                                eval_status = "[red]✗ fail[/red]"
 
-    return completed, skipped, failed, total_cost, results_list
+                            progress.console.print(f"  {eval_status} {task_name} [dim][{feat_str}][/dim]")
+                    except Exception as e:
+                        eval_errors += 1
+                        progress.console.print(f"  → [yellow]✗ eval error[/yellow] {task_name} [dim]{e}[/dim]")
+
+    finally:
+        if eval_executor:
+            eval_executor.shutdown(wait=True)
+
+    eval_stats = (eval_passed, eval_failed, eval_errors, eval_skipped, eval_results) if auto_eval else None
+    return completed, skipped, failed, total_cost, results_list, eval_stats
 
 
 def _save_summary(
@@ -328,27 +509,57 @@ def _save_summary(
 
 
 def _print_summary(
-    completed: int, skipped: int, failed: int, total_cost: float, total_time: float, log_dir: Path
+    completed: int,
+    skipped: int,
+    failed: int,
+    total_cost: float,
+    total_time: float,
+    log_dir: Path,
+    eval_stats: tuple | None = None,
 ) -> None:
-    """Print run summary."""
+    """Print run summary with optional eval stats."""
     console.print()
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column(style="dim")
-    table.add_column()
-    table.add_row("completed", f"[green]{completed}[/green]")
+
+    # Build run stats line
+    run_parts = [f"[green]{completed}[/green] completed"]
     if skipped:
-        table.add_row("skipped", f"[dim]{skipped}[/dim]")
+        run_parts.append(f"[dim]{skipped}[/dim] skipped")
     if failed:
-        table.add_row("failed", f"[red]{failed}[/red]")
-    table.add_row("cost", f"${total_cost:.2f}")
+        run_parts.append(f"[red]{failed}[/red] failed")
+    run_line = f"runs:  {', '.join(run_parts)}"
+
+    # Build eval stats line if available
+    eval_line = None
+    if eval_stats:
+        eval_passed, eval_failed, eval_errors, eval_skipped, _ = eval_stats
+        total_eval = eval_passed + eval_failed + eval_errors + eval_skipped
+        if total_eval > 0:
+            eval_parts = [f"{total_eval} evaluated"]
+            if eval_passed > 0:
+                eval_parts.append(f"[green]{eval_passed}[/green] passed")
+            if eval_failed > 0:
+                eval_parts.append(f"[red]{eval_failed}[/red] failed")
+            if eval_errors > 0:
+                eval_parts.append(f"[yellow]{eval_errors}[/yellow] errors")
+            if eval_skipped > 0:
+                eval_parts.append(f"[dim]{eval_skipped}[/dim] skipped")
+
+            # Calculate pass rate
+            pass_rate = eval_passed / max(eval_passed + eval_failed, 1) * 100
+            eval_line = f"evals: {', '.join(eval_parts)} ({pass_rate:.1f}%)"
 
     # Format time nicely
     mins, secs = divmod(int(total_time), 60)
     if mins > 0:
-        table.add_row("time", f"{mins}m {secs}s")
+        time_str = f"{mins}m {secs}s"
     else:
-        table.add_row("time", f"{secs}s")
+        time_str = f"{secs}s"
 
-    console.print(table)
+    # Print summary
+    console.print(run_line)
+    if eval_line:
+        console.print(eval_line)
+    console.print(f"cost:  ${total_cost:.2f}")
+    console.print(f"time:  {time_str}")
     console.print()
     console.print(f"[dim]logs:[/dim] {log_dir}")
