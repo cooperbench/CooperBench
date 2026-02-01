@@ -5,14 +5,16 @@ from itertools import combinations
 from pathlib import Path
 
 
-def load_subset(subset_name: str) -> list[tuple[str, int]]:
+def load_subset(subset_name: str) -> dict:
     """Load a subset definition from dataset/subsets/.
 
     Args:
         subset_name: Name of the subset (e.g., 'lite')
 
     Returns:
-        List of (repo, task_id) tuples in the subset
+        Dict with:
+          - tasks: set of (repo, task_id) tuples
+          - pairs: dict mapping (repo, task_id) to list of [f1, f2] pairs (if specified)
     """
     subset_path = Path("dataset/subsets") / f"{subset_name}.json"
     if not subset_path.exists():
@@ -21,7 +23,16 @@ def load_subset(subset_name: str) -> list[tuple[str, int]]:
     with open(subset_path) as f:
         data = json.load(f)
 
-    return [(t["repo"], t["task_id"]) for t in data["tasks"]]
+    tasks = set()
+    pairs = {}
+    for t in data["tasks"]:
+        key = (t["repo"], t["task_id"])
+        tasks.add(key)
+        # If pairs are specified, store them
+        if "pairs" in t:
+            pairs[key] = [tuple(p) for p in t["pairs"]]
+
+    return {"tasks": tasks, "pairs": pairs}
 
 
 def discover_tasks(
@@ -45,9 +56,9 @@ def discover_tasks(
     tasks = []
 
     # Load subset filter if specified
-    subset_tasks = None
+    subset_data = None
     if subset:
-        subset_tasks = set(load_subset(subset))
+        subset_data = load_subset(subset)
 
     for repo_dir in sorted(dataset_dir.iterdir()):
         if not repo_dir.is_dir() or repo_dir.name == "README.md":
@@ -64,7 +75,8 @@ def discover_tasks(
                 continue
 
             # Filter by subset if specified
-            if subset_tasks and (repo_dir.name, task_id) not in subset_tasks:
+            task_key = (repo_dir.name, task_id)
+            if subset_data and task_key not in subset_data["tasks"]:
                 continue
 
             feature_ids = []
@@ -77,6 +89,7 @@ def discover_tasks(
                 continue
 
             if features_filter:
+                # Command-line filter takes precedence
                 if all(f in feature_ids for f in features_filter):
                     tasks.append(
                         {
@@ -85,6 +98,18 @@ def discover_tasks(
                             "features": features_filter,
                         }
                     )
+            elif subset_data and task_key in subset_data["pairs"]:
+                # Use specific pairs from subset
+                for pair in subset_data["pairs"][task_key]:
+                    f1, f2 = pair
+                    if f1 in feature_ids and f2 in feature_ids:
+                        tasks.append(
+                            {
+                                "repo": repo_dir.name,
+                                "task_id": task_id,
+                                "features": [f1, f2],
+                            }
+                        )
             else:
                 # All pairwise combinations: nC2
                 feature_ids.sort()

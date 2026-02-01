@@ -161,7 +161,7 @@ class TestDiscoverRunsInDir:
         runs = _discover_runs_in_dir(
             base_dir=tmp_path,
             setting="coop",
-            subset_tasks=None,
+            subset_data=None,
             repo_filter=None,
             task_filter=None,
             features_filter=None,
@@ -180,7 +180,7 @@ class TestDiscoverRunsInDir:
         runs = _discover_runs_in_dir(
             base_dir=tmp_path,
             setting=None,  # Should infer from result.json
-            subset_tasks=None,
+            subset_data=None,
             repo_filter=None,
             task_filter=None,
             features_filter=None,
@@ -199,7 +199,7 @@ class TestDiscoverRunsInDir:
         runs = _discover_runs_in_dir(
             base_dir=tmp_path,
             setting=None,
-            subset_tasks=None,
+            subset_data=None,
             repo_filter=None,
             task_filter=None,
             features_filter=None,
@@ -222,7 +222,7 @@ class TestDiscoverRunsInDir:
         runs = _discover_runs_in_dir(
             base_dir=tmp_path,
             setting="coop",
-            subset_tasks=None,
+            subset_data=None,
             repo_filter=None,
             task_filter=None,
             features_filter=None,
@@ -250,7 +250,7 @@ class TestDiscoverRunsInDir:
         runs = _discover_runs_in_dir(
             base_dir=tmp_path,
             setting="coop",
-            subset_tasks=None,
+            subset_data=None,
             repo_filter=None,
             task_filter=None,
             features_filter=None,
@@ -271,7 +271,7 @@ class TestDiscoverRunsInDir:
         runs = _discover_runs_in_dir(
             base_dir=tmp_path,
             setting="coop",
-            subset_tasks=None,
+            subset_data=None,
             repo_filter=None,
             task_filter=None,
             features_filter=None,

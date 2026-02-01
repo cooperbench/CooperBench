@@ -35,9 +35,9 @@ def discover_runs(
         return runs
 
     # Load subset filter if specified
-    subset_tasks = None
+    subset_data = None
     if subset:
-        subset_tasks = set(load_subset(subset))
+        subset_data = load_subset(subset)
 
     # Check for new structure (solo/, coop/)
     for setting in ["solo", "coop"]:
@@ -47,7 +47,7 @@ def discover_runs(
                 _discover_runs_in_dir(
                     setting_dir,
                     setting=setting,
-                    subset_tasks=subset_tasks,
+                    subset_data=subset_data,
                     repo_filter=repo_filter,
                     task_filter=task_filter,
                     features_filter=features_filter,
@@ -60,7 +60,7 @@ def discover_runs(
             _discover_runs_in_dir(
                 log_dir,
                 setting=None,  # Will be inferred from result.json
-                subset_tasks=subset_tasks,
+                subset_data=subset_data,
                 repo_filter=repo_filter,
                 task_filter=task_filter,
                 features_filter=features_filter,
@@ -73,7 +73,7 @@ def discover_runs(
 def _discover_runs_in_dir(
     base_dir: Path,
     setting: str | None,
-    subset_tasks: set | None,
+    subset_data: dict | None,
     repo_filter: str | None,
     task_filter: int | None,
     features_filter: list[int] | None,
@@ -98,7 +98,8 @@ def _discover_runs_in_dir(
                 continue
 
             # Filter by subset if specified
-            if subset_tasks and (repo_dir.name, task_id) not in subset_tasks:
+            task_key = (repo_dir.name, task_id)
+            if subset_data and task_key not in subset_data["tasks"]:
                 continue
 
             for feature_dir in sorted(task_dir.iterdir()):
@@ -117,6 +118,12 @@ def _discover_runs_in_dir(
 
                 if features_filter:
                     if set(features_filter) != set(features):
+                        continue
+
+                # Filter by specific pairs if subset specifies them
+                if subset_data and task_key in subset_data["pairs"]:
+                    pair_tuple = tuple(sorted(features))
+                    if pair_tuple not in subset_data["pairs"][task_key]:
                         continue
 
                 result_file = feature_dir / "result.json"

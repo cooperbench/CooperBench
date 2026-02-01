@@ -94,21 +94,84 @@ class TestLoadSubset:
 
     def test_lite_benchmark_split_is_stable(self):
         """Verify lite benchmark split hasn't changed - this is a frozen evaluation set."""
-        tasks = load_subset("lite")
+        subset = load_subset("lite")
+
+        # Check structure
+        assert "tasks" in subset, "Subset should have 'tasks' key"
+        assert "pairs" in subset, "Subset should have 'pairs' key"
+
+        # Expected tasks (26 tasks, 12 repos, seed=42 pair-level sampling from 652 pairs)
         expected_tasks = {
-            ("dottxt_ai_outlines_task", 1371),
+            ("dottxt_ai_outlines_task", 1655),
+            ("dottxt_ai_outlines_task", 1706),
             ("dspy_task", 8394),
+            ("dspy_task", 8587),
+            ("dspy_task", 8635),
+            ("go_chi_task", 26),
+            ("go_chi_task", 27),
             ("go_chi_task", 56),
-            ("huggingface_datasets_task", 7309),
-            ("llama_index_task", 17070),
+            ("huggingface_datasets_task", 3997),
+            ("huggingface_datasets_task", 6252),
+            ("llama_index_task", 17244),
+            ("llama_index_task", 18813),
+            ("openai_tiktoken_task", 0),
+            ("pallets_click_task", 2068),
+            ("pallets_click_task", 2800),
+            ("pallets_click_task", 2956),
+            ("pallets_jinja_task", 1465),
+            ("pallets_jinja_task", 1559),
             ("pallets_jinja_task", 1621),
             ("pillow_task", 25),
+            ("pillow_task", 68),
+            ("pillow_task", 290),
+            ("react_hook_form_task", 85),
             ("react_hook_form_task", 153),
+            ("samuelcolvin_dirty_equals_task", 43),
+            ("typst_task", 6554),
         }
-        assert set(tasks) == expected_tasks, "Lite benchmark split changed - this breaks reproducibility!"
-        # Also verify discover_tasks generates expected 100 pairs
+        assert subset["tasks"] == expected_tasks, "Lite benchmark split changed - this breaks reproducibility!"
+
+        # Check that pairs are specified for each task
+        assert len(subset["pairs"]) == 26, "All 26 tasks should have specific pairs"
+
+        # Verify discover_tasks generates expected 100 pairs
         discovered = discover_tasks(subset="lite")
         assert len(discovered) == 100, "Lite subset should generate exactly 100 feature pairs"
+
+    def test_flash_benchmark_split_is_stable(self):
+        """Verify flash benchmark split hasn't changed - this is a frozen evaluation set."""
+        subset = load_subset("flash")
+
+        # Check structure
+        assert "tasks" in subset, "Subset should have 'tasks' key"
+        assert "pairs" in subset, "Subset should have 'pairs' key"
+
+        # Flash is a 50-pair subset sampled from lite
+        assert len(subset["tasks"]) == 20, "Flash should have 20 tasks"
+        assert len(subset["pairs"]) == 20, "All 20 tasks should have specific pairs"
+
+        # Verify discover_tasks generates expected 50 pairs
+        discovered = discover_tasks(subset="flash")
+        assert len(discovered) == 50, "Flash subset should generate exactly 50 feature pairs"
+
+        # Flash should be a strict subset of lite
+        lite_subset = load_subset("lite")
+        assert subset["tasks"].issubset(lite_subset["tasks"]), "Flash tasks should be subset of lite"
+
+    def test_load_subset_returns_dict_with_pairs(self):
+        """Test that load_subset returns dict with tasks and pairs."""
+        subset = load_subset("lite")
+        assert isinstance(subset, dict)
+        assert isinstance(subset["tasks"], set)
+        assert isinstance(subset["pairs"], dict)
+        # Each pair entry should be a list of tuples
+        for task_key, pairs in subset["pairs"].items():
+            assert isinstance(task_key, tuple)
+            assert len(task_key) == 2  # (repo, task_id)
+            assert isinstance(pairs, list)
+            for pair in pairs:
+                assert isinstance(pair, tuple)
+                assert len(pair) == 2  # (f1, f2)
 
     def test_load_nonexistent_subset_raises(self):
         """Test that loading nonexistent subset raises ValueError."""

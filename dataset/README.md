@@ -65,18 +65,33 @@ Pre-defined task subsets are available in `subsets/` for quick evaluation:
 
 | Subset | Tasks | Pairs | Repos | Description |
 |--------|-------|-------|-------|-------------|
-| `lite` | 8 | 100 | 8 | Quick evaluation subset, uniform random selection |
+| `flash` | 20 | 50 | 11 | Dev subset for rapid iteration (sampled from lite) |
+| `lite` | 26 | 100 | 12 | Quick evaluation subset |
 
-The `lite` subset is generated via uniform random sampling of whole tasks (deterministic with fixed seed):
+Both subsets are generated via **uniform pair-level sampling**:
 
 ```python
-random.seed(190)  # fixed seed for reproducibility
-random.shuffle(all_tasks)
-selected = []
+random.seed(42)  # fixed seed for reproducibility
+
+# Generate all possible feature pairs from dataset
+all_pairs = []
 for task in all_tasks:
-    if total_pairs + task.num_pairs <= 100:
-        selected.append(task)
-# Result: 8 tasks, 100 pairs, 8 repos
+    for f1, f2 in combinations(task.features, 2):
+        all_pairs.append((task.repo, task.task_id, [f1, f2]))
+
+# Sample 100 pairs uniformly
+sampled_pairs = random.sample(all_pairs, 100)
+# Result: 23 tasks, 100 pairs, 11 repos
+```
+
+Each task in the subset includes a `pairs` field specifying exactly which feature pairs are included:
+
+```json
+{
+  "repo": "pallets_jinja_task",
+  "task_id": 1621,
+  "pairs": [[1, 6], [2, 9], [3, 4], ...]
+}
 ```
 
 **Usage:**
