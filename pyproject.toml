@@ -61,6 +61,7 @@ swe-agent = [
 ]
 gcp = [
     "google-cloud-batch>=0.17",
+    "google-cloud-compute>=1.0",
     "google-cloud-storage>=2.0",
 ]
 dev = [

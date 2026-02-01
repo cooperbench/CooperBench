@@ -82,6 +82,28 @@ class MiniSweAgentRunner:
             if config and config.get("git_network"):
                 env_kwargs["network"] = config["git_network"]
             env = DockerEnvironment(**env_kwargs)
+        elif backend == "gcp":
+            # Lazy import to avoid requiring google-cloud-compute package when not used
+            from cooperbench.agents.mini_swe_agent.environments.gcp import GCPEnvironment
+
+            env_kwargs = {
+                "image": image,
+                "cwd": "/workspace/repo",
+                "timeout": 3600,
+            }
+            # GCP-specific config
+            if config:
+                if config.get("project_id"):
+                    env_kwargs["project_id"] = config["project_id"]
+                if config.get("zone"):
+                    env_kwargs["zone"] = config["zone"]
+                if config.get("machine_type"):
+                    env_kwargs["machine_type"] = config["machine_type"]
+                if config.get("git_network"):
+                    env_kwargs["network"] = config["git_network"]
+                if config.get("vm_image_family"):
+                    env_kwargs["vm_image_family"] = config["vm_image_family"]
+            env = GCPEnvironment(**env_kwargs)
         else:
             env = ModalEnvironment(
                 image=image,

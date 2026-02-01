@@ -9,7 +9,7 @@ def get_environment(name: str = "modal"):
     """Get an environment by name.
 
     Args:
-        name: Environment name ("modal" or "docker")
+        name: Environment name ("modal", "docker", or "gcp")
 
     Returns:
         Environment class
@@ -21,5 +21,10 @@ def get_environment(name: str = "modal"):
         from cooperbench.agents.mini_swe_agent.environments.docker import DockerEnvironment
 
         return DockerEnvironment
+    elif name == "gcp":
+        # Lazy import to avoid requiring google-cloud-compute package when not used
+        from cooperbench.agents.mini_swe_agent.environments.gcp import GCPEnvironment
+
+        return GCPEnvironment
     else:
-        raise ValueError(f"Unknown environment: '{name}'. Available: docker, modal")
+        raise ValueError(f"Unknown environment: '{name}'. Available: docker, modal, gcp")
