@@ -40,7 +40,7 @@ def _get_global_app() -> modal.App:
     global _global_app
     with _app_lock:
         if _global_app is None:
-            _global_app = modal.App.lookup("cooperbench", create_if_missing=True)
+            _global_app = modal.App.lookup("cooperbench-v2", create_if_missing=True)
         return _global_app
 
 
@@ -69,8 +69,8 @@ def _get_or_build_image(image_name: str) -> modal.Image:
         if image_name in _image_cache:
             return _image_cache[image_name]
 
-        # Build and cache
-        image = modal.Image.from_registry(image_name).entrypoint([])
+        # Build and cache (CACHE_BUST env forces new image hash) TODO: @arpan remove this after testing
+        image = modal.Image.from_registry(image_name).entrypoint([]).env({"COOPERBENCH_CACHE": "v6"})
         _image_cache[image_name] = image
         return image
 

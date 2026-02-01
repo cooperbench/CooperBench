@@ -114,7 +114,7 @@ select = [
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
-    "UP046",  # Generic[T] style (keep for compatibility)
+    "UP046",  # PEP 695 generics not yet supported by mypy
 ]
 
 [tool.ruff.lint.isort]

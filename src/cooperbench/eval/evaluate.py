@@ -183,6 +183,7 @@ def _run_with_progress(runs: list, eval_run, concurrency: int) -> tuple:
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
+        TextColumn("[dim]{task.completed}/{task.total}[/dim]"),
         TaskProgressColumn(),
         console=console,
         transient=True,
