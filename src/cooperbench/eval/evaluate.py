@@ -9,7 +9,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 
 from cooperbench.eval.runs import discover_runs
-from cooperbench.eval.sandbox import test_merged, test_solo, _sanitize_patch
+from cooperbench.eval.sandbox import _sanitize_patch, test_merged, test_solo
 from cooperbench.utils import console
 
 
@@ -203,9 +203,7 @@ def _run_gcp_batch(runs: list[dict], parallelism: int, force: bool) -> tuple:
             }.get(status, status)
             progress.update(batch_task, description=status_text, completed=completed)
 
-        batch_results = evaluator.run_batch(
-            tasks, parallelism=parallelism, on_progress=on_progress
-        )
+        batch_results = evaluator.run_batch(tasks, parallelism=parallelism, on_progress=on_progress)
         progress.update(batch_task, completed=len(tasks))
 
     # Process results
@@ -229,7 +227,9 @@ def _run_gcp_batch(runs: list[dict], parallelism: int, force: bool) -> tuple:
             "merge": {
                 "status": batch_result.merge_status,
                 "strategy": batch_result.merge_strategy,
-            } if batch_result.setting == "coop" else None,
+            }
+            if batch_result.setting == "coop"
+            else None,
             "feature1": {
                 "passed": batch_result.feature1_passed,
                 "test_output": batch_result.feature1_output or "",

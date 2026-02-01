@@ -18,15 +18,12 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from google.cloud import batch_v1
-    from google.cloud import storage
+    pass
 
 from cooperbench.eval.backends.base import ExecResult, Sandbox
-
 
 # =============================================================================
 # Data Classes for Batch Evaluation
@@ -100,7 +97,7 @@ class GCPBatchEvaluator:
     """
 
     # The eval script that runs inside each Batch task
-    EVAL_SCRIPT = '''#!/bin/bash
+    EVAL_SCRIPT = """#!/bin/bash
 set -e
 
 # Task index from Batch
@@ -295,7 +292,7 @@ docker run --rm \
 $GSUTIL cp $WORKSPACE/result.json gs://$BUCKET_NAME/$JOB_ID/results/$TASK_INDEX/result.json
 
 echo "Task $TASK_INDEX completed"
-'''
+"""
 
     def __init__(
         self,
@@ -335,12 +332,14 @@ echo "Task $TASK_INDEX completed"
     def _get_storage_client(self):
         if self._storage_client is None:
             from google.cloud import storage
+
             self._storage_client = storage.Client(project=self._project_id)
         return self._storage_client
 
     def _get_batch_client(self):
         if self._batch_client is None:
             from google.cloud import batch_v1
+
             self._batch_client = batch_v1.BatchServiceClient()
         return self._batch_client
 
@@ -388,12 +387,8 @@ echo "Task $TASK_INDEX completed"
                 tasks_by_image.setdefault(image, []).append(task)
 
             if len(tasks_by_image) > 1:
-                self._logger.info(
-                    f"Grouping {len(tasks)} tasks into {len(tasks_by_image)} jobs by image"
-                )
-                return self._run_multiple_jobs(
-                    tasks_by_image, parallelism, timeout, on_progress
-                )
+                self._logger.info(f"Grouping {len(tasks)} tasks into {len(tasks_by_image)} jobs by image")
+                return self._run_multiple_jobs(tasks_by_image, parallelism, timeout, on_progress)
 
         # Single image or grouping disabled - run as single job
         return self._run_single_job(tasks, parallelism, timeout, on_progress)
@@ -480,9 +475,7 @@ echo "Task $TASK_INDEX completed"
             for image, tasks in tasks_by_image.items():
                 # Each job gets parallelism proportional to its task count
                 job_parallelism = min(parallelism, len(tasks))
-                future = executor.submit(
-                    self._run_single_job, tasks, job_parallelism, timeout, None
-                )
+                future = executor.submit(self._run_single_job, tasks, job_parallelism, timeout, None)
                 futures[future] = (image, tasks)
 
             # Collect results as jobs complete
@@ -498,17 +491,19 @@ echo "Task $TASK_INDEX completed"
                     self._logger.error(f"Job for {image} failed: {e}")
                     # Add error results for failed tasks
                     for task in tasks:
-                        all_results.append(EvalResult(
-                            task_index=task.task_index,
-                            repo_name=task.repo_name,
-                            task_id=task.task_id,
-                            features=[task.feature1_id, task.feature2_id],
-                            setting=task.setting,
-                            feature1_passed=False,
-                            feature2_passed=False,
-                            both_passed=False,
-                            error=str(e),
-                        ))
+                        all_results.append(
+                            EvalResult(
+                                task_index=task.task_index,
+                                repo_name=task.repo_name,
+                                task_id=task.task_id,
+                                features=[task.feature1_id, task.feature2_id],
+                                setting=task.setting,
+                                feature1_passed=False,
+                                feature2_passed=False,
+                                both_passed=False,
+                                error=str(e),
+                            )
+                        )
                     completed += len(tasks)
 
         # Sort results by original task_index
@@ -528,15 +523,17 @@ echo "Task $TASK_INDEX completed"
 
         for task in tasks:
             image = get_image_name(task.repo_name, task.task_id)
-            manifest["tasks"].append({
-                "task_index": task.task_index,
-                "repo_name": task.repo_name,
-                "task_id": task.task_id,
-                "feature1_id": task.feature1_id,
-                "feature2_id": task.feature2_id,
-                "setting": task.setting,
-                "image": image,
-            })
+            manifest["tasks"].append(
+                {
+                    "task_index": task.task_index,
+                    "repo_name": task.repo_name,
+                    "task_id": task.task_id,
+                    "feature1_id": task.feature1_id,
+                    "feature2_id": task.feature2_id,
+                    "setting": task.setting,
+                    "image": image,
+                }
+            )
 
             # Upload patches (ensure proper newline endings)
             prefix = f"{job_id}/tasks/{task.task_index}"
@@ -683,7 +680,9 @@ echo "Task $TASK_INDEX completed"
                 self._logger.info("Job completed successfully")
                 return
             elif state == batch_v1.JobStatus.State.FAILED:
-                raise RuntimeError(f"Job failed: {job.status.status_events[-1].description if job.status.status_events else 'unknown'}")
+                raise RuntimeError(
+                    f"Job failed: {job.status.status_events[-1].description if job.status.status_events else 'unknown'}"
+                )
 
             time.sleep(10)
 
@@ -698,23 +697,40 @@ echo "Task $TASK_INDEX completed"
             try:
                 if result_blob.exists():
                     data = json.loads(result_blob.download_as_text())
-                    results.append(EvalResult(
-                        task_index=task.task_index,
-                        repo_name=task.repo_name,
-                        task_id=task.task_id,
-                        features=[task.feature1_id, task.feature2_id],
-                        setting=task.setting,
-                        feature1_passed=data.get("feature1_passed", False),
-                        feature2_passed=data.get("feature2_passed", False),
-                        both_passed=data.get("feature1_passed", False) and data.get("feature2_passed", False),
-                        merge_status=data.get("merge_status"),
-                        merge_strategy=data.get("merge_strategy"),
-                        error=data.get("error"),
-                        feature1_output=data.get("feature1_output", ""),
-                        feature2_output=data.get("feature2_output", ""),
-                    ))
+                    results.append(
+                        EvalResult(
+                            task_index=task.task_index,
+                            repo_name=task.repo_name,
+                            task_id=task.task_id,
+                            features=[task.feature1_id, task.feature2_id],
+                            setting=task.setting,
+                            feature1_passed=data.get("feature1_passed", False),
+                            feature2_passed=data.get("feature2_passed", False),
+                            both_passed=data.get("feature1_passed", False) and data.get("feature2_passed", False),
+                            merge_status=data.get("merge_status"),
+                            merge_strategy=data.get("merge_strategy"),
+                            error=data.get("error"),
+                            feature1_output=data.get("feature1_output", ""),
+                            feature2_output=data.get("feature2_output", ""),
+                        )
+                    )
                 else:
-                    results.append(EvalResult(
+                    results.append(
+                        EvalResult(
+                            task_index=task.task_index,
+                            repo_name=task.repo_name,
+                            task_id=task.task_id,
+                            features=[task.feature1_id, task.feature2_id],
+                            setting=task.setting,
+                            feature1_passed=False,
+                            feature2_passed=False,
+                            both_passed=False,
+                            error="Result not found",
+                        )
+                    )
+            except Exception as e:
+                results.append(
+                    EvalResult(
                         task_index=task.task_index,
                         repo_name=task.repo_name,
                         task_id=task.task_id,
@@ -723,20 +739,9 @@ echo "Task $TASK_INDEX completed"
                         feature1_passed=False,
                         feature2_passed=False,
                         both_passed=False,
-                        error="Result not found",
-                    ))
-            except Exception as e:
-                results.append(EvalResult(
-                    task_index=task.task_index,
-                    repo_name=task.repo_name,
-                    task_id=task.task_id,
-                    features=[task.feature1_id, task.feature2_id],
-                    setting=task.setting,
-                    feature1_passed=False,
-                    feature2_passed=False,
-                    both_passed=False,
-                    error=str(e),
-                ))
+                        error=str(e),
+                    )
+                )
 
         return results
 
@@ -811,12 +816,14 @@ class GCPBatchSandbox:
     def _get_batch_client(self):
         if self._batch_client is None:
             from google.cloud import batch_v1
+
             self._batch_client = batch_v1.BatchServiceClient()
         return self._batch_client
 
     def _get_storage_client(self):
         if self._storage_client is None:
             from google.cloud import storage
+
             self._storage_client = storage.Client(project=self._project_id)
         return self._storage_client
 
@@ -832,6 +839,7 @@ class GCPBatchSandbox:
 
         # Escape command
         import base64
+
         command_json = json.dumps(list(args))
         command_b64 = base64.b64encode(command_json.encode()).decode()
 
@@ -922,12 +930,20 @@ exit 0
         time.sleep(1)
 
         try:
-            stdout = bucket.blob(f"{prefix}/stdout.txt").download_as_text() if bucket.blob(f"{prefix}/stdout.txt").exists() else ""
+            stdout = (
+                bucket.blob(f"{prefix}/stdout.txt").download_as_text()
+                if bucket.blob(f"{prefix}/stdout.txt").exists()
+                else ""
+            )
         except Exception:
             stdout = ""
 
         try:
-            stderr = bucket.blob(f"{prefix}/stderr.txt").download_as_text() if bucket.blob(f"{prefix}/stderr.txt").exists() else ""
+            stderr = (
+                bucket.blob(f"{prefix}/stderr.txt").download_as_text()
+                if bucket.blob(f"{prefix}/stderr.txt").exists()
+                else ""
+            )
         except Exception:
             stderr = ""
 
@@ -990,6 +1006,7 @@ class GCPBatchBackend:
     def _get_storage_client(self):
         if self._storage_client is None:
             from google.cloud import storage
+
             self._storage_client = storage.Client(project=self._project_id)
         return self._storage_client
 
