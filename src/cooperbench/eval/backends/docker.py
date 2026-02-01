@@ -1,5 +1,7 @@
 """Docker backend for evaluation."""
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
 import docker
 from docker.models.containers import Container
 
@@ -28,17 +30,29 @@ class DockerExecResult:
 class DockerSandbox:
     """Docker container sandbox wrapper."""
 
-    def __init__(self, container: Container, workdir: str):
+    def __init__(self, container: Container, workdir: str, timeout: int = 600):
         self._container = container
         self._workdir = workdir
+        self._timeout = timeout
 
     def exec(self, *args: str) -> ExecResult:
-        """Execute a command in the container."""
-        exit_code, output = self._container.exec_run(
-            cmd=list(args),
-            workdir=self._workdir,
-            demux=False,
-        )
+        """Execute a command in the container with timeout support."""
+
+        def _run_exec():
+            return self._container.exec_run(
+                cmd=list(args),
+                workdir=self._workdir,
+                demux=False,
+            )
+
+        # Use ThreadPoolExecutor to enforce timeout on exec_run
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_run_exec)
+            try:
+                exit_code, output = future.result(timeout=self._timeout)
+            except FuturesTimeoutError:
+                return DockerExecResult(-1, f"Command timed out after {self._timeout} seconds".encode())
+
         return DockerExecResult(exit_code, output or b"")
 
     def terminate(self) -> None:
@@ -85,7 +99,7 @@ class DockerBackend:
             stop_signal="SIGTERM",
         )
 
-        sandbox = DockerSandbox(container, workdir)
+        sandbox = DockerSandbox(container, workdir, timeout)
 
         # Create patches directory
         sandbox.exec("mkdir", "-p", "/patches")

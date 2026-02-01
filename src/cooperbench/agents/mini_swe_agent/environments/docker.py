@@ -2,6 +2,7 @@
 
 import logging
 import platform
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Any
 
 import docker
@@ -72,7 +73,7 @@ class DockerEnvironment:
         }
 
     def execute(self, command: str, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]:
-        """Execute a command in the Docker container."""
+        """Execute a command in the Docker container with timeout support."""
         cwd = cwd or self.config.cwd
         exec_timeout = timeout or self.config.timeout
 
@@ -85,13 +86,23 @@ class DockerEnvironment:
         # Build the command with cd
         full_command = f"cd {cwd} && {command}"
 
-        try:
-            exit_code, output = self.container.exec_run(
+        def _run_exec():
+            return self.container.exec_run(
                 cmd=["bash", "-lc", full_command],
                 workdir=cwd,
                 demux=False,
                 environment=self.config.env,
             )
+
+        try:
+            # Use ThreadPoolExecutor to enforce timeout on exec_run
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_run_exec)
+                try:
+                    exit_code, output = future.result(timeout=exec_timeout)
+                except FuturesTimeoutError:
+                    self.logger.warning(f"Command timed out after {exec_timeout}s: {command[:100]}")
+                    return {"output": f"Command timed out after {exec_timeout} seconds", "returncode": -1}
 
             output_str = output.decode("utf-8", errors="replace") if output else ""
             return {"output": output_str, "returncode": exit_code}

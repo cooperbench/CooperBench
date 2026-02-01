@@ -4,14 +4,18 @@ This adapter wraps the mini-swe-agent framework to conform to the
 AgentRunner interface used by CooperBench.
 """
 
+from typing import TYPE_CHECKING
+
 import yaml
 
 from cooperbench.agents import AgentResult
+
+if TYPE_CHECKING:
+    from cooperbench.agents.mini_swe_agent.environments.docker import DockerEnvironment
 from cooperbench.agents.mini_swe_agent.agents.default import DefaultAgent
 from cooperbench.agents.mini_swe_agent.config import get_config_path
 from cooperbench.agents.mini_swe_agent.connectors.git import GitConnector
 from cooperbench.agents.mini_swe_agent.connectors.messaging import MessagingConnector
-from cooperbench.agents.mini_swe_agent.environments.docker import DockerEnvironment
 from cooperbench.agents.mini_swe_agent.environments.modal import ModalEnvironment
 from cooperbench.agents.mini_swe_agent.models.litellm_model import LitellmModel
 from cooperbench.agents.registry import register
@@ -66,6 +70,9 @@ class MiniSweAgentRunner:
 
         # Create sandbox environment based on backend
         if backend == "docker":
+            # Lazy import to avoid requiring docker package when not used
+            from cooperbench.agents.mini_swe_agent.environments.docker import DockerEnvironment
+
             env = DockerEnvironment(
                 image=image,
                 cwd="/workspace/repo",
@@ -139,7 +146,7 @@ class MiniSweAgentRunner:
             error=error_msg,
         )
 
-    def _get_patch(self, env: ModalEnvironment | DockerEnvironment, base_commit: str) -> str:
+    def _get_patch(self, env: "ModalEnvironment | DockerEnvironment", base_commit: str) -> str:
         """Extract git diff from base commit to current working tree state."""
         try:
             # Single diff from base commit to working tree (includes both
