@@ -29,7 +29,10 @@ def execute_solo(
 
     if result_file.exists() and not force:
         with open(result_file) as f:
-            return {"skipped": True, **json.load(f)}
+            prev_result = json.load(f)
+        # Re-run if previous result was an error
+        if prev_result.get("agent", {}).get("status") != "Error":
+            return {"skipped": True, **prev_result}
 
     try:
         result = _spawn_solo_agent(

@@ -39,7 +39,11 @@ def execute_coop(
 
     if result_file.exists() and not force:
         with open(result_file) as f:
-            return {"skipped": True, **json.load(f)}
+            prev_result = json.load(f)
+        # Re-run if any agent had an error
+        agents_had_error = any(a.get("status") == "Error" for a in prev_result.get("agents", {}).values())
+        if not agents_had_error:
+            return {"skipped": True, **prev_result}
 
     namespaced_redis = f"{redis_url}#run:{run_id}"
 
