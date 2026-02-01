@@ -176,6 +176,7 @@ def run(
 
     # Get aggregate totals from all result.json files (includes previous sessions)
     from cooperbench.utils import get_run_totals
+
     run_totals = get_run_totals(run_name, setting)
 
     # Use session time if no skipped (exact), otherwise aggregate (approximate)
