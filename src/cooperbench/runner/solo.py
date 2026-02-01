@@ -108,6 +108,7 @@ def execute_solo(
         },
         "total_cost": result.get("cost", 0),
         "total_steps": result.get("steps", 0),
+        "log_dir": str(log_dir),
     }
 
     with open(log_dir / "result.json", "w") as f:

@@ -1,11 +1,14 @@
 FROM golang:1.21-alpine
 
-# Install system dependencies
+# Install system dependencies (including Python for Modal compatibility)
 RUN apk add --no-cache \
     git \
     curl \
     wget \
-    bash
+    bash \
+    python3 \
+    py3-pip && \
+    rm -f /usr/lib/python*/EXTERNALLY-MANAGED
 
 # Clone the repository and checkout the specific commit
 WORKDIR /workspace

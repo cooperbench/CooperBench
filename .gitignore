@@ -38,7 +38,7 @@ htmlcov/
 site/
 
 # Logs and runtime
-logs/
+logs*/
 *.log
 cooperbench_results.xlsx
 
