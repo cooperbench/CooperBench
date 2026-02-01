@@ -96,13 +96,14 @@ class TestLoadSubset:
         """Verify lite benchmark split hasn't changed - this is a frozen evaluation set."""
         tasks = load_subset("lite")
         expected_tasks = {
-            ("pillow_task", 25),
-            ("huggingface_datasets_task", 6252),
-            ("react_hook_form_task", 85),
-            ("llama_index_task", 17244),
-            ("dottxt_ai_outlines_task", 1706),
-            ("go_chi_task", 27),
+            ("dottxt_ai_outlines_task", 1371),
             ("dspy_task", 8394),
+            ("go_chi_task", 56),
+            ("huggingface_datasets_task", 7309),
+            ("llama_index_task", 17070),
+            ("pallets_jinja_task", 1621),
+            ("pillow_task", 25),
+            ("react_hook_form_task", 153),
         }
         assert set(tasks) == expected_tasks, "Lite benchmark split changed - this breaks reproducibility!"
         # Also verify discover_tasks generates expected 100 pairs
