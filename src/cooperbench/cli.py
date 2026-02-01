@@ -130,9 +130,9 @@ def main():
     )
     run_parser.add_argument(
         "--backend",
-        choices=["modal", "docker"],
+        choices=["modal", "docker", "gcp"],
         default="modal",
-        help="Execution backend: modal (cloud) or docker (local) (default: modal)",
+        help="Execution backend: modal (cloud), docker (local), or gcp (GCP VM) (default: modal)",
     )
 
     # === eval command ===
