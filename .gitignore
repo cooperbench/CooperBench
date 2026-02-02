@@ -41,6 +41,7 @@ site/
 logs*/
 *.log
 cooperbench_results.xlsx
+generated/
 
 # Cache
 .cooperbench_cache/
