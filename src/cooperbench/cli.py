@@ -16,7 +16,7 @@ import litellm
 
 litellm.suppress_debug_info = True  # Suppress "Give Feedback / Get Help" print messages on errors
 
-from cooperbench.utils import clean_model_name
+from cooperbench.utils import clean_model_name  # noqa: E402
 
 
 def _generate_run_name(
