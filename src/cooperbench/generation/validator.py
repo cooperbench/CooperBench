@@ -4,8 +4,8 @@ import re
 from pathlib import Path
 
 from cooperbench.eval.backends import get_backend
-from cooperbench.utils import get_image_name
 from cooperbench.eval.sandbox import _parse_results, _write_patch
+from cooperbench.utils import get_image_name
 
 
 def _extract_feature_title(feature_md_path: Path) -> str | None:
@@ -103,11 +103,13 @@ def check_conflicts_in_sandbox(
                 conflicts.append(fid)
                 # Get title from feature_titles we extracted earlier
                 title = feature_titles.get(fid, f"Feature {fid}")
-                conflicts_info.append({
-                    "id": fid,
-                    "title": title,
-                    "conflict_diff": "\n".join(conflict_content),
-                })
+                conflicts_info.append(
+                    {
+                        "id": fid,
+                        "title": title,
+                        "conflict_diff": "\n".join(conflict_content),
+                    }
+                )
             elif line.startswith("CLEAN:"):
                 # Format: CLEAN:fid
                 fid = int(line.split(":")[1].strip())
@@ -155,6 +157,7 @@ def run_tests_in_sandbox(
         Dict with: passed, tests_passed, tests_failed, output, error
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     image = get_image_name(repo_name, task_id)
@@ -179,9 +182,13 @@ def run_tests_in_sandbox(
         # Use runner.sh with: tests.patch feature.patch [test_path]
         # - Old images: 3rd param ignored, runs default tests
         # - New images: runs the specific new test files
+        # NOTE: We use bash -c to allow shell word splitting on test_path.
+        # Passing test_path directly as an argument would treat the space-separated
+        # specs as a single argument, which pytest can't parse.
         if test_path:
-            logger.debug(f"Running: bash /usr/local/bin/runner.sh tests.patch feature.patch {test_path}")
-            result = sb.exec("bash", "/usr/local/bin/runner.sh", "tests.patch", "feature.patch", test_path)
+            cmd = f"bash /usr/local/bin/runner.sh tests.patch feature.patch {test_path}"
+            logger.debug(f"Running: {cmd}")
+            result = sb.exec("bash", "-c", cmd)
         else:
             logger.debug("Running: bash /usr/local/bin/runner.sh tests.patch feature.patch")
             result = sb.exec("bash", "/usr/local/bin/runner.sh", "tests.patch", "feature.patch")
@@ -215,6 +222,7 @@ def run_tests_in_sandbox(
 def _extract_test_files_from_patch(patch: str) -> list[str]:
     """Extract new/modified file paths from a patch."""
     import re
+
     files = []
     for match in re.finditer(r"^\+\+\+ b/(.+)$", patch, re.MULTILINE):
         path = match.group(1)
@@ -335,6 +343,7 @@ def _build_conflict_check_script(feature_ids: list[int], feature_titles: dict[in
     3. Try git merge --no-commit from A
     4. Check if merge has conflicts (git merge --abort needed)
     """
+
     def _build_feature_check(fid: int, title: str) -> str:
         # Escape title for shell - replace : with space to avoid parsing issues
         safe_title = title.replace(":", " -").replace("'", "\\'").replace('"', '\\"')
@@ -393,11 +402,10 @@ git branch -D __new_{fid} 2>/dev/null || true
 '''
 
     feature_checks = "\n".join(
-        _build_feature_check(fid, feature_titles.get(fid, f"Feature {fid}"))
-        for fid in feature_ids
+        _build_feature_check(fid, feature_titles.get(fid, f"Feature {fid}")) for fid in feature_ids
     )
 
-    return f'''
+    return f"""
 cd /workspace/repo
 
 # Get base commit
@@ -416,7 +424,7 @@ git config user.name "Test" 2>/dev/null || true
 # Final cleanup
 git checkout --quiet $BASE_SHA 2>/dev/null || true
 git reset --hard HEAD >/dev/null 2>&1
-'''
+"""
 
 
 def _get_existing_feature_ids(task_dir: Path) -> list[int]:

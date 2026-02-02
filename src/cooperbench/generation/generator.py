@@ -197,6 +197,7 @@ def generate_feature(
             # Save full trajectory to file if debug mode or output_dir specified
             if debug or output_dir:
                 import re as re_module
+
                 save_dir = output_dir or Path(".")
                 save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -217,7 +218,7 @@ def generate_feature(
                 # Also save a human-readable version
                 readable_file = save_dir / f"trajectory_{repo_name}_{task_id}.txt"
                 with open(readable_file, "w") as f:
-                    f.write(f"=== Agent Trajectory ===\n")
+                    f.write("=== Agent Trajectory ===\n")
                     f.write(f"Task: {repo_name}/task{task_id}\n")
                     f.write(f"Model: {model_name}\n")
                     f.write(f"Steps: {agent_steps}, Cost: ${agent_cost:.4f}\n")
@@ -226,15 +227,16 @@ def generate_feature(
                     for i, msg in enumerate(result.messages):
                         role = msg.get("role", "?").upper()
                         content = msg.get("content", "")
-                        f.write(f"\n{'='*60}\n")
+                        f.write(f"\n{'=' * 60}\n")
                         f.write(f"[{i}] {role}\n")
-                        f.write(f"{'='*60}\n")
+                        f.write(f"{'=' * 60}\n")
                         f.write(content)
                         f.write("\n")
                 logger.info(f"Saved readable trajectory to: {readable_file}")
 
             # Log summary to console
             import re as re_module
+
             for i, msg in enumerate(result.messages):
                 role = msg.get("role", "?")
                 content = msg.get("content", "")[:500]
@@ -340,7 +342,9 @@ def generate_feature(
                 errors.append(f"Test error: {test_result['error']}")
 
             if not tests_passed:
-                errors.append(f"Tests failed: {test_result['tests_failed']} failed, {test_result['tests_passed']} passed")
+                errors.append(
+                    f"Tests failed: {test_result['tests_failed']} failed, {test_result['tests_passed']} passed"
+                )
                 logger.warning(f"Tests failed: {test_result['tests_failed']} failed")
             else:
                 logger.info(f"Tests passed: {test_result['tests_passed']} passed")
@@ -433,8 +437,8 @@ def generate_features_batch(
     """
     import hashlib
     import re as re_module
-    import tempfile
     import shutil
+    import tempfile
 
     def make_feature_dir(base_dir: Path, feature_md: str | None, attempt_num: int) -> Path:
         """Create output directory named after the feature title + short hash."""

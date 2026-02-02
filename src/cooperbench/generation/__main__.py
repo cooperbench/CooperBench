@@ -111,7 +111,7 @@ Examples:
     # Parse repo_name and task_id from path
     parts = args.task.split("/")
     if len(parts) != 2:
-        logger.error(f"Invalid task path format. Expected: repo_name/taskID (e.g., dspy_task/task8394)")
+        logger.error("Invalid task path format. Expected: repo_name/taskID (e.g., dspy_task/task8394)")
         sys.exit(1)
 
     repo_name = parts[0]
@@ -120,6 +120,7 @@ Examples:
     # Mode 0: List features
     if args.list_features:
         from cooperbench.generation.prompt import list_features
+
         features = list_features(task_dir)
         print(f"Features in {args.task}: {features}")
         return
@@ -127,6 +128,7 @@ Examples:
     # Mode 1: Prompt only
     if args.prompt_only:
         from cooperbench.generation.prompt import build_prompt
+
         prompt = build_prompt(task_dir, feature_id=args.feature)
         print(prompt)
         return
@@ -152,9 +154,10 @@ Examples:
         sys.exit(0 if result["valid"] else 1)
 
     # Mode 3: Generate features
-    from cooperbench.generation.generator import generate_feature, generate_features_batch
     import hashlib
     import re as re_module
+
+    from cooperbench.generation.generator import generate_feature, generate_features_batch
 
     def make_output_dir(base_dir: Path, feature_md: str | None, fallback_hash: str) -> Path:
         """Create output directory named after the feature title + short hash."""
@@ -185,6 +188,7 @@ Examples:
 
         # Generate first (to temp location for trajectory)
         import tempfile
+
         temp_dir = Path(tempfile.mkdtemp())
 
         result = generate_feature(
@@ -200,12 +204,14 @@ Examples:
 
         # Create final output dir based on feature title
         from datetime import datetime
+
         fallback = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = make_output_dir(base_output_dir, result.feature_md, fallback)
         logger.info(f"Output directory: {output_dir}")
 
         # Move trajectory files from temp to final
         import shutil
+
         for f in temp_dir.glob("trajectory_*"):
             shutil.move(str(f), output_dir / f.name)
 
@@ -213,31 +219,33 @@ Examples:
         if result.feature_patch:
             patch = result.feature_patch.rstrip() + "\n"
             (output_dir / "feature.patch").write_text(patch)
-            logger.info(f"Saved feature.patch")
+            logger.info("Saved feature.patch")
         if result.tests_patch:
             patch = result.tests_patch.rstrip() + "\n"
             (output_dir / "tests.patch").write_text(patch)
-            logger.info(f"Saved tests.patch")
+            logger.info("Saved tests.patch")
         if result.feature_md:
             (output_dir / "feature.md").write_text(result.feature_md)
-            logger.info(f"Saved feature.md")
+            logger.info("Saved feature.md")
 
         # Save full result as JSON
         (output_dir / "result.json").write_text(json.dumps(result.to_dict(), indent=2, default=str))
-        logger.info(f"Saved result.json")
+        logger.info("Saved result.json")
 
         # Print summary
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Result: {'SUCCESS' if result.success else 'FAILED'}")
         print(f"Output saved to: {output_dir}")
         if result.errors:
             print(f"Errors: {result.errors}")
         print(f"Agent: {result.agent_steps} steps, ${result.agent_cost:.4f}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         sys.exit(0 if result.success else 1)
     else:
-        logger.info(f"Running {args.attempts} generation attempts for {args.task} (target: feature {args.feature or 'first'})")
+        logger.info(
+            f"Running {args.attempts} generation attempts for {args.task} (target: feature {args.feature or 'first'})"
+        )
         logger.info(f"Output directory: {base_output_dir}")
 
         results = generate_features_batch(
@@ -254,7 +262,7 @@ Examples:
 
         # Summary
         successful = sum(1 for r in results if r.success)
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Summary: {successful}/{args.attempts} successful")
         print(f"Output saved to: {base_output_dir}")
 
@@ -262,7 +270,7 @@ Examples:
             status = "✓" if r.success else "✗"
             print(f"  {status} Attempt {i}: {r.errors or 'OK'}")
 
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         sys.exit(0 if successful > 0 else 1)
 
 

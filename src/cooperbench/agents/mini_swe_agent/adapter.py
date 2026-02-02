@@ -180,10 +180,16 @@ class MiniSweAgentRunner:
     def _get_patch(self, env: "ModalEnvironment | DockerEnvironment", base_commit: str) -> str:
         """Extract git diff from base commit to current working tree state."""
         try:
-            # Stage all changes (including new untracked files) so they appear in diff
+            # Stage all changes (including new untracked files)
             env.execute("git add -A", timeout=10)
-            # Diff from base commit to staged changes (includes new files)
-            result = env.execute(f"git diff --cached {base_commit}", timeout=30)
+            # Configure git identity (required for commit in fresh sandbox environments)
+            env.execute("git config user.email 'agent@cooperbench.local'", timeout=10)
+            env.execute("git config user.name 'CooperBench Agent'", timeout=10)
+            # Commit everything so committed + staged + unstaged changes are all in HEAD
+            # This ensures we capture changes even if the agent made commits
+            env.execute("git commit --allow-empty -m 'Agent changes'", timeout=10)
+            # Diff from base commit to HEAD captures all changes
+            result = env.execute(f"git diff {base_commit} HEAD", timeout=30)
             return result.get("output", "").strip()
         except Exception:
             return ""

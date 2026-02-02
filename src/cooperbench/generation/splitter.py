@@ -20,8 +20,8 @@ DEFAULT_TEST_PATTERNS = [
 
 # Files to exclude from patches (agent helper scripts, junk files)
 JUNK_FILE_PATTERNS = [
-    "fix_",           # Helper scripts like fix_parquet.py
-    "temp_",          # Temporary files
+    "fix_",  # Helper scripts like fix_parquet.py
+    "temp_",  # Temporary files
     "tmp_",
     "debug_",
     "scratch_",
@@ -175,7 +175,7 @@ def extract_feature_description(agent_output: str) -> str | None:
 
     # Clean up any markdown code block wrappers
     if description.startswith("```markdown"):
-        description = description[len("```markdown"):].strip()
+        description = description[len("```markdown") :].strip()
     if description.startswith("```"):
         description = description[3:].strip()
     if description.endswith("```"):

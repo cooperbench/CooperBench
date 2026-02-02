@@ -22,12 +22,14 @@ def _extract_patch_info(patch_path: Path) -> dict:
             "hunks": [],
         }
         for hunk in patched_file:
-            file_info["hunks"].append({
-                "source_start": hunk.source_start,
-                "source_length": hunk.source_length,
-                "target_start": hunk.target_start,
-                "target_length": hunk.target_length,
-            })
+            file_info["hunks"].append(
+                {
+                    "source_start": hunk.source_start,
+                    "source_length": hunk.source_length,
+                    "target_start": hunk.target_start,
+                    "target_length": hunk.target_length,
+                }
+            )
         files_info.append(file_info)
 
     return {"files": files_info, "raw": content}
@@ -39,6 +41,23 @@ def _read_feature_md(feature_dir: Path) -> str:
     if feature_md.exists():
         return feature_md.read_text()
     return ""
+
+
+def _extract_feature_title(feature_md_content: str) -> str | None:
+    """Extract just the title from feature.md content."""
+    import re
+
+    # Look for **Title**: pattern
+    match = re.search(r"\*\*Title\*\*:\s*(.+?)(?:\n|$)", feature_md_content)
+    if match:
+        return match.group(1).strip()
+
+    # Fallback: look for # Title or ## Title
+    match = re.search(r"^#+ (.+?)$", feature_md_content, re.MULTILINE)
+    if match:
+        return match.group(1).strip()
+
+    return None
 
 
 def _get_feature_info(task_dir: Path, feature_id: int) -> dict | None:
@@ -150,13 +169,13 @@ def _format_code_snippet(patch_content: str, max_lines: int = 80) -> str:
         return patch_content
 
     # Take first half and last quarter
-    first_part = lines[:max_lines // 2]
-    last_part = lines[-(max_lines // 4):]
+    first_part = lines[: max_lines // 2]
+    last_part = lines[-(max_lines // 4) :]
 
     return "\n".join(first_part) + "\n\n... (truncated) ...\n\n" + "\n".join(last_part)
 
 
-GENERATION_PROMPT_TEMPLATE = '''Create a NEW feature that will CONFLICT with an existing feature during git merge.
+GENERATION_PROMPT_TEMPLATE = """Create a NEW feature that will CONFLICT with an existing feature during git merge.
 
 ## Existing Feature (your feature must conflict with this)
 
@@ -168,7 +187,7 @@ GENERATION_PROMPT_TEMPLATE = '''Create a NEW feature that will CONFLICT with an 
 ```diff
 {code_snippet}
 ```
-
+{other_features_section}
 ## Requirements
 
 Your new feature must:
@@ -220,7 +239,7 @@ FEATURE_EOF
 This file is required for the submission to be valid. Create it right before you submit.
 
 Start by exploring the modified files to understand the code structure.
-'''
+"""
 
 
 def build_prompt(task_dir: Path, feature_id: int | None = None) -> str:
@@ -270,7 +289,7 @@ def build_prompt(task_dir: Path, feature_id: int | None = None) -> str:
 
     # Format hot lines
     if hot_lines:
-        hot_lines_str = ", ".join(str(l) for l in sorted(set(hot_lines))[:5])
+        hot_lines_str = ", ".join(str(line) for line in sorted(set(hot_lines))[:5])
     else:
         hot_lines_str = "the modified sections"
 
@@ -285,6 +304,29 @@ def build_prompt(task_dir: Path, feature_id: int | None = None) -> str:
     test_command = _get_test_command(task_dir)
     test_file = _extract_test_file(test_command)
 
+    # Collect titles from other features (to avoid duplicates)
+    other_features_section = ""
+    other_ids = [fid for fid in existing_ids if fid != feature_id]
+    if other_ids:
+        other_titles = []
+        for fid in other_ids:
+            feature_dir = task_dir / f"feature{fid}"
+            md_content = _read_feature_md(feature_dir)
+            title = _extract_feature_title(md_content) if md_content else None
+            if title:
+                other_titles.append(f'- Feature {fid}: "{title}"')
+            else:
+                other_titles.append(f"- Feature {fid}: (no title)")
+
+        if other_titles:
+            other_features_section = (
+                "\n## Other Existing Features\n\n"
+                "The following features already exist in this task. "
+                "Make sure your proposed feature is different but compatible with these. \n"
+                + "\n".join(other_titles)
+                + "\n"
+            )
+
     # Build final prompt
     prompt = GENERATION_PROMPT_TEMPLATE.format(
         feature_description=feature_description,
@@ -293,6 +335,7 @@ def build_prompt(task_dir: Path, feature_id: int | None = None) -> str:
         hot_lines=hot_lines_str,
         test_command=test_command,
         test_file=test_file,
+        other_features_section=other_features_section,
     )
 
     return prompt
