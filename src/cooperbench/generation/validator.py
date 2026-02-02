@@ -61,6 +61,13 @@ def check_conflicts_in_sandbox(
         # Write the new patch to sandbox
         _write_patch(sb, "new_feature.patch", new_feature_patch)
 
+        # Extract feature titles for commit messages
+        feature_titles = {}
+        for fid in existing_feature_ids:
+            feature_md_path = task_dir / f"feature{fid}" / "feature.md"
+            title = _extract_feature_title(feature_md_path)
+            feature_titles[fid] = title or f"Feature {fid}"
+
         # Write existing feature patches
         for fid in existing_feature_ids:
             feature_patch_path = task_dir / f"feature{fid}" / "feature.patch"
@@ -69,8 +76,7 @@ def check_conflicts_in_sandbox(
                 _write_patch(sb, f"feature{fid}.patch", content)
 
         # Run conflict checking script
-        feature_ids_str = " ".join(str(fid) for fid in existing_feature_ids)
-        script = _build_conflict_check_script(existing_feature_ids)
+        script = _build_conflict_check_script(existing_feature_ids, feature_titles)
 
         result = sb.exec("bash", "-c", script)
         output = result.stdout_read() + result.stderr_read()
@@ -81,22 +87,34 @@ def check_conflicts_in_sandbox(
         clean = []
         errors = []
 
-        for line in output.split("\n"):
-            if line.startswith("CONFLICT:"):
+        # Parse output line by line, capturing conflict content
+        lines = output.split("\n")
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if line.startswith("CONFLICT_START:"):
+                # Format: CONFLICT_START:fid then content until CONFLICT_END:fid
                 fid = int(line.split(":")[1].strip())
+                conflict_content = []
+                i += 1
+                while i < len(lines) and not lines[i].startswith(f"CONFLICT_END:{fid}"):
+                    conflict_content.append(lines[i])
+                    i += 1
                 conflicts.append(fid)
-                # Get feature title
-                feature_md_path = task_dir / f"feature{fid}" / "feature.md"
-                title = _extract_feature_title(feature_md_path)
+                # Get title from feature_titles we extracted earlier
+                title = feature_titles.get(fid, f"Feature {fid}")
                 conflicts_info.append({
                     "id": fid,
-                    "title": title or f"Feature {fid}",
+                    "title": title,
+                    "conflict_diff": "\n".join(conflict_content),
                 })
             elif line.startswith("CLEAN:"):
+                # Format: CLEAN:fid
                 fid = int(line.split(":")[1].strip())
                 clean.append(fid)
             elif line.startswith("ERROR:"):
                 errors.append(line)
+            i += 1
 
         return {
             "conflicts": conflicts,
@@ -308,7 +326,7 @@ def validate_generated_feature(
     }
 
 
-def _build_conflict_check_script(feature_ids: list[int]) -> str:
+def _build_conflict_check_script(feature_ids: list[int], feature_titles: dict[int, str]) -> str:
     """Build bash script for checking REAL git merge conflicts.
 
     For each existing feature:
@@ -317,7 +335,10 @@ def _build_conflict_check_script(feature_ids: list[int]) -> str:
     3. Try git merge --no-commit from A
     4. Check if merge has conflicts (git merge --abort needed)
     """
-    feature_checks = "\n".join(f'''
+    def _build_feature_check(fid: int, title: str) -> str:
+        # Escape title for shell - replace : with space to avoid parsing issues
+        safe_title = title.replace(":", " -").replace("'", "\\'").replace('"', '\\"')
+        return f'''
 # Check feature {fid} for REAL merge conflicts
 echo "Checking feature {fid}..."
 git checkout --quiet $BASE_SHA
@@ -332,7 +353,7 @@ if ! git apply /patches/feature{fid}.patch 2>/dev/null; then
     continue
 fi
 git add -A
-git commit -qm "existing feature{fid}" --allow-empty
+git commit -qm "{safe_title}" --allow-empty
 
 # Branch B: new feature (from base)
 git checkout --quiet $BASE_SHA
@@ -352,10 +373,16 @@ git commit -qm "new feature" --allow-empty
 if git merge --no-commit --no-ff __existing_{fid} 2>/dev/null; then
     # Merge succeeded cleanly
     echo "CLEAN:{fid}"
-    git merge --abort 2>/dev/null || git reset --hard HEAD >/dev/null 2>&1
+    git reset --hard HEAD >/dev/null 2>&1
 else
-    # Merge has conflicts!
-    echo "CONFLICT:{fid}"
+    # Merge has conflicts! Capture the actual conflict content
+    echo "CONFLICT_START:{fid}"
+    # Show files with conflict markers (<<<<<<< ======= >>>>>>>)
+    for f in $(git diff --name-only --diff-filter=U 2>/dev/null); do
+        echo "--- $f ---"
+        cat "$f" | grep -A 50 -B 5 "<<<<<<" | head -100
+    done
+    echo "CONFLICT_END:{fid}"
     git merge --abort 2>/dev/null || git reset --hard HEAD >/dev/null 2>&1
 fi
 
@@ -363,7 +390,12 @@ fi
 git checkout --quiet $BASE_SHA 2>/dev/null || true
 git branch -D __existing_{fid} 2>/dev/null || true
 git branch -D __new_{fid} 2>/dev/null || true
-''' for fid in feature_ids)
+'''
+
+    feature_checks = "\n".join(
+        _build_feature_check(fid, feature_titles.get(fid, f"Feature {fid}"))
+        for fid in feature_ids
+    )
 
     return f'''
 cd /workspace/repo

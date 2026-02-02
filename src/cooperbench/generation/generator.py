@@ -72,7 +72,7 @@ class GenerationResult:
     feature_patch: str | None = None
     tests_patch: str | None = None
     conflicts: list[int] = field(default_factory=list)
-    conflicts_info: list[dict] = field(default_factory=list)  # [{id, title}, ...]
+    conflicts_info: list[dict] = field(default_factory=list)  # [{id, title, conflict_diff}, ...]
     errors: list[str] = field(default_factory=list)
     agent_cost: float = 0.0
     agent_steps: int = 0
