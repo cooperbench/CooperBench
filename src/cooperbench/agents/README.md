@@ -29,6 +29,44 @@ result = runner.run(
 )
 ```
 
+## Registering External Agents
+
+External packages can register custom agent implementations using the `COOPERBENCH_EXTERNAL_AGENTS` environment variable. This is useful for research projects or custom agent frameworks.
+
+### Steps
+
+1. Create an adapter that conforms to the `AgentRunner` protocol
+2. Register it using the `@register` decorator:
+
+```python
+# myproject/agents/custom_agent/adapter.py
+from cooperbench.agents.registry import register
+from cooperbench.agents import AgentResult
+
+@register("my_custom_agent")
+class CustomAgentRunner:
+    def run(self, task, image, **kwargs) -> AgentResult:
+        # Your implementation
+        ...
+```
+
+3. Set the environment variable to the module path(s):
+
+```bash
+export COOPERBENCH_EXTERNAL_AGENTS="myproject.agents.custom_agent.adapter"
+
+# Multiple agents (comma-separated)
+export COOPERBENCH_EXTERNAL_AGENTS="myproject.agents.agent1.adapter,myproject.agents.agent2.adapter"
+```
+
+4. Use with cooperbench CLI:
+
+```bash
+cooperbench run -a my_custom_agent -r repo_name -t task_id
+```
+
+The external adapter modules must be importable (installed in the same Python environment).
+
 ## AgentRunner Interface
 
 All agents must implement the `AgentRunner` protocol:
