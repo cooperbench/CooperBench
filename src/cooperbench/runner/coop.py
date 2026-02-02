@@ -27,8 +27,13 @@ def execute_coop(
     git_enabled: bool = False,
     messaging_enabled: bool = True,
     backend: str = "modal",
+    agent_config: str | None = None,
 ) -> dict | None:
-    """Execute a cooperative task (two agents, separate features)."""
+    """Execute a cooperative task (two agents, separate features).
+
+    Args:
+        agent_config: Path to agent-specific configuration file (optional)
+    """
     n_agents = len(features)
     agents = [f"agent{i + 1}" for i in range(n_agents)]
     run_id = uuid.uuid4().hex[:8]
@@ -82,6 +87,7 @@ def execute_coop(
                 messaging_enabled=messaging_enabled,
                 quiet=quiet,
                 backend=backend,
+                agent_config=agent_config,
             )
         except Exception as e:
             results[agent_id] = {
@@ -213,8 +219,13 @@ def _spawn_agent(
     messaging_enabled: bool = True,
     quiet: bool = False,
     backend: str = "modal",
+    agent_config: str | None = None,
 ) -> dict:
-    """Spawn a single agent on a feature using the agent framework adapter."""
+    """Spawn a single agent on a feature using the agent framework adapter.
+
+    Args:
+        agent_config: Path to agent-specific configuration file (optional)
+    """
     task_dir = Path("dataset") / repo_name / f"task{task_id}"
     feature_file = task_dir / f"feature{feature_id}" / "feature.md"
 
@@ -243,6 +254,7 @@ def _spawn_agent(
         git_enabled=git_enabled,
         messaging_enabled=messaging_enabled,
         config=config,
+        agent_config=agent_config,
     )
 
     return {

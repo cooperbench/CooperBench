@@ -158,6 +158,10 @@ def main():
         default="modal",
         help="Execution backend: modal (cloud), docker (local), or gcp (GCP VM) (default: modal)",
     )
+    run_parser.add_argument(
+        "--agent-config",
+        help="Path to agent-specific configuration file (format determined by agent)",
+    )
 
     # === eval command ===
     eval_parser = subparsers.add_parser(
@@ -266,6 +270,7 @@ def _run_command(args):
         auto_eval=not args.no_auto_eval,
         eval_concurrency=args.eval_concurrency,
         backend=args.backend,
+        agent_config=args.agent_config if hasattr(args, "agent_config") else None,
     )
 
 

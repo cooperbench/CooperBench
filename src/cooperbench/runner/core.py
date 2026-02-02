@@ -54,6 +54,7 @@ def run(
     auto_eval: bool = True,
     eval_concurrency: int = 10,
     backend: str = "modal",
+    agent_config: str | None = None,
 ) -> None:
     """Run benchmark tasks.
 
@@ -74,6 +75,7 @@ def run(
         auto_eval: Automatically evaluate runs after completion
         eval_concurrency: Max parallel evaluations (default: 10)
         backend: Execution backend ("modal" or "docker")
+        agent_config: Path to agent-specific configuration file (optional)
     """
     # Install cleanup handler to terminate Modal sandboxes on Ctrl+C
     if install_cleanup_handler:
@@ -121,6 +123,7 @@ def run(
                 force=force,
                 quiet=not is_single,
                 backend=backend,
+                agent_config=agent_config,
             )
         else:
             return execute_coop(
@@ -136,6 +139,7 @@ def run(
                 git_enabled=git_enabled,
                 messaging_enabled=messaging_enabled,
                 backend=backend,
+                agent_config=agent_config,
             )
 
     eval_stats = None

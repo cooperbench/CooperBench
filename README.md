@@ -150,6 +150,9 @@ cooperbench run -n NAME [OPTIONS]
 | `--git` | Enable git collaboration | disabled |
 | `--no-messaging` | Disable agent messaging | enabled |
 | `--force` | Rerun existing results | skip |
+| `--agent-config` | Path to agent config file | none |
+
+**Agent Configuration**: Pass agent-specific parameters via a config file. CooperBench forwards the file path to your agent without parsing it.
 
 ### `cooperbench eval`
 

@@ -19,8 +19,13 @@ def execute_solo(
     force: bool = False,
     quiet: bool = False,
     backend: str = "modal",
+    agent_config: str | None = None,
 ) -> dict | None:
-    """Execute a solo task (one agent, multiple features)."""
+    """Execute a solo task (one agent, multiple features).
+
+    Args:
+        agent_config: Path to agent-specific configuration file (optional)
+    """
     run_id = uuid.uuid4().hex[:8]
     start_time = datetime.now()
 
@@ -44,6 +49,7 @@ def execute_solo(
             model_name=model_name,
             quiet=quiet,
             backend=backend,
+            agent_config=agent_config,
         )
     except Exception as e:
         result = {
@@ -132,8 +138,13 @@ def _spawn_solo_agent(
     model_name: str,
     quiet: bool = False,
     backend: str = "modal",
+    agent_config: str | None = None,
 ) -> dict:
-    """Spawn a single agent on multiple features (solo mode)."""
+    """Spawn a single agent on multiple features (solo mode).
+
+    Args:
+        agent_config: Path to agent-specific configuration file (optional)
+    """
     task_dir = Path("dataset") / repo_name / f"task{task_id}"
 
     # Combine feature specs
@@ -164,6 +175,7 @@ def _spawn_solo_agent(
         git_enabled=False,
         messaging_enabled=False,
         config={"backend": backend},
+        agent_config=agent_config,
     )
 
     return {
