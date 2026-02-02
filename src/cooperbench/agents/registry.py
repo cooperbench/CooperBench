@@ -68,6 +68,7 @@ def list_agents() -> list[str]:
 # Auto-import adapters to trigger registration
 def _auto_register():
     """Import all adapter modules to register them."""
+    # Built-in agents
     try:
         import cooperbench.agents.mini_swe_agent.adapter  # noqa: F401
     except ImportError:
@@ -76,6 +77,21 @@ def _auto_register():
         import cooperbench.agents.swe_agent.adapter  # noqa: F401
     except ImportError:
         pass
+
+    # External agents via environment variable
+    import os
+
+    external_agents = os.getenv("COOPERBENCH_EXTERNAL_AGENTS", "")
+    if external_agents:
+        for module_path in external_agents.split(","):
+            module_path = module_path.strip()
+            if module_path:
+                try:
+                    __import__(module_path)
+                except ImportError as e:
+                    import warnings
+
+                    warnings.warn(f"Could not import external agent module '{module_path}': {e}", stacklevel=2)
 
 
 _auto_register()
