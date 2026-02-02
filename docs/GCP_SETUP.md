@@ -151,34 +151,55 @@ uv run cooperbench eval --backend gcp \
 
 ## Advanced Configuration
 
-### Custom VM Images
+### Custom VM Images (Optional)
 
-For faster evaluation, you can create custom VM images with pre-pulled Docker images.
+**This is an optional optimization for large-scale evaluations.**
 
-Use the provided build script:
-```bash
-scripts/build_gcp_vm_image.sh
-```
+By default, each evaluation VM pulls Docker images on-demand, which adds ~2-5 minutes to startup time. For large-scale runs (100+ tasks), you can pre-build a VM image with all Docker images cached.
 
-This script will:
-1. Create a VM with Container-Optimized OS
-2. Pull all CooperBench Docker images
-3. Create an image from the VM
+**Step 1: Build the custom image**
 
-Then set the image in configuration:
+This script creates a VM image with all CooperBench Docker images pre-pulled:
 
 ```bash
-export COOPERBENCH_VM_IMAGE="cooperbench-eval"
+# Set your project
+export GOOGLE_CLOUD_PROJECT="your-project-id"
+
+# Run the build script (takes ~30-60 minutes)
+./scripts/build_gcp_vm_image.sh
 ```
 
-Or in code:
+The script will:
+1. Create a temporary VM with Container-Optimized OS
+2. Pull all CooperBench Docker images from the registry
+3. Create a VM image snapshot (family: `cooperbench-eval`)
+4. Delete the temporary VM
+
+**Step 2: Use the custom image**
+
+After the image is built, reference it in your code:
+
 ```python
 from cooperbench.eval.backends.gcp import GCPBatchEvaluator
 
 evaluator = GCPBatchEvaluator(
-    vm_image="cooperbench-eval"  # or "projects/PROJECT/global/images/IMAGE"
+    vm_image="cooperbench-eval"  # Uses the image family created by the script
 )
 ```
+
+Or via environment variable:
+```bash
+export COOPERBENCH_VM_IMAGE="cooperbench-eval"
+```
+
+**When to use this:**
+- Large evaluation runs (100+ tasks)
+- Repeated evaluations where startup time matters
+- When you want to minimize per-task costs
+
+**When NOT to use this:**
+- Small runs (< 100 tasks) - not worth the build time
+- First-time setup - stick with defaults until you need the optimization
 
 ### Custom VPC Network
 
