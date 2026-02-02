@@ -56,9 +56,8 @@ agent:
     1. Explore the codebase and find relevant files for your feature
     {% if messaging_enabled %}2. Message teammates about which files you plan to modify{% endif %}
     3. Implement your changes
-    {% if git_enabled %}4. Fetch and merge teammates' changes if working on shared files{% endif %}
-    5. Test your changes work
-    6. {% if git_enabled %}Push final changes and {% endif %}Submit: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
+    4. Test your changes work
+    5. {% if git_enabled %}Push final changes and {% endif %}Submit: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
     {% else %}
     ## Recommended Workflow
 

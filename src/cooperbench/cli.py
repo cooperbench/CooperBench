@@ -7,7 +7,14 @@ Usage:
 """
 
 import argparse
+import os
 import sys
+
+os.environ["LITELLM_LOG"] = "ERROR"
+
+import litellm
+
+litellm.suppress_debug_info = True  # Suppress "Give Feedback / Get Help" print messages on errors
 
 from cooperbench.utils import clean_model_name
 
@@ -112,7 +119,7 @@ def main():
         "-c",
         "--concurrency",
         type=int,
-        default=40,
+        default=30,
         help="Number of parallel tasks (default: 20)",
     )
     run_parser.add_argument(
