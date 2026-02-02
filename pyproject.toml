@@ -107,6 +107,7 @@ exclude = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cooperbench"]
+exclude = ["src/cooperbench/generation"]
 
 [tool.ruff]
 line-length = 120

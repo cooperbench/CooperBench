@@ -61,9 +61,14 @@ class MiniSweAgentRunner:
         with open(config_path) as f:
             default_config = yaml.safe_load(f)
 
-        # Merge passed config overrides into default config
+        # Deep merge passed config overrides into default config
         if config is not None:
-            default_config.update(config)
+            for key, value in config.items():
+                if key in default_config and isinstance(default_config[key], dict) and isinstance(value, dict):
+                    # Deep merge nested dicts (like "agent")
+                    default_config[key].update(value)
+                else:
+                    default_config[key] = value
 
         agent_config = default_config.get("agent", {})
         backend = default_config.get("backend", "modal")
@@ -175,9 +180,16 @@ class MiniSweAgentRunner:
     def _get_patch(self, env: "ModalEnvironment | DockerEnvironment", base_commit: str) -> str:
         """Extract git diff from base commit to current working tree state."""
         try:
-            # Single diff from base commit to working tree (includes both
-            # committed and uncommitted changes)
-            result = env.execute(f"git diff {base_commit}", timeout=30)
+            # Stage all changes (including new untracked files)
+            env.execute("git add -A", timeout=10)
+            # Configure git identity (required for commit in fresh sandbox environments)
+            env.execute("git config user.email 'agent@cooperbench.local'", timeout=10)
+            env.execute("git config user.name 'CooperBench Agent'", timeout=10)
+            # Commit everything so committed + staged + unstaged changes are all in HEAD
+            # This ensures we capture changes even if the agent made commits
+            env.execute("git commit --allow-empty -m 'Agent changes'", timeout=10)
+            # Diff from base commit to HEAD captures all changes
+            result = env.execute(f"git diff {base_commit} HEAD", timeout=30)
             return result.get("output", "").strip()
         except Exception:
             return ""
