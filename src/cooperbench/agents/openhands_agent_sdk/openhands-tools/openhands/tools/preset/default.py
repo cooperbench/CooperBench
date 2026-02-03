@@ -32,8 +32,6 @@ def register_default_tools(enable_browser: bool = True) -> None:
     
     # Register collaboration tools (only active when REDIS_URL is set)
     from openhands.tools.collaboration import ReceiveMessageTool, SendMessageTool
-    # DEBUG [Hypothesis A/D - tool names at registration]
-    print(f"[DEBUG-DEFAULT] Registering collab tools. SendMessageTool.name={SendMessageTool.name} ReceiveMessageTool.name={ReceiveMessageTool.name}", flush=True)
     logger.debug(f"Tool: {SendMessageTool.name} registered.")
     logger.debug(f"Tool: {ReceiveMessageTool.name} registered.")
 
@@ -66,10 +64,6 @@ def get_default_tools(
 
         tools.append(Tool(name=BrowserToolSet.name))
     
-    # DEBUG [Hypothesis D - tool names returned]
-    tool_names = [t.name for t in tools]
-    print(f"[DEBUG-DEFAULT] get_default_tools() returning: {tool_names}", flush=True)
-    
     return tools
 
 
@@ -83,10 +77,15 @@ def get_default_condenser(llm: LLM) -> CondenserBase:
 
 
 def get_coop_system_prompt(agent_id: str, teammates: list[str], messaging_enabled: bool, git_enabled: bool) -> str:
-    """Generate the collaboration section for the system prompt."""
-    # Intro section (mirrors mini.yaml lines 4-8)
+    """Generate the collaboration section for the system prompt.
+    
+    Mirrors the mini-swe-agent prompt format for consistency.
+    """
     all_agents = [agent_id] + teammates
-    collab_section = f"""You are {agent_id} working as a team with: {', '.join(all_agents)}.
+    agents_str = ", ".join(all_agents)
+    
+    # Opening section (mirrors mini-swe-agent format)
+    collab_section = f"""You are {agent_id} working as a team with: {agents_str}.
 You are all working on related features in the same codebase. Each agent has their own workspace.
 """
     if git_enabled:
@@ -96,30 +95,32 @@ You are all working on related features in the same codebase. Each agent has the
         collab_section += """Use send_message to coordinate.
 """
 
-    # Collaboration block (mirrors mini.yaml lines 23-46)
+    # Collaboration block (mirrors mini-swe-agent format)
     collab_section += """
 <collaboration>
 Each agent has their own workspace. At the end, all agents' changes will be merged together.
 **Important**: Coordinate to avoid merge conflicts - your patches must cleanly combine!
 """
     if git_enabled:
+        teammate_name = teammates[0] if teammates else "agent_0"
         collab_section += f"""
 ## Git
 A shared remote called "team" is configured. Your branch is `{agent_id}`.
-Teammates' branches are at `team/<name>` (e.g., `team/{teammates[0] if teammates else 'agent_0'}`).
+Teammates' branches are at `team/<name>` (e.g., `team/{teammate_name}`).
 
-Use the terminal tool:
-- Push: `git push team {agent_id}`
-- Fetch: `git fetch team`
+Example:
+```
+git push team {agent_id}
+git fetch team
+```
 """
     if messaging_enabled:
-        collab_section += f"""
+        collab_section += """
 ## Messaging (coordinate with teammates)
-Send messages to teammates. Messages appear automatically.
-Use the send_message tool:
-- recipient: agent name (e.g., "{teammates[0] if teammates else 'agent_0'}")
-- content: your message
-
+Send messages to teammates. Messages appear in their next turn.
+```
+send_message(recipient="<agent_name>", content="your message")
+```
 Messages from teammates appear as: [Message from <agent_name>]: ...
 """
     collab_section += "</collaboration>\n"

@@ -124,9 +124,10 @@ def _retrieve_sent_messages(redis_url: str, agent_id: str) -> list[dict]:
         url, prefix = _parse_redis_url(redis_url)
         client = redis.from_url(url)
         log_key = f"{prefix}{agent_id}:sent_messages"
+        
         messages = []
-        # Read all messages without consuming them
         raw_messages = client.lrange(log_key, 0, -1)
+        
         for raw in raw_messages:
             try:
                 msg = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
@@ -285,21 +286,29 @@ class OpenHandsSDKRunner:
                     event_data = {
                         "step": steps,
                         "event_type": type(event).__name__,
-                        "event": str(event)[:500],  # Truncate long events
+                        "event": str(event),
                     }
                     
                     # Extract message details for SendMessageAction
-                    # The event string contains the action details
                     event_str = str(event)
                     if "SendMessageAction" in event_str:
-                        # Try to extract recipient and content from the event string
-                        import re
-                        recipient_match = re.search(r'recipient["\s:=]+["\']?(\w+)', event_str)
-                        content_match = re.search(r'content["\s:=]+["\'](.+?)["\'](?:\s|,|$)', event_str, re.DOTALL)
-                        if recipient_match:
-                            event_data["message_recipient"] = recipient_match.group(1)
-                        if content_match:
-                            event_data["message_content"] = content_match.group(1)[:200]  # Truncate content
+                        import time
+                        action = getattr(event, 'action', None)
+                        recipient = getattr(action, 'recipient', None) if action else None
+                        content = getattr(action, 'content', None) if action else None
+                        
+                        if recipient and content:
+                            # Add to event_data for trajectory visibility (use different names to avoid extraction duplication)
+                            event_data["to"] = recipient
+                            event_data["msg"] = content
+                            # Add to sent_messages for conversation extraction
+                            sent_messages.append({
+                                "from": agent_id,
+                                "to": recipient,
+                                "content": content,
+                                "step": steps,
+                                "timestamp": time.time(),
+                            })
                     
                     messages.append(event_data)
 
@@ -314,73 +323,10 @@ class OpenHandsSDKRunner:
                 )
 
                 # Send task and run the conversation
+                # Message checking for coop mode happens inside the agent loop
+                # (in LocalConversation._check_inbox_messages before each step)
                 conversation.send_message(task)
-                
-                # In coop mode, use non-blocking run with message polling
-                # This mirrors mini_swe_agent's pattern of checking inbox before each LLM call
-                if is_coop and redis_url:
-                    import redis as redis_client
-                    clean_url, prefix = _parse_redis_url(redis_url)
-                    redis_conn = redis_client.from_url(clean_url)
-                    inbox_key = f"{prefix}{agent_id}:inbox"
-                    
-                    conversation.run(blocking=False)
-                    
-                    start_time = time.time()
-                    poll_interval = 2.0  # Check for messages every 2 seconds
-                    
-                    while True:
-                        # Check if conversation is finished
-                        try:
-                            state = conversation.state
-                            exec_status = getattr(state, 'execution_status', None)
-                            # exec_status is an enum like ConversationExecutionStatus.FINISHED
-                            exec_str = str(exec_status).lower() if exec_status else ""
-                            if 'finished' in exec_str or 'error' in exec_str:
-                                break
-                        except Exception as e:
-                            logger.debug(f"Error checking state: {e}")
-                        
-                        # Check for timeout
-                        elapsed = time.time() - start_time
-                        if elapsed > self.timeout:
-                            logger.warning(f"Timeout after {elapsed:.0f}s")
-                            break
-                        
-                        # Check cost limit
-                        if self.cost_limit > 0:
-                            try:
-                                state = conversation.state
-                                stats = state.stats
-                                if stats:
-                                    combined_metrics = stats.get_combined_metrics()
-                                    current_cost = combined_metrics.accumulated_cost or 0.0
-                                    if current_cost >= self.cost_limit:
-                                        # Stop the conversation
-                                        conversation.stop()
-                                        break
-                            except Exception as e:
-                                logger.debug(f"Error checking cost: {e}")
-                        
-                        # Poll Redis for incoming messages (like mini_swe_agent does each step)
-                        try:
-                            while True:
-                                raw = redis_conn.lpop(inbox_key)
-                                if raw is None:
-                                    break
-                                msg = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
-                                sender = msg.get("from", "unknown")
-                                content = msg.get("content", "")
-                                # Inject message into conversation (mirrors mini_swe_agent pattern)
-                                injected_msg = f"[Message from {sender}]: {content}"
-                                conversation.send_message(injected_msg)
-                        except Exception as e:
-                            logger.debug(f"Error polling Redis: {e}")
-                        
-                        time.sleep(poll_interval)
-                else:
-                    # Solo mode: simple blocking run
-                    conversation.run(blocking=True, timeout=float(self.timeout))
+                conversation.run(blocking=True, timeout=float(self.timeout))
                     
                 # Get the patch from remote workspace
                 # Note: workspace.git_diff() has a bug (Path vs str URL), so use execute_command
@@ -413,10 +359,8 @@ class OpenHandsSDKRunner:
                     pass  # Cost tracking optional
                     status = "Submitted"
                 
-                
-                # Retrieve sent messages from Redis for conversation extraction
-                if is_coop and redis_url:
-                    sent_messages = _retrieve_sent_messages(redis_url, agent_id)
+                # sent_messages is already populated from event_callback above
+                # No need to retrieve from Redis - we extract directly from trajectory
 
         except Exception as e:
             error_str = str(e)
@@ -674,42 +618,19 @@ class ModalSandboxContext:
         wrapper_script = '''
 import sys
 import os
-import traceback
 
 sys.argv = ['agent_server', '--host', '0.0.0.0', '--port', '8000']
-
-# Debug: Write to file to verify wrapper is running
-log = open('/tmp/wrapper_debug.log', 'w')
-log.write('Wrapper started\\n')
-log.write('REDIS_URL=' + os.environ.get('REDIS_URL', 'NOT_SET') + '\\n')
-log.write('AGENT_ID=' + os.environ.get('AGENT_ID', 'NOT_SET') + '\\n')
-log.flush()
 
 # Force import collaboration tools to register them BEFORE server starts
 try:
     from openhands.tools.collaboration import SendMessageTool, ReceiveMessageTool
-    log.write('Tools imported: ' + SendMessageTool.name + ', ' + ReceiveMessageTool.name + '\\n')
-    log.flush()
     print('[STARTUP] Collaboration tools registered:', SendMessageTool.name, ReceiveMessageTool.name, flush=True)
 except Exception as e:
-    log.write('Import failed: ' + str(e) + '\\n')
-    log.write(traceback.format_exc() + '\\n')
-    log.flush()
     print('[STARTUP] WARNING: Failed to import collaboration tools:', e, flush=True)
 
 # Now run the agent server (tools are registered in this process)
-try:
-    from openhands.agent_server.__main__ import main
-    log.write('Starting agent server main()\\n')
-    log.flush()
-    log.close()
-    main()
-except Exception as e:
-    log.write('Server failed: ' + str(e) + '\\n')
-    log.write(traceback.format_exc() + '\\n')
-    log.flush()
-    log.close()
-    raise
+from openhands.agent_server.__main__ import main
+main()
 '''
 
         # Bash script to set up credentials and run the Python wrapper

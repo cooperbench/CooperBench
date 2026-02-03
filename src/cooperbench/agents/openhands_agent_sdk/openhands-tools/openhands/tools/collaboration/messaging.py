@@ -61,6 +61,12 @@ class SendMessageObservation(Observation):
         if self.success:
             return f"Message sent successfully to {self.recipient}."
         return f"Failed to send message to {self.recipient}: {self.info}"
+    
+    @property
+    def to_llm_content(self):
+        """Return content for LLM to see."""
+        from openhands.sdk.llm import TextContent
+        return [TextContent(text=self.text)]
 
 
 class SendMessageExecutor(ToolExecutor[SendMessageAction, SendMessageObservation]):
@@ -105,11 +111,11 @@ class SendMessageExecutor(ToolExecutor[SendMessageAction, SendMessageObservation
                 "timestamp": datetime.now().isoformat(),
             }
             inbox_key = f"{self._prefix}{action.recipient}:inbox"
-            self._client.rpush(inbox_key, json.dumps(message))
+            inbox_result = self._client.rpush(inbox_key, json.dumps(message))
             
             # Also store in a log key for conversation extraction (not consumed)
             log_key = f"{self._prefix}{self.agent_id}:sent_messages"
-            self._client.rpush(log_key, json.dumps(message))
+            log_result = self._client.rpush(log_key, json.dumps(message))
             
             return SendMessageObservation(
                 success=True,
@@ -148,11 +154,7 @@ class SendMessageTool(ToolDefinition[SendMessageAction, SendMessageObservation])
         agents_str = os.environ.get("AGENTS", "")
         agents = agents or (agents_str.split(",") if agents_str else [])
         
-        # Debug: log what we got from env
-        print(f"[SendMessageTool.create] redis_url={redis_url}, agent_id={agent_id}, agents={agents}", flush=True)
-        
         if not redis_url or not agents or len(agents) <= 1:
-            print(f"[SendMessageTool.create] SKIPPING - conditions not met", flush=True)
             return []
         
         executor = SendMessageExecutor(
@@ -212,6 +214,12 @@ class ReceiveMessageObservation(Observation):
             content = msg.get("content", "")
             lines.append(f"[Message from {sender}]: {content}")
         return "\n".join(lines)
+    
+    @property
+    def to_llm_content(self):
+        """Return content for LLM to see."""
+        from openhands.sdk.llm import TextContent
+        return [TextContent(text=self.text)]
 
 
 class ReceiveMessageExecutor(ToolExecutor[ReceiveMessageAction, ReceiveMessageObservation]):

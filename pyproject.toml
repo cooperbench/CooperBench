@@ -66,12 +66,14 @@ swe-agent = [
     "unidiff>=0.7",
 ]
 gcp = [
-    "cooperbench",
     "google-cloud-batch>=0.17",
     "google-cloud-compute>=1.0",
     "google-cloud-storage>=2.0",
 ]
 openhands = [
+    "openhands-sdk",
+    "openhands-tools",
+    "openhands-workspace",
     # OpenHands SDK dependencies (v1.10.0)
     "deprecation>=2.1.0",
     "fastmcp>=2.11.3",
@@ -188,3 +190,6 @@ exclude_lines = [
 
 [tool.uv.sources]
 cooperbench = { workspace = true }
+openhands-sdk = { path = "src/cooperbench/agents/openhands_agent_sdk/openhands-sdk", editable = true }
+openhands-tools = { path = "src/cooperbench/agents/openhands_agent_sdk/openhands-tools", editable = true }
+openhands-workspace = { path = "src/cooperbench/agents/openhands_agent_sdk/openhands-workspace", editable = true }

@@ -478,6 +478,71 @@ class LocalConversation(BaseConversation):
             )
             self._on_event(user_msg_event)
 
+    def _check_inbox_messages(self) -> None:
+        """Check Redis inbox for messages from teammates and inject them.
+        
+        This runs before each agent step in coop mode, similar to how
+        mini-swe-agent checks for messages before each LLM call.
+        
+        Only active when REDIS_URL, AGENT_ID, and AGENTS env vars are set.
+        """
+        import os
+        import json
+        
+        redis_url = os.environ.get("REDIS_URL")
+        agent_id = os.environ.get("AGENT_ID")
+        agents_str = os.environ.get("AGENTS", "")
+        
+        if not redis_url or not agent_id or not agents_str:
+            return  # Not in coop mode
+        
+        try:
+            import redis
+            
+            # Parse namespace prefix from URL (format: url#prefix)
+            prefix = ""
+            if "#" in redis_url:
+                redis_url, prefix = redis_url.split("#", 1)
+                prefix += ":"
+            
+            client = redis.from_url(redis_url, socket_timeout=2)
+            inbox_key = f"{prefix}{agent_id}:inbox"
+            
+            # Pop all pending messages
+            messages_injected = 0
+            while True:
+                raw = client.lpop(inbox_key)
+                if raw is None:
+                    break
+                
+                try:
+                    msg = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+                    sender = msg.get("from", "unknown")
+                    content = msg.get("content", "")
+                    
+                    # Inject as user message (same format as mini-swe-agent)
+                    injected = MessageEvent(
+                        source="user",
+                        llm_message=Message(
+                            role="user",
+                            content=[TextContent(text=f"[Message from {sender}]: {content}")],
+                        ),
+                    )
+                    self._on_event(injected)
+                    messages_injected += 1
+                    logger.info(f"Injected message from {sender}")
+                except json.JSONDecodeError:
+                    logger.warning("Failed to decode message from inbox")
+                    continue
+            
+            if messages_injected > 0:
+                logger.debug(f"Injected {messages_injected} message(s) from inbox")
+                
+        except ImportError:
+            logger.debug("Redis not available, skipping inbox check")
+        except Exception as e:
+            logger.warning(f"Failed to check inbox: {e}")
+
     @observe(name="conversation.run")
     def run(self) -> None:
         """Runs the conversation until the agent finishes.
@@ -563,6 +628,9 @@ class LocalConversation(BaseConversation):
                         self._state.execution_status = (
                             ConversationExecutionStatus.RUNNING
                         )
+
+                    # Check for inter-agent messages before each step (coop mode)
+                    self._check_inbox_messages()
 
                     self.agent.step(
                         self, on_event=self._on_event, on_token=self._on_token
