@@ -16,19 +16,32 @@ import litellm
 
 litellm.suppress_debug_info = True  # Suppress "Give Feedback / Get Help" print messages on errors
 
+from cooperbench.agents import get_agent_shorthand  # noqa: E402
 from cooperbench.utils import clean_model_name  # noqa: E402
 
 
 def _generate_run_name(
     setting: str,
     model: str,
+    agent: str = "mini_swe_agent",
     subset: str | None = None,
     repo: str | None = None,
     task: int | None = None,
     git_enabled: bool = False,
 ) -> str:
-    """Generate experiment name from parameters."""
+    """Generate experiment name from parameters.
+
+    Format: {setting}-{agent_short}-{git?}-{model}-{subset?}-{repo?}-{task?}
+    Examples:
+        solo-msa-gemini-3-flash
+        solo-oh-gemini-3-flash-lite
+        coop-sw-git-gpt-4o-dspy-8394
+    """
     parts = [setting]
+
+    # Add agent shorthand (defined in cooperbench/agents/__init__.py)
+    parts.append(get_agent_shorthand(agent))
+
     if git_enabled:
         parts.append("git")
     parts.append(clean_model_name(model))
@@ -254,6 +267,7 @@ def _run_command(args):
         run_name = _generate_run_name(
             setting=args.setting,
             model=args.model,
+            agent=args.agent,
             subset=args.subset,
             repo=args.repo,
             task=args.task,

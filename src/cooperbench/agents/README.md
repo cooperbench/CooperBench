@@ -8,6 +8,7 @@ This directory contains agent framework adapters for CooperBench. Each adapter w
 |-------|-----------|-------------|
 | `mini_swe_agent` | `mini_swe_agent/` | Lightweight SWE agent with bash, file editing, and messaging tools. Uses Modal sandboxes. |
 | `swe_agent` | `swe_agent/` | Full SWE-agent implementation with SWE-ReX deployment. Supports advanced tooling and review. |
+| `openhands_sdk` | `openhands_agent_sdk/` | OpenHands Software Agent SDK. Runs agent-server in Modal with full SDK toolset. |
 
 ## Usage
 
@@ -87,7 +88,7 @@ class AgentResult:
 
 class AgentRunner(Protocol):
     """Protocol for agent framework adapters."""
-    
+
     def run(
         self,
         task: str,
@@ -128,7 +129,7 @@ from cooperbench.agents.registry import register
 @register("my_agent")
 class MyAgentRunner:
     """Adapter for MyAgent framework."""
-    
+
     def run(
         self,
         task: str,
@@ -144,13 +145,13 @@ class MyAgentRunner:
         config: dict | None = None,
     ) -> AgentResult:
         """Run the agent on a task."""
-        
+
         # Your implementation here
         # - Start sandbox/environment with the given image
         # - Run agent with the task description
         # - Capture the generated patch
         # - Return AgentResult
-        
+
         return AgentResult(
             status="Submitted",
             patch="diff --git ...",

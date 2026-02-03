@@ -1,124 +1,174 @@
-<a name="readme-top"></a>
+# OpenHands SDK Adapter for CooperBench
 
-<div align="center">
-  <img src="https://raw.githubusercontent.com/OpenHands/docs/main/openhands/static/img/logo.png" alt="Logo" width="200">
-  <h1 align="center">OpenHands Software Agent SDK </h1>
-</div>
+This directory contains the OpenHands Software Agent SDK integration for CooperBench. It runs the full OpenHands agent-server remotely in Modal sandboxes, preserving all SDK capabilities while enabling isolated code execution.
 
+## What We Built
 
-<div align="center">
-  <a href="https://github.com/OpenHands/software-agent-sdk/blob/main/LICENSE"><img src="https://img.shields.io/github/license/OpenHands/software-agent-sdk?style=for-the-badge&color=blue" alt="MIT License"></a>
-  <a href="https://openhands.dev/joinslack"><img src="https://img.shields.io/badge/Slack-Join%20Us-red?logo=slack&logoColor=white&style=for-the-badge" alt="Join our Slack community"></a>
-  <br>
-  <a href="https://docs.openhands.dev/sdk"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Check out the documentation"></a>
-  <a href="https://arxiv.org/abs/2511.03690"><img src="https://img.shields.io/badge/Paper-000?logoColor=FFE165&logo=arxiv&style=for-the-badge" alt="Tech Report"></a>
-  <a href="https://docs.google.com/spreadsheets/d/1wOUdFCMyY6Nt0AIqF705KN4JKOWgeI4wUGUP60krXXs/edit?gid=811504672#gid=811504672"><img src="https://img.shields.io/badge/SWEBench-77.6-000?logoColor=FFE165&style=for-the-badge" alt="Benchmark Score"></a>
-  <br>
-  <!-- Keep these links. Translations will automatically update with the README. -->
-  <a href="https://www.readme-i18n.com/OpenHands/software-agent-sdk?lang=de">Deutsch</a> |
-  <a href="https://www.readme-i18n.com/OpenHands/software-agent-sdk?lang=es">Español</a> |
-  <a href="https://www.readme-i18n.com/OpenHands/software-agent-sdk?lang=fr">français</a> |
-  <a href="https://www.readme-i18n.com/OpenHands/software-agent-sdk?lang=ja">日本語</a> |
-  <a href="https://www.readme-i18n.com/OpenHands/software-agent-sdk?lang=ko">한국어</a> |
-  <a href="https://www.readme-i18n.com/OpenHands/software-agent-sdk?lang=pt">Português</a> |
-  <a href="https://www.readme-i18n.com/OpenHands/software-agent-sdk?lang=ru">Русский</a> |
-  <a href="https://www.readme-i18n.com/OpenHands/software-agent-sdk?lang=zh">中文</a>
+We built a **minimal adapter** that leverages the OpenHands SDK's native architecture:
 
-  <hr>
-</div>
-
-The OpenHands Software Agent SDK is a set of Python and REST APIs for **building agents that work with code**.
-
-You can use the OpenHands Software Agent SDK for:
-* One-off tasks, like building a README for your repo
-* Routine maintenance tasks, like updating dependencies
-* Major tasks that involve multiple agents, like refactors and rewrites
-
-Importantly, agents can either use the local machine as their workspace, or run inside ephemeral workspaces
-(e.g. in Docker or Kubernetes) using the Agent Server.
-
-You can even use the SDK to build new developer experiences: it’s the engine behind the
-[OpenHands CLI](https://github.com/OpenHands/OpenHands-CLI) and [OpenHands Cloud](https://github.com/OpenHands/OpenHands).
-
-Get started with some [examples](https://docs.openhands.dev/sdk/guides/hello-world) or [check out the docs](https://docs.openhands.dev/sdk) to learn more.
-
-## Quick Start
-
-Here's what building with the SDK looks like:
-
-```python
-import os
-
-from openhands.sdk import LLM, Agent, Conversation, Tool
-from openhands.tools.file_editor import FileEditorTool
-from openhands.tools.task_tracker import TaskTrackerTool
-from openhands.tools.terminal import TerminalTool
-
-
-llm = LLM(
-    model="anthropic/claude-sonnet-4-5-20250929",
-    api_key=os.getenv("LLM_API_KEY"),
-)
-
-agent = Agent(
-    llm=llm,
-    tools=[
-        Tool(name=TerminalTool.name),
-        Tool(name=FileEditorTool.name),
-        Tool(name=TaskTrackerTool.name),
-    ],
-)
-
-cwd = os.getcwd()
-conversation = Conversation(agent=agent, workspace=cwd)
-
-conversation.send_message("Write 3 facts about the current project into FACTS.txt.")
-conversation.run()
-print("All done!")
-```
-
-For installation instructions and detailed setup, see the [Getting Started Guide](https://docs.openhands.dev/sdk/getting-started).
-
-## Documentation
-
-For detailed documentation, tutorials, and API reference, visit:
-
-**[https://docs.openhands.dev/sdk](https://docs.openhands.dev/sdk)**
-
-The documentation includes:
-- [Getting Started Guide](https://docs.openhands.dev/sdk/getting-started) - Installation and setup
-- [Architecture & Core Concepts](https://docs.openhands.dev/sdk/arch/overview) - Agents, tools, workspaces, and more
-- [Guides](https://docs.openhands.dev/sdk/guides/hello-world) - Hello World, custom tools, MCP, skills, and more
-- [API Reference](https://docs.openhands.dev/sdk/guides/agent-server/api-reference/server-details/alive) - Agent Server REST API documentation
-
-## Examples
-
-The `examples/` directory contains comprehensive usage examples:
-
-- **Standalone SDK** (`examples/01_standalone_sdk/`) - Basic agent usage, custom tools, and microagents
-- **Remote Agent Server** (`examples/02_remote_agent_server/`) - Client-server architecture and WebSocket connections
-- **GitHub Workflows** (`examples/03_github_workflows/`) - CI/CD integration and automated workflows
-
-## Contributing
-
-For development setup, testing, and contribution guidelines, see [DEVELOPMENT.md](DEVELOPMENT.md).
-
-## Community
-
-- [Join Slack](https://openhands.dev/joinslack) - Connect with the OpenHands community
-- [GitHub Repository](https://github.com/OpenHands/agent-sdk) - Source code and issues
-- [Documentation](https://docs.openhands.dev/sdk) - Complete documentation
-
-## Cite
+### Architecture
 
 ```
-@misc{wang2025openhandssoftwareagentsdk,
-      title={The OpenHands Software Agent SDK: A Composable and Extensible Foundation for Production Agents},
-      author={Xingyao Wang and Simon Rosenberg and Juan Michelini and Calvin Smith and Hoang Tran and Engel Nyst and Rohit Malhotra and Xuhui Zhou and Valerie Chen and Robert Brennan and Graham Neubig},
-      year={2025},
-      eprint={2511.03690},
-      archivePrefix={arXiv},
-      primaryClass={cs.SE},
-      url={https://arxiv.org/abs/2511.03690},
-}
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Local Machine                                │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                   CooperBench CLI                           │    │
+│  │    cooperbench run -a openhands_sdk -m vertex_ai/...        │    │
+│  └────────────────────────────┬────────────────────────────────┘    │
+│                               │                                     │
+│  ┌────────────────────────────▼────────────────────────────────┐    │
+│  │               OpenHandsSDKRunner (adapter.py)               │    │
+│  │  - Creates Modal sandbox with agent-server image            │    │
+│  │  - Connects via SDK's RemoteWorkspace                       │    │
+│  │  - Uses RemoteConversation to run agent loop                │    │
+│  └────────────────────────────┬────────────────────────────────┘    │
+└───────────────────────────────│─────────────────────────────────────┘
+                                │ HTTP (via Modal Tunnel)
+                                │
+┌───────────────────────────────▼─────────────────────────────────────┐
+│                     Modal Sandbox (Cloud)                           │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │           akhatua/cooperbench-<repo>:<task>-oh              │    │
+│  │  ┌─────────────────────────────────────────────────────┐    │    │
+│  │  │  Python 3.12 venv (/opt/agent-server-venv)          │    │    │
+│  │  │    - openhands-agent-server                         │    │    │
+│  │  │    - openhands-sdk (local copy with customizations) │    │    │
+│  │  │    - openhands-tools (terminal, file_editor, etc.)  │    │    │
+│  │  └─────────────────────────────────────────────────────┘    │    │
+│  │  ┌─────────────────────────────────────────────────────┐    │    │
+│  │  │  Task Environment (original Python/runtime)         │    │    │
+│  │  │    - /workspace/repo (the codebase to modify)       │    │    │
+│  │  │    - Task-specific dependencies intact              │    │    │
+│  │  └─────────────────────────────────────────────────────┘    │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+### Key Components
+
+| File | Purpose |
+|------|---------|
+| `adapter.py` | CooperBench adapter using `RemoteConversation` + `RemoteWorkspace` |
+| `docker/Dockerfile.agent-server` | Layers agent-server onto CooperBench task images |
+| `docker/build_agent_image.sh` | Builds multi-platform images (`linux/amd64`, `linux/arm64`) |
+| `openhands-sdk/` | Local copy of SDK (for customizations) |
+| `openhands-tools/` | Local copy of tools (for customizations) |
+| `openhands-workspace/` | Local copy of workspace implementations |
+
+### How It Works
+
+1. **Image Layering**: CooperBench task images (e.g., `akhatua/cooperbench-llama-index:task17244`) are extended with the OpenHands agent-server. The `-oh` suffix denotes these combined images.
+
+2. **Python Isolation**: The agent-server runs in an isolated Python 3.12 venv (`/opt/agent-server-venv`), while the task's original Python/runtime remains untouched for code execution.
+
+3. **Remote Execution**: The adapter uses the SDK's native `RemoteConversation` and `RemoteWorkspace` classes—no custom agent loop or tool reimplementation needed.
+
+4. **Credential Handling**: API keys and Google Cloud ADC are securely passed to Modal via `modal.Secret`.
+
+## Usage
+
+### Running with CLI
+
+```bash
+# Run on a single task
+cooperbench run \
+  --setting solo \
+  -a openhands_sdk \
+  -m vertex_ai/gemini-2.5-flash \
+  -r llama_index_task \
+  -t 17244 \
+  -f 1,2
+
+# Run on a subset
+cooperbench run \
+  --setting solo \
+  -a openhands_sdk \
+  -m anthropic/claude-sonnet-4-5-20250929 \
+  -s lite
+```
+
+### Building Agent Images
+
+Before running, you need to build the `-oh` images for your tasks:
+
+```bash
+cd src/cooperbench/agents/openhands_agent_sdk/docker
+
+# Build for a single task
+./build_agent_image.sh llama-index task17244
+
+# This creates: akhatua/cooperbench-llama-index:task17244-oh
+```
+
+The script:
+1. Takes the base CooperBench task image
+2. Installs Python 3.12 via `uv` in an isolated venv
+3. Installs `openhands-agent-server` and local SDK packages
+4. Pushes multi-platform image to Docker Hub
+
+### Available Tools
+
+The adapter uses OpenHands SDK's default toolset via `get_default_agent(cli_mode=True)`:
+
+- **TerminalTool** - Execute shell commands
+- **FileEditorTool** - View, create, edit files with str_replace
+- **GlobTool** - Find files by pattern
+- **GrepTool** - Search file contents
+- **TaskTrackerTool** - Track implementation progress
+
+Browser tools are disabled since tasks run headless.
+
+## Customization
+
+### Adding New Tools
+
+1. Add/modify tools in `openhands-tools/openhands/tools/`
+2. Rebuild the `-oh` images to include your changes
+3. Update `adapter.py` if the tool needs special registration
+
+### Modifying the Agent
+
+The agent behavior comes from the SDK. To customize:
+
+1. Modify prompts in `openhands-sdk/openhands/sdk/agent/prompts/`
+2. Adjust condenser settings in `openhands-sdk/openhands/sdk/context/condenser/`
+3. Rebuild images to apply changes
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `GEMINI_API_KEY` | Google AI API key |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `VERTEX_PROJECT` | GCP project for Vertex AI |
+| `VERTEX_LOCATION` | GCP region for Vertex AI |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service account JSON |
+
+The adapter automatically reads Google Cloud ADC from `~/.config/gcloud/application_default_credentials.json` if `GOOGLE_APPLICATION_CREDENTIALS` is not set.
+
+## Experiment Naming
+
+The CLI uses agent shorthand `oh` in experiment names:
+
+```
+solo-oh-gemini-2-5-flash-llama-index-17244
+│    │  │                 │           │
+│    │  │                 │           └── task ID
+│    │  │                 └── repo name
+│    │  └── model name (cleaned)
+│    └── agent shorthand (openhands_sdk → oh)
+└── setting
+```
+
+## Collaboration Support
+
+**Not yet implemented.** The adapter signature includes collaboration parameters (`agents`, `comm_url`, `git_server_url`, etc.) for future multi-agent support, but these are currently ignored.
+
+## Upstream SDK
+
+This integration is based on the [OpenHands Software Agent SDK](https://github.com/OpenHands/software-agent-sdk). See the upstream README for SDK documentation:
+
+- [Getting Started](https://docs.openhands.dev/sdk/getting-started)
+- [Architecture](https://docs.openhands.dev/sdk/arch/overview)
+- [API Reference](https://docs.openhands.dev/sdk/guides/agent-server/api-reference)

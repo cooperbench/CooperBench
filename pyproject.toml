@@ -43,6 +43,8 @@ classifiers = [
 ]
 dependencies = [
     "docker>=7.0",
+    "google-auth>=2.48.0",
+    "google-cloud-aiplatform>=1.135.0",
     "jinja2>=3.0",
     "litellm>=1.0",
     "modal>=0.70",

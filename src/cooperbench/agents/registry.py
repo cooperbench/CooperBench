@@ -77,6 +77,10 @@ def _auto_register():
         import cooperbench.agents.swe_agent.adapter  # noqa: F401
     except ImportError:
         pass
+    try:
+        import cooperbench.agents.openhands_agent_sdk.adapter  # noqa: F401
+    except ImportError:
+        pass
 
     # External agents via environment variable
     import os
