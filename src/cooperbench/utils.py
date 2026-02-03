@@ -34,7 +34,7 @@ def clean_model_name(model: str) -> str:
     """Clean model name for use in experiment name.
 
     Examples:
-        gemini/gemini-3-flash-preview -> gemini-3-flash
+        vertex_ai/gemini-3-flash-preview -> gemini-3-flash
         gpt-5.2 -> gpt-5-2
         moonshotai/Kimi-K2.5 -> kimi-k2-5
     """

@@ -119,8 +119,8 @@ def main():
     run_parser.add_argument(
         "-m",
         "--model",
-        default="gemini/gemini-3-flash-preview",
-        help="LLM model to use (default: gemini/gemini-3-flash-preview)",
+        default="vertex_ai/gemini-3-flash-preview",
+        help="LLM model to use (default: vertex_ai/gemini-3-flash-preview)",
     )
     run_parser.add_argument(
         "-a",

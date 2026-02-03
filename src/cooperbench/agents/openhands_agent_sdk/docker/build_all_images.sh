@@ -22,9 +22,13 @@ elif [[ "$1" == "--check" ]]; then
     echo ""
 fi
 
-# Only include images that exist on Docker Hub
+# All 30 CooperBench tasks
 # Updated: 2026-02-03
 BUILDS=(
+    # dottxt_ai_outlines_task (3 images)
+    "dottxt-ai-outlines:task1371"
+    "dottxt-ai-outlines:task1655"
+    "dottxt-ai-outlines:task1706"
     # dspy_task (4 images)
     "dspy:task8394"
     "dspy:task8563"
@@ -34,10 +38,24 @@ BUILDS=(
     "go-chi:task26"
     "go-chi:task27"
     "go-chi:task56"
+    # huggingface_datasets_task (3 images)
+    "huggingface-datasets:task3997"
+    "huggingface-datasets:task6252"
+    "huggingface-datasets:task7309"
     # llama_index_task (3 images)
     "llama-index:task17070"
     "llama-index:task17244"
     "llama-index:task18813"
+    # openai_tiktoken_task (1 image)
+    "openai-tiktoken:task0"
+    # pallets_click_task (3 images)
+    "pallets-click:task2068"
+    "pallets-click:task2800"
+    "pallets-click:task2956"
+    # pallets_jinja_task (3 images)
+    "pallets-jinja:task1465"
+    "pallets-jinja:task1559"
+    "pallets-jinja:task1621"
     # pillow_task (3 images)
     "pillow:task25"
     "pillow:task68"
@@ -45,17 +63,11 @@ BUILDS=(
     # react_hook_form_task (2 images)
     "react-hook-form:task85"
     "react-hook-form:task153"
+    # samuelcolvin_dirty_equals_task (1 image)
+    "samuelcolvin-dirty-equals:task43"
     # typst_task (1 image)
     "typst:task6554"
 )
-
-# Missing base images (not on Docker Hub yet):
-# - outlines:task1371, task1655, task1706
-# - hf-datasets:task3997, task6252, task7309
-# - tiktoken:task0
-# - click:task2068, task2800, task2956
-# - jinja:task1465, task1559, task1621
-# - dirty-equals:task43
 
 TOTAL=${#BUILDS[@]}
 SUCCESS=0

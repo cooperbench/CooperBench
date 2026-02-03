@@ -20,6 +20,12 @@ from cooperbench.agents.registry import register
 
 logger = logging.getLogger(__name__)
 
+# Disable all OpenHands SDK logging
+logging.getLogger("openhands").setLevel(logging.CRITICAL)
+logging.getLogger("openhands.sdk").setLevel(logging.CRITICAL)
+logging.getLogger("openhands.tools").setLevel(logging.CRITICAL)
+logging.getLogger("openhands.workspace").setLevel(logging.CRITICAL)
+
 
 # Modal app for running agent-server and infrastructure
 modal_app = modal.App("cooperbench-openhands")
@@ -41,7 +47,6 @@ def _get_or_create_redis(run_id: str, agents: list[str], timeout: int = 3600) ->
     
     with _redis_lock:
         if run_id not in _redis_servers:
-            logger.info(f"[{run_id}] Creating shared ModalRedisServer...")
             app = modal.App.lookup("cooperbench-openhands", create_if_missing=True)
             server = ModalRedisServer.create(
                 app=app,
@@ -51,7 +56,6 @@ def _get_or_create_redis(run_id: str, agents: list[str], timeout: int = 3600) ->
             )
             _redis_servers[run_id] = server
             _redis_refcount[run_id] = 0
-            logger.info(f"[{run_id}] Redis server ready at {server.url}")
         
         _redis_refcount[run_id] += 1
         return _redis_servers[run_id].url
@@ -69,7 +73,6 @@ def _release_redis(run_id: str) -> None:
         _redis_refcount[run_id] -= 1
         
         if _redis_refcount[run_id] <= 0:
-            logger.info(f"[{run_id}] All agents done, cleaning up Redis server...")
             if run_id in _redis_servers:
                 try:
                     _redis_servers[run_id].cleanup()
@@ -133,9 +136,10 @@ class OpenHandsSDKRunner:
     (e.g., task17244), the `-oh` suffix is automatically appended.
     """
 
-    def __init__(self, max_iterations: int = 50, timeout: int = 3600):
+    def __init__(self, max_iterations: int = 100, timeout: int = 3600, cost_limit: float = 2.0):
         self.max_iterations = max_iterations
         self.timeout = timeout
+        self.cost_limit = cost_limit
 
     def _get_oh_image(self, image: str) -> str:
         """Convert base image to agent-server image (add -oh suffix if needed)."""
@@ -185,7 +189,6 @@ class OpenHandsSDKRunner:
         """
         # Convert to agent-server image if needed
         oh_image = self._get_oh_image(image)
-        logger.info(f"Starting OpenHands agent with image: {oh_image}")
 
         # Track state
         total_cost = 0.0
@@ -221,11 +224,9 @@ class OpenHandsSDKRunner:
                     # Generate run_id if not provided
                     import uuid
                     run_id = uuid.uuid4().hex[:8]
-                    logger.info(f"[{agent_id}] No run_id provided, generated: {run_id}")
                 
                 redis_url = _get_or_create_redis(run_id, agents, self.timeout)
                 owns_redis = True
-                logger.info(f"[{agent_id}] Using Modal Redis: {redis_url}")
             
             # Add collaboration instructions to task
             collab_prompt = get_collaboration_system_prompt(
@@ -246,7 +247,6 @@ class OpenHandsSDKRunner:
             } if is_coop and redis_url else None
             
             with ModalSandboxContext(oh_image, self.timeout, coop_info=coop_info) as sandbox_url:
-                logger.info(f"Agent-server running at: {sandbox_url}")
 
                 # Import SDK components
                 from openhands.sdk import LLM
@@ -297,15 +297,16 @@ class OpenHandsSDKRunner:
                     messages.append(event_data)
 
                 # Create remote conversation - agent loop runs on server
+                # visualizer=None disables the verbose Rich output
                 conversation = RemoteConversation(
                     agent=agent,
                     workspace=workspace,
                     max_iteration_per_run=self.max_iterations,
                     callbacks=[event_callback],
+                    visualizer=None,
                 )
 
                 # Send task and run the conversation
-                logger.info(f"Sending task to agent: {task[:100]}...")
                 conversation.send_message(task)
                 
                 # In coop mode, use non-blocking run with message polling
@@ -328,7 +329,6 @@ class OpenHandsSDKRunner:
                             # exec_status is an enum like ConversationExecutionStatus.FINISHED
                             exec_str = str(exec_status).lower() if exec_status else ""
                             if 'finished' in exec_str or 'error' in exec_str:
-                                logger.info(f"Conversation finished with status: {exec_status}")
                                 break
                         except Exception as e:
                             logger.debug(f"Error checking state: {e}")
@@ -338,6 +338,21 @@ class OpenHandsSDKRunner:
                         if elapsed > self.timeout:
                             logger.warning(f"Timeout after {elapsed:.0f}s")
                             break
+                        
+                        # Check cost limit
+                        if self.cost_limit > 0:
+                            try:
+                                state = conversation.state
+                                stats = state.stats
+                                if stats:
+                                    combined_metrics = stats.get_combined_metrics()
+                                    current_cost = combined_metrics.accumulated_cost or 0.0
+                                    if current_cost >= self.cost_limit:
+                                        # Stop the conversation
+                                        conversation.stop()
+                                        break
+                            except Exception as e:
+                                logger.debug(f"Error checking cost: {e}")
                         
                         # Poll Redis for incoming messages (like mini_swe_agent does each step)
                         try:
@@ -350,7 +365,6 @@ class OpenHandsSDKRunner:
                                 content = msg.get("content", "")
                                 # Inject message into conversation (mirrors mini_swe_agent pattern)
                                 injected_msg = f"[Message from {sender}]: {content}"
-                                logger.info(f"[{agent_id}] Received message from {sender}, injecting into conversation")
                                 conversation.send_message(injected_msg)
                         except Exception as e:
                             logger.debug(f"Error polling Redis: {e}")
@@ -362,7 +376,6 @@ class OpenHandsSDKRunner:
                     
                 # Get the patch from remote workspace
                 # Note: workspace.git_diff() has a bug (Path vs str URL), so use execute_command
-                logger.info("Retrieving git diff...")
                 try:
                     diff_result = workspace.execute_command(
                         "git diff HEAD",
@@ -381,18 +394,21 @@ class OpenHandsSDKRunner:
                     if stats:
                         combined_metrics = stats.get_combined_metrics()
                         total_cost = combined_metrics.accumulated_cost or 0.0
-                        logger.info(f"Total cost: ${total_cost:.4f}")
+                        
+                        # Check cost limit
+                        if self.cost_limit > 0 and total_cost >= self.cost_limit:
+                            status = "CostLimitExceeded"
+                        else:
+                            status = "Submitted"
                 except Exception as e:
                     logger.warning(f"Failed to get cost: {e}")
                     pass  # Cost tracking optional
+                    status = "Submitted"
                 
-                status = "Submitted"
-                logger.info(f"Agent completed. Steps: {steps}, Patch length: {len(patch)}")
                 
                 # Retrieve sent messages from Redis for conversation extraction
                 if is_coop and redis_url:
                     sent_messages = _retrieve_sent_messages(redis_url, agent_id)
-                    logger.info(f"Retrieved {len(sent_messages)} sent messages")
 
         except Exception as e:
             logger.exception(f"Error running agent: {e}")
@@ -444,14 +460,14 @@ class ModalSandboxContext:
         """Collect API keys, credentials, and coop info from environment."""
         creds = {}
         
-        # Collect API keys
+        # Collect API keys and Vertex AI config (litellm reads VERTEXAI_* env vars)
         for key in [
             "GEMINI_API_KEY",
             "ANTHROPIC_API_KEY", 
             "OPENAI_API_KEY",
-            "VERTEX_PROJECT",
-            "VERTEX_LOCATION",
             "GOOGLE_CLOUD_PROJECT",
+            "VERTEXAI_PROJECT",
+            "VERTEXAI_LOCATION",
         ]:
             if value := os.environ.get(key):
                 creds[key] = value
@@ -465,23 +481,20 @@ class ModalSandboxContext:
             default_adc_path = os.path.join(home, ".config", "gcloud", "application_default_credentials.json")
             if os.path.exists(default_adc_path):
                 gcp_creds_path = default_adc_path
-                logger.info(f"Using gcloud ADC from: {gcp_creds_path}")
         
         if gcp_creds_path and os.path.exists(gcp_creds_path):
             with open(gcp_creds_path) as f:
                 creds_content = f.read()
                 creds["GOOGLE_APPLICATION_CREDENTIALS_JSON"] = creds_content
-                logger.info("Loaded Google Cloud credentials")
                 
                 # Extract project from ADC if not already set
-                if "VERTEX_PROJECT" not in creds:
+                if "VERTEXAI_PROJECT" not in creds:
                     import json
                     try:
                         adc_data = json.loads(creds_content)
                         if project_id := adc_data.get("quota_project_id"):
-                            creds["VERTEX_PROJECT"] = project_id
+                            creds["VERTEXAI_PROJECT"] = project_id
                             creds["GOOGLE_CLOUD_PROJECT"] = project_id
-                            logger.info(f"Using project from ADC: {project_id}")
                     except json.JSONDecodeError:
                         pass
         
@@ -493,13 +506,11 @@ class ModalSandboxContext:
                 creds["AGENT_ID"] = self.coop_info["agent_id"]
             if self.coop_info.get("agents"):
                 creds["AGENTS"] = ",".join(self.coop_info["agents"])
-            logger.info(f"Passing coop info to sandbox: agent={creds.get('AGENT_ID')}, agents={creds.get('AGENTS')}")
         
         return creds
 
     def __enter__(self) -> str:
         """Start sandbox, run agent-server, and return the tunnel URL."""
-        logger.info(f"Creating Modal sandbox with image: {self.image_name}")
         
         # Build image and clear entrypoint (Modal will add its own default command)
         image = modal.Image.from_registry(self.image_name).entrypoint([])
@@ -510,7 +521,6 @@ class ModalSandboxContext:
         # Collect credentials and create Modal secret
         creds = self._collect_credentials()
         secrets = [modal.Secret.from_dict(creds)] if creds else []
-        logger.info(f"Passing {len(creds)} credentials to sandbox")
         
         # Create sandbox with tunnel for port 8000
         self._sandbox = modal.Sandbox.create(
@@ -522,7 +532,6 @@ class ModalSandboxContext:
             encrypted_ports=[8000],
         )
         
-        logger.info(f"Sandbox created: {self._sandbox.object_id}")
         
         # IMPORTANT: We use a Python wrapper to ensure collaboration tools are
         # imported in the SAME process as the agent-server. This is needed because
@@ -589,14 +598,12 @@ exec /opt/agent-server-venv/bin/python /tmp/agent_wrapper.py
 """
         
         # Write the Python wrapper script to the sandbox using base64 (safe encoding)
-        logger.info("Writing Python wrapper script to sandbox...")
         import base64
         wrapper_b64 = base64.b64encode(wrapper_script.encode()).decode()
         write_wrapper = self._sandbox.exec("bash", "-c", f"echo '{wrapper_b64}' | base64 -d > /tmp/agent_wrapper.py")
         write_wrapper.wait()
         
         # Start the agent-server manually (since we cleared the entrypoint)
-        logger.info("Starting agent-server in sandbox...")
         self._server_proc = self._sandbox.exec(
             "bash", "-c", startup_script,
         )
@@ -607,7 +614,6 @@ exec /opt/agent-server-venv/bin/python /tmp/agent_wrapper.py
         # Get tunnel URL
         tunnel_info = self._sandbox.tunnels()[8000]
         tunnel_url = tunnel_info.url
-        logger.info(f"Agent-server tunnel URL: {tunnel_url}")
         
         # Wait for server to be ready
         self._wait_for_server(tunnel_url)
@@ -618,7 +624,6 @@ exec /opt/agent-server-venv/bin/python /tmp/agent_wrapper.py
         """Cleanup sandbox."""
         if self._sandbox:
             try:
-                logger.info("Terminating sandbox...")
                 self._sandbox.terminate()
             except Exception as e:
                 logger.warning(f"Failed to terminate sandbox: {e}")
@@ -627,7 +632,6 @@ exec /opt/agent-server-venv/bin/python /tmp/agent_wrapper.py
         """Wait for the agent-server to be ready."""
         import httpx
 
-        logger.info(f"Waiting for agent-server at {url}...")
         start = time.time()
         last_error = None
         
@@ -635,7 +639,6 @@ exec /opt/agent-server-venv/bin/python /tmp/agent_wrapper.py
             try:
                 response = httpx.get(f"{url}/health", timeout=10)
                 if response.status_code == 200:
-                    logger.info("Agent-server is ready!")
                     return
             except Exception as e:
                 last_error = e

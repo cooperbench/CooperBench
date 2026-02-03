@@ -26,19 +26,14 @@ RUN if command -v apk > /dev/null 2>&1; then \
         apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*; \
     fi
 
-# Install uv (can install any Python version, works on all platforms)
+# Install uv and create venv with Python 3.12 in a single layer
+# UV_INSTALL_DIR controls where uv binary goes
 ENV UV_INSTALL_DIR=/opt/uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="${UV_INSTALL_DIR}/bin:${PATH}"
-
-# Create isolated venv with Python 3.12 for agent-server
-# This doesn't touch the task's existing Python/runtime
 ENV AGENT_VENV=/opt/agent-server-venv
-RUN uv venv --python 3.12 ${AGENT_VENV}
-
-# Install agent-server and dependencies in the venv
-# redis is needed for SendMessageTool/ReceiveMessageTool (coop mode)
-RUN uv pip install --python ${AGENT_VENV}/bin/python \
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    . /opt/uv/env && \
+    uv venv --python 3.12 ${AGENT_VENV} && \
+    uv pip install --python ${AGENT_VENV}/bin/python \
         openhands-agent-server \
         openhands-sdk \
         openhands-tools \
@@ -50,7 +45,7 @@ COPY openhands-tools /opt/openhands/openhands-tools
 COPY openhands-workspace /opt/openhands/openhands-workspace
 
 # Install local packages into the agent venv (override PyPI versions)
-RUN uv pip install --python ${AGENT_VENV}/bin/python \
+RUN . /opt/uv/env && uv pip install --python ${AGENT_VENV}/bin/python \
         -e /opt/openhands/openhands-sdk \
         -e /opt/openhands/openhands-tools \
         -e /opt/openhands/openhands-workspace

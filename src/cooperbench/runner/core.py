@@ -43,7 +43,7 @@ def run(
     repo: str | None = None,
     task_id: int | None = None,
     features: list[int] | None = None,
-    model_name: str = "gemini/gemini-3-flash-preview",
+    model_name: str = "vertex_ai/gemini-3-flash-preview",
     agent: str = "mini_swe_agent",
     concurrency: int = 20,
     force: bool = False,
@@ -64,7 +64,7 @@ def run(
         repo: Filter by repository (e.g., "llama_index_task")
         task_id: Filter by specific task ID
         features: Specific feature pair [f1, f2] to run
-        model_name: LLM model (e.g., "gpt-4o", "gemini/gemini-3-flash-preview")
+        model_name: LLM model (e.g., "gpt-4o", "vertex_ai/gemini-3-flash-preview")
         agent: Agent framework to use (default: "mini_swe")
         concurrency: Max parallel tasks
         force: Rerun even if results exist

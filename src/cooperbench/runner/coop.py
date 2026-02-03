@@ -21,7 +21,7 @@ def execute_coop(
     features: list[int],
     run_name: str,
     agent_name: str = "mini_swe_agent",
-    model_name: str = "gemini/gemini-3-flash-preview",
+    model_name: str = "vertex_ai/gemini-3-flash-preview",
     redis_url: str = "redis://localhost:6379",
     force: bool = False,
     quiet: bool = False,
