@@ -12,6 +12,7 @@ import yaml
 
 from cooperbench.agents import get_runner
 from cooperbench.agents.mini_swe_agent.connectors import create_git_server
+from cooperbench.config import ConfigManager
 from cooperbench.utils import console, get_image_name
 
 
@@ -63,7 +64,17 @@ def execute_coop(
         if not quiet:
             console.print("  [dim]git[/dim] creating shared server...")
         app = modal.App.lookup("cooperbench", create_if_missing=True) if backend == "modal" else None
-        git_server = create_git_server(backend=backend, run_id=run_id, app=app)
+
+        # Build git server kwargs based on backend
+        git_server_kwargs = {"backend": backend, "run_id": run_id, "app": app}
+        if backend == "gcp":
+            config = ConfigManager()
+            if project_id := config.get("gcp_project_id"):
+                git_server_kwargs["project_id"] = project_id
+            if zone := config.get("gcp_zone"):
+                git_server_kwargs["zone"] = zone
+
+        git_server = create_git_server(**git_server_kwargs)
         git_server_url = git_server.url
         git_network = getattr(git_server, "network_name", None)
         if not quiet:
