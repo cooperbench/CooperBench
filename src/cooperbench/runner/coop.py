@@ -55,10 +55,11 @@ def execute_coop(
     namespaced_redis = f"{redis_url}#run:{run_id}"
 
     # Create git server if enabled
+    # Note: openhands_sdk manages its own git server internally, so we skip creation here
     git_server = None
     git_server_url = None
     git_network = None
-    if git_enabled:
+    if git_enabled and agent_name != "openhands_sdk":
         if not quiet:
             console.print("  [dim]git[/dim] creating shared server...")
         app = modal.App.lookup("cooperbench", create_if_missing=True) if backend == "modal" else None

@@ -236,6 +236,7 @@ agent.run(
 This means:
 - **No external Redis or Git server needed** - adapter creates its own
 - **No orchestrator changes** - just pass standard flags
+- **Self-contained** - ignores `git_server_url` from coop.py (manages its own)
 - **Portable** - can switch to different backends later
 
 ### Running Coop Mode

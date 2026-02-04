@@ -28,7 +28,7 @@ logging.getLogger("openhands.workspace").setLevel(logging.CRITICAL)
 
 
 # Modal app for running agent-server and infrastructure
-modal_app = modal.App("cooperbench-openhands")
+modal_app = modal.App("cooperbench")
 
 # Module-level shared Redis server for all coop runs
 # All concurrent tasks share ONE Redis server, with namespacing via URL fragment
@@ -56,7 +56,7 @@ def _get_or_create_redis(run_id: str, agents: list[str], timeout: int = 3600) ->
     
     with _redis_lock:
         if _shared_redis is None:
-            app = modal.App.lookup("cooperbench-openhands", create_if_missing=True)
+            app = modal.App.lookup("cooperbench", create_if_missing=True)
             _shared_redis = ModalRedisServer.create(
                 app=app,
                 run_id="shared",  # Single shared server
@@ -104,7 +104,7 @@ def _get_or_create_git_server(run_id: str, agents: list[str], timeout: int = 360
     
     with _git_lock:
         if run_id not in _git_servers:
-            app = modal.App.lookup("cooperbench-openhands", create_if_missing=True)
+            app = modal.App.lookup("cooperbench", create_if_missing=True)
             _git_servers[run_id] = ModalGitServer.create(
                 app=app,
                 run_id=run_id,
@@ -264,7 +264,7 @@ class OpenHandsSDKRunner:
             timeout=30.0,
         )
         if result.exit_code != 0:
-            logger.warning(f"Initial git push failed: {result.stderr}")
+            logger.warning(f"Initial git push failed for {agent_id}: {result.stderr}")
         
         # Also push main/master as base reference
         workspace.execute_command(
@@ -272,8 +272,6 @@ class OpenHandsSDKRunner:
             cwd="/workspace/repo",
             timeout=30.0,
         )
-        
-        logger.debug(f"Git setup complete for {agent_id} with remote {git_url}")
 
     def run(
         self,
@@ -323,7 +321,9 @@ class OpenHandsSDKRunner:
         # Determine if this is a coop run
         is_coop = (messaging_enabled or git_enabled) and agents and len(agents) > 1
         redis_url = comm_url
-        git_url = git_server_url
+        # OpenHands adapter manages its own git server - ignore git_server_url from coop.py
+        # This ensures git setup works correctly with RemoteWorkspace
+        git_url = None
         run_id = None
         owns_redis = False  # Track if we need to release Redis reference
         owns_git = False  # Track if we need to release Git server reference
@@ -347,8 +347,10 @@ class OpenHandsSDKRunner:
                 redis_url = _get_or_create_redis(run_id, agents, self.timeout)
                 owns_redis = True
             
-            # Create Modal Git server if git is enabled and no URL provided
-            if git_enabled and not git_server_url:
+            # Create Modal Git server if git is enabled
+            # OpenHands adapter always creates its own git server (ignores git_server_url from coop.py)
+            # to ensure git setup works correctly with RemoteWorkspace
+            if git_enabled:
                 git_url = _get_or_create_git_server(run_id, agents, self.timeout)
                 owns_git = True
 
@@ -599,7 +601,7 @@ class ModalSandboxContext:
         image = modal.Image.from_registry(self.image_name).entrypoint([])
         
         # Get or create app
-        app = modal.App.lookup("cooperbench-openhands-v3", create_if_missing=True)
+        app = modal.App.lookup("cooperbench", create_if_missing=True)
         
         # Collect credentials and create Modal secret
         creds = self._collect_credentials()
