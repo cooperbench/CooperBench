@@ -17,6 +17,7 @@ from typing import Any
 import modal
 from cooperbench.agents import AgentResult
 from cooperbench.agents.registry import register
+from cooperbench.agents.openhands_agent_sdk.utils import wait_for_git_server, git_push_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +198,41 @@ def _retrieve_sent_messages(redis_url: str, agent_id: str) -> list[dict]:
         return []
 
 
+def _extract_patch(workspace: Any, base_commit: str | None) -> str:
+    """Extract git diff patch from workspace.
+    
+    Captures all changes: staged, unstaged, and new untracked files.
+    Uses `git add -A` first to ensure new files are included in the diff.
+    
+    Args:
+        workspace: RemoteWorkspace instance
+        base_commit: Base commit SHA to diff from
+        
+    Returns:
+        Patch content as string, or empty string on failure
+    """
+    if not base_commit or not workspace:
+        return ""
+    
+    try:
+        # Stage all changes (including new files) so they appear in diff
+        workspace.execute_command(
+            "git add -A",
+            cwd="/workspace/repo",
+            timeout=30.0
+        )
+        # Diff from base commit to working tree (includes all staged/unstaged changes)
+        diff_result = workspace.execute_command(
+            f"git diff {base_commit}",
+            cwd="/workspace/repo",
+            timeout=60.0
+        )
+        return diff_result.stdout if diff_result.exit_code == 0 else ""
+    except Exception as e:
+        logger.warning(f"Failed to extract patch: {e}")
+        return ""
+
+
 @register("openhands_sdk")
 class OpenHandsSDKRunner:
     """Runs OpenHands SDK agent with remote execution in Modal.
@@ -253,18 +289,15 @@ class OpenHandsSDKRunner:
             # Remote might already exist, update URL
             workspace.execute_command(f"git remote set-url {REMOTE_NAME} {git_url}", cwd="/workspace/repo", timeout=10.0)
         
+        # Wait for git server to be reachable (with tenacity retry)
+        wait_for_git_server(workspace, git_url)
+        
         # Create agent's branch
         workspace.execute_command(f"git checkout -b {agent_id}", cwd="/workspace/repo", timeout=10.0)
         
-        # Push initial state (first agent initializes the server)
-        # Use --force in case branch exists from a previous run
-        result = workspace.execute_command(
-            f"git push -u {REMOTE_NAME} {agent_id} --force",
-            cwd="/workspace/repo",
-            timeout=30.0,
-        )
-        if result.exit_code != 0:
-            logger.warning(f"Initial git push failed for {agent_id}: {result.stderr}")
+        # Push initial state with retry (first agent initializes the server)
+        if not git_push_with_retry(workspace, REMOTE_NAME, agent_id, force=True):
+            logger.error(f"Initial git push failed for {agent_id} after retries")
         
         # Also push main/master as base reference
         workspace.execute_command(
@@ -390,6 +423,18 @@ class OpenHandsSDKRunner:
                     working_dir="/workspace/repo",
                 )
                 
+                # Capture base commit for patch generation (before any changes)
+                try:
+                    base_result = workspace.execute_command(
+                        "git rev-parse HEAD",
+                        cwd="/workspace/repo",
+                        timeout=10.0
+                    )
+                    base_commit = base_result.stdout.strip() if base_result.exit_code == 0 else None
+                except Exception as e:
+                    logger.warning(f"Failed to get base commit: {e}")
+                    base_commit = None
+                
                 # Set up git remote if git collaboration is enabled
                 if coop_info and coop_info.get("git_enabled") and coop_info.get("git_url"):
                     self._setup_git_remote(
@@ -449,17 +494,7 @@ class OpenHandsSDKRunner:
                 conversation.run(blocking=True, timeout=float(self.timeout))
                     
                 # Get the patch from remote workspace
-                # Note: workspace.git_diff() has a bug (Path vs str URL), so use execute_command
-                try:
-                    diff_result = workspace.execute_command(
-                        "git diff HEAD",
-                        cwd="/workspace/repo",
-                        timeout=60.0
-                    )
-                    patch = diff_result.stdout if diff_result.exit_code == 0 else ""
-                except Exception as e:
-                    logger.warning(f"Failed to get git diff: {e}")
-                    patch = ""
+                patch = _extract_patch(workspace, base_commit)
                 
                 # Get cost from conversation stats (via state.stats which fetches from remote)
                 try:
@@ -489,10 +524,14 @@ class OpenHandsSDKRunner:
                 logger.debug(f"Agent reached max iterations: {e}")
                 status = "Submitted"  # Still consider it submitted
                 error = None  # Not an error condition
+                # Still extract patch - agent likely made code changes
+                patch = _extract_patch(workspace, base_commit)
             else:
                 logger.exception(f"Error running agent: {e}")
                 error = error_str
                 status = "Error"
+                # Try to recover partial progress
+                patch = _extract_patch(workspace, base_commit)
         finally:
             # Release Redis reference (cleanup happens when all agents done)
             if owns_redis:

@@ -86,7 +86,14 @@ class SendMessageExecutor(ToolExecutor[SendMessageAction, SendMessageObservation
             self._prefix = ""
         
         self.redis_url = redis_url
-        self._client = redis.from_url(redis_url)
+        # Configure Redis client with retry logic and timeouts
+        self._client = redis.from_url(
+            redis_url,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            retry_on_timeout=True,
+            health_check_interval=30,
+        )
     
     def __call__(self, action: SendMessageAction, conversation=None) -> SendMessageObservation:
         if action.recipient not in self.agents:
@@ -201,10 +208,14 @@ class ReceiveMessageObservation(Observation):
     
     messages: list[dict] = Field(default_factory=list, description="Received messages")
     count: int = Field(default=0, description="Number of messages received")
+    error: str | None = Field(default=None, description="Error message if receiving failed")
     
     @property
     def text(self) -> str:
         """Format messages for display to agent."""
+        if self.error:
+            return f"Error receiving messages: {self.error}"
+        
         if not self.messages:
             return "No new messages."
         
@@ -237,7 +248,14 @@ class ReceiveMessageExecutor(ToolExecutor[ReceiveMessageAction, ReceiveMessageOb
             self._prefix = ""
         
         self.redis_url = redis_url
-        self._client = redis.from_url(redis_url)
+        # Configure Redis client with retry logic and timeouts
+        self._client = redis.from_url(
+            redis_url,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            retry_on_timeout=True,
+            health_check_interval=30,
+        )
         print(f"[ReceiveMessageExecutor] Initialized with prefix='{self._prefix}' for agent={agent_id}", flush=True)
     
     def __call__(self, action: ReceiveMessageAction, conversation=None) -> ReceiveMessageObservation:
