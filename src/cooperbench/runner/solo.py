@@ -52,6 +52,7 @@ def execute_solo(
             quiet=quiet,
             backend=backend,
             agent_config=agent_config,
+            run_name=run_name,
         )
     except Exception as e:
         result = {
@@ -141,6 +142,7 @@ def _spawn_solo_agent(
     quiet: bool = False,
     backend: str = "modal",
     agent_config: str | None = None,
+    run_name: str | None = None,
 ) -> dict:
     """Spawn a single agent on multiple features (solo mode).
 
@@ -159,6 +161,12 @@ def _spawn_solo_agent(
 
     task = "\n\n---\n\n".join(combined_task)
     image = get_image_name(repo_name, task_id)
+
+    # Compute log directory path
+    log_dir_path = None
+    if run_name:
+        feature_str = "_".join(f"f{f}" for f in sorted(features))
+        log_dir_path = str(Path("logs") / run_name / "solo" / repo_name / str(task_id) / feature_str)
 
     if not quiet:
         console.print("  [dim]solo[/dim] starting...")
@@ -189,6 +197,8 @@ def _spawn_solo_agent(
         git_enabled=False,
         messaging_enabled=False,
         config=config,
+        agent_config=agent_config,
+        log_dir=log_dir_path,
     )
 
     return {

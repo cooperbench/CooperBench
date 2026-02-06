@@ -59,6 +59,7 @@ class AgentRunner(Protocol):
         messaging_enabled: bool = True,
         # Agent-specific config
         config: dict[str, Any] | None = None,
+        log_dir: str | None = None,
     ) -> AgentResult:
         """Run agent on a task.
 
@@ -73,6 +74,7 @@ class AgentRunner(Protocol):
             git_enabled: Whether git collaboration is enabled
             messaging_enabled: Whether messaging is enabled
             config: Agent-specific configuration
+            log_dir: Directory path for agent output files (optional)
 
         Returns:
             AgentResult with status, patch, cost, steps, messages
