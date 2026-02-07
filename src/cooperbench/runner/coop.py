@@ -101,6 +101,8 @@ def execute_coop(
                 quiet=quiet,
                 backend=backend,
                 agent_config=agent_config,
+                run_name=run_name,
+                features=features,
             )
         except Exception as e:
             results[agent_id] = {
@@ -233,6 +235,8 @@ def _spawn_agent(
     quiet: bool = False,
     backend: str = "modal",
     agent_config: str | None = None,
+    run_name: str | None = None,
+    features: list[int] | None = None,
 ) -> dict:
     """Spawn a single agent on a feature using the agent framework adapter.
 
@@ -247,6 +251,12 @@ def _spawn_agent(
 
     task = feature_file.read_text()
     image = get_image_name(repo_name, task_id)
+
+    # Compute log directory path
+    log_dir_path = None
+    if run_name and features:
+        feature_str = "_".join(f"f{f}" for f in sorted(features))
+        log_dir_path = str(Path("logs") / run_name / "coop" / repo_name / str(task_id) / feature_str)
 
     if not quiet:
         console.print(f"  [dim]{agent_id}[/dim] starting...")
@@ -279,6 +289,8 @@ def _spawn_agent(
         git_enabled=git_enabled,
         messaging_enabled=messaging_enabled,
         config=config,
+        agent_config=agent_config,
+        log_dir=log_dir_path,
     )
 
     return {
