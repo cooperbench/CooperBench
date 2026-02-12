@@ -346,6 +346,10 @@ class OpenHandsSDKRunner:
 
         # Track state
         total_cost = 0.0
+        input_tokens = 0
+        output_tokens = 0
+        cache_read_tokens = 0
+        cache_write_tokens = 0
         messages = []
         sent_messages = []
         steps = 0
@@ -501,22 +505,29 @@ class OpenHandsSDKRunner:
                 # Get the patch from remote workspace
                 patch = _extract_patch(workspace, base_commit)
                 
-                # Get cost from conversation stats (via state.stats which fetches from remote)
+                # Get cost and token usage from conversation stats
                 try:
                     state = conversation.state
                     stats = state.stats
                     if stats:
                         combined_metrics = stats.get_combined_metrics()
                         total_cost = combined_metrics.accumulated_cost or 0.0
-                        
+
+                        # Extract token counts
+                        token_usage = combined_metrics.accumulated_token_usage
+                        if token_usage:
+                            input_tokens = token_usage.prompt_tokens or 0
+                            output_tokens = token_usage.completion_tokens or 0
+                            cache_read_tokens = getattr(token_usage, "cache_read_tokens", 0) or 0
+                            cache_write_tokens = getattr(token_usage, "cache_write_tokens", 0) or 0
+
                         # Check cost limit
                         if self.cost_limit > 0 and total_cost >= self.cost_limit:
                             status = "CostLimitExceeded"
                         else:
                             status = "Submitted"
                 except Exception as e:
-                    logger.warning(f"Failed to get cost: {e}")
-                    pass  # Cost tracking optional
+                    logger.warning(f"Failed to get cost/tokens: {e}")
                     status = "Submitted"
                 
                 # sent_messages is already populated from event_callback above
@@ -545,11 +556,29 @@ class OpenHandsSDKRunner:
             if owns_git and run_id:
                 _release_git_server(run_id)
 
+        # Fallback cost calculation if agent didn't report cost
+        if total_cost <= 0 and (input_tokens > 0 or output_tokens > 0):
+            from cooperbench.agents.pricing import compute_fallback_cost
+
+            fallback = compute_fallback_cost(
+                model=model_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
+            )
+            if fallback is not None:
+                total_cost = fallback
+
         return AgentResult(
             status=status,
             patch=patch,
             cost=total_cost,
             steps=steps,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
             messages=messages,
             sent_messages=sent_messages,
             error=error,

@@ -195,6 +195,10 @@ def execute_coop(
                 "status": r.get("status"),
                 "cost": r.get("cost", 0),
                 "steps": r.get("steps", 0),
+                "input_tokens": r.get("input_tokens", 0),
+                "output_tokens": r.get("output_tokens", 0),
+                "cache_read_tokens": r.get("cache_read_tokens", 0),
+                "cache_write_tokens": r.get("cache_write_tokens", 0),
                 "patch_lines": len(r.get("patch", "").splitlines()),
                 "error": r.get("error"),
             }
@@ -300,6 +304,10 @@ def _spawn_agent(
         "patch": result.patch,
         "cost": result.cost,
         "steps": result.steps,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cache_read_tokens": result.cache_read_tokens,
+        "cache_write_tokens": result.cache_write_tokens,
         "messages": result.messages,
         "sent_messages": result.sent_messages,  # For tool-based agents
         "error": result.error,

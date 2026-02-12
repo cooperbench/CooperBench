@@ -30,6 +30,18 @@ class AgentResult:
     steps: int
     """Number of LLM calls made."""
 
+    input_tokens: int = 0
+    """Total input (prompt) tokens used."""
+
+    output_tokens: int = 0
+    """Total output (completion) tokens used."""
+
+    cache_read_tokens: int = 0
+    """Tokens read from prompt cache."""
+
+    cache_write_tokens: int = 0
+    """Tokens written to prompt cache."""
+
     messages: list[dict[str, Any]] = field(default_factory=list)
     """Full conversation trajectory for analysis."""
 
