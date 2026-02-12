@@ -36,6 +36,8 @@ class SweAgentRunner:
         git_enabled: bool = False,
         messaging_enabled: bool = True,
         config: dict | None = None,
+        agent_config: str | None = None,
+        log_dir: str | None = None,
     ) -> AgentResult:
         """Run SWE-agent on a task.
 

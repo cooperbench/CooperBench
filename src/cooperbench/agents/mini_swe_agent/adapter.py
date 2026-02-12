@@ -38,6 +38,8 @@ class MiniSweAgentRunner:
         git_enabled: bool = False,
         messaging_enabled: bool = True,
         config: dict | None = None,
+        agent_config: str | None = None,
+        log_dir: str | None = None,
     ) -> AgentResult:
         """Run mini-swe-agent on a task.
 

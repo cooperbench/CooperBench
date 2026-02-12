@@ -320,6 +320,8 @@ class OpenHandsSDKRunner:
         git_enabled: bool = False,
         messaging_enabled: bool = True,
         config: dict[str, Any] | None = None,
+        agent_config: str | None = None,
+        log_dir: str | None = None,
     ) -> AgentResult:
         """Run the OpenHands agent on a task.
         
@@ -386,6 +388,9 @@ class OpenHandsSDKRunner:
             if git_enabled:
                 git_url = _get_or_create_git_server(run_id, agents, self.timeout)
                 owns_git = True
+
+        workspace = None
+        base_commit = None
 
         try:
             # Build coop_info for both sandbox env vars AND agent system prompt
@@ -585,8 +590,10 @@ class ModalSandboxContext:
         # Collect API keys and Vertex AI config (litellm reads VERTEXAI_* env vars)
         for key in [
             "GEMINI_API_KEY",
-            "ANTHROPIC_API_KEY", 
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_BASE_URL",
             "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
             "GOOGLE_CLOUD_PROJECT",
             "VERTEXAI_PROJECT",
             "VERTEXAI_LOCATION",

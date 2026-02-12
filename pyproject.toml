@@ -55,6 +55,25 @@ dependencies = [
     "redis>=7.0",
     "rich>=13.0",
     "tenacity>=8.0",
+    # OpenHands Agent SDK (vendored)
+    "openhands-sdk",
+    "openhands-tools",
+    "openhands-workspace",
+    "deprecation>=2.1.0",
+    "fastmcp>=2.11.3",
+    "filelock>=3.20.1",
+    "httpx>=0.27.0",
+    "python-frontmatter>=1.1.0",
+    "python-json-logger>=3.3.0",
+    "websockets>=12",
+    "lmnr>=0.7.24",
+    "bashlex>=0.18",
+    "binaryornot>=0.4.4",
+    "cachetools",
+    "libtmux>=0.53.0",
+    "browser-use>=0.8.0",
+    "func-timeout>=4.3.5",
+    "tom-swe>=1.0.3",
 ]
 
 [project.optional-dependencies]
@@ -70,28 +89,6 @@ gcp = [
     "google-cloud-compute>=1.0",
     "google-cloud-storage>=2.0",
 ]
-openhands = [
-    "openhands-sdk",
-    "openhands-tools",
-    "openhands-workspace",
-    # OpenHands SDK dependencies (v1.10.0)
-    "deprecation>=2.1.0",
-    "fastmcp>=2.11.3",
-    "filelock>=3.20.1",
-    "httpx>=0.27.0",
-    "python-frontmatter>=1.1.0",
-    "python-json-logger>=3.3.0",
-    "websockets>=12",
-    "lmnr>=0.7.24",
-    # OpenHands Tools dependencies
-    "bashlex>=0.18",
-    "binaryornot>=0.4.4",
-    "cachetools",
-    "libtmux>=0.53.0",
-    "browser-use>=0.8.0",
-    "func-timeout>=4.3.5",
-    "tom-swe>=1.0.3",
-]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
@@ -99,7 +96,7 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.4",
 ]
-all = ["cooperbench[swe-agent,gcp,openhands,dev]"]
+all = ["cooperbench[swe-agent,gcp,dev]"]
 
 [project.scripts]
 cooperbench = "cooperbench.cli:main"
