@@ -66,3 +66,4 @@ dataset/**/requirements_validated.txt
 
 # Agent workspaces (generated at runtime)
 **/agent_workspace/
+.claude/
