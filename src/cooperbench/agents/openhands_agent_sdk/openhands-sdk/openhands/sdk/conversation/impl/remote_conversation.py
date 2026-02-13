@@ -1,6 +1,7 @@
 import asyncio
 import bisect
 import json
+import logging
 import os
 import threading
 import time
@@ -10,6 +11,7 @@ from typing import SupportsIndex, overload
 from urllib.parse import urlparse
 
 import httpx
+import tenacity
 import websockets
 
 from openhands.sdk.agent.base import AgentBase
@@ -57,6 +59,22 @@ from openhands.sdk.workspace import LocalWorkspace, RemoteWorkspace
 logger = get_logger(__name__)
 
 
+_RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _RETRYABLE_STATUS_CODES
+    return isinstance(exc, httpx.RequestError)
+
+
+@tenacity.retry(
+    retry=tenacity.retry_if_exception(_is_retryable),
+    wait=tenacity.wait_exponential(multiplier=2, min=2, max=16),
+    stop=tenacity.stop_after_attempt(4),
+    before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
 def _send_request(
     client: httpx.Client,
     method: str,

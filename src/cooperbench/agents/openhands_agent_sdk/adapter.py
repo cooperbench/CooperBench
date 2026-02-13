@@ -500,11 +500,22 @@ class OpenHandsSDKRunner:
                 # Message checking for coop mode happens inside the agent loop
                 # (in LocalConversation._check_inbox_messages before each step)
                 conversation.send_message(task)
-                conversation.run(blocking=True, timeout=float(self.timeout))
-                    
-                # Get the patch from remote workspace
+                try:
+                    conversation.run(blocking=True, timeout=float(self.timeout))
+                except Exception as e:
+                    error_str = str(e)
+                    if "MaxIterationsReached" in error_str:
+                        logger.debug(f"Agent reached max iterations: {e}")
+                        status = "Submitted"
+                        error = None
+                    else:
+                        logger.exception(f"Error running agent: {e}")
+                        error = error_str
+                        status = "Error"
+
+                # Extract patch while sandbox is still alive
                 patch = _extract_patch(workspace, base_commit)
-                
+
                 # Get cost and token usage from conversation stats
                 try:
                     state = conversation.state
@@ -524,30 +535,12 @@ class OpenHandsSDKRunner:
                         # Check cost limit
                         if self.cost_limit > 0 and total_cost >= self.cost_limit:
                             status = "CostLimitExceeded"
-                        else:
+                        elif status != "Error":
                             status = "Submitted"
                 except Exception as e:
                     logger.warning(f"Failed to get cost/tokens: {e}")
-                    status = "Submitted"
-                
-                # sent_messages is already populated from event_callback above
-                # No need to retrieve from Redis - we extract directly from trajectory
-
-        except Exception as e:
-            error_str = str(e)
-            # MaxIterationsReached is expected behavior, not an error
-            if "MaxIterationsReached" in error_str:
-                logger.debug(f"Agent reached max iterations: {e}")
-                status = "Submitted"  # Still consider it submitted
-                error = None  # Not an error condition
-                # Still extract patch - agent likely made code changes
-                patch = _extract_patch(workspace, base_commit)
-            else:
-                logger.exception(f"Error running agent: {e}")
-                error = error_str
-                status = "Error"
-                # Try to recover partial progress
-                patch = _extract_patch(workspace, base_commit)
+                    if status != "Error":
+                        status = "Submitted"
         finally:
             # Release Redis reference (cleanup happens when all agents done)
             if owns_redis:

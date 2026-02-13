@@ -176,7 +176,7 @@ def run(
 
     # Summary
     session_time = time.time() - bench_start_time
-    _save_summary(log_dir, run_name, len(tasks), completed, skipped, failed, total_cost, session_time, results_list)
+    _save_summary(log_dir, run_name, len(tasks), completed, skipped, failed, total_cost, session_time, results_list, eval_stats)
 
     # Get aggregate totals from all result.json files (includes previous sessions)
     from cooperbench.utils import get_run_totals
@@ -519,11 +519,13 @@ def _save_summary(
     total_cost: float,
     total_time: float,
     results_list: list,
+    eval_stats: tuple | None = None,
 ) -> None:
     """Save run summary."""
     summary = {
         "run_name": run_name,
         "completed_at": datetime.now().isoformat(),
+        "pass_rate": None,
         "total_tasks": total_tasks,
         "completed": completed,
         "skipped": skipped,
@@ -532,6 +534,22 @@ def _save_summary(
         "total_time_seconds": total_time,
         "results": results_list,
     }
+    if eval_stats:
+        eval_passed, eval_failed, eval_errors, eval_skipped, eval_results = eval_stats
+        total_evaluated = eval_passed + eval_failed + eval_errors
+        summary["pass_rate"] = eval_passed / max(eval_passed + eval_failed, 1)
+        summary["eval"] = {
+            "total_evaluated": total_evaluated,
+            "passed": eval_passed,
+            "failed": eval_failed,
+            "errors": eval_errors,
+            "skipped": eval_skipped,
+            "pass_rate": eval_passed / max(eval_passed + eval_failed, 1),
+        }
+        # Merge eval pass/fail into individual results
+        eval_by_task = {r["task"]: r["status"] for r in eval_results}
+        for result in summary["results"]:
+            result["eval"] = eval_by_task.get(result["task"])
     with open(log_dir / "summary.json", "w") as f:
         json.dump(summary, f, indent=2)
 
