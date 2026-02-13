@@ -47,10 +47,13 @@ def compute_fallback_cost(
         pass  # Model not in litellm's pricing DB
 
     # Fall back to manual table (substring match handles prefixes like "anthropic/MiniMax-M2.5")
+    # Note: prompt_tokens typically INCLUDES cache_read_tokens as a subset,
+    # so we must subtract them to avoid double-counting.
     for pattern, (inp_price, out_price, cr_price, cw_price) in _PRICING.items():
         if pattern in model:
+            non_cached_input = max(input_tokens - cache_read_tokens - cache_write_tokens, 0)
             cost = (
-                input_tokens * inp_price
+                non_cached_input * inp_price
                 + output_tokens * out_price
                 + cache_read_tokens * cr_price
                 + cache_write_tokens * cw_price
