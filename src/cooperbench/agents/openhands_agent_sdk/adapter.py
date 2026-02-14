@@ -7,17 +7,18 @@ For coop mode, it creates a shared ModalRedisServer for inter-agent messaging.
 The adapter handles its own infrastructure - no external Redis needed.
 """
 
-import os
-import time
-import logging
-import threading
 import json
+import logging
+import os
+import threading
+import time
 from typing import Any
 
 import modal
+
 from cooperbench.agents import AgentResult
+from cooperbench.agents.openhands_agent_sdk.utils import git_push_with_retry, wait_for_git_server
 from cooperbench.agents.registry import register
-from cooperbench.agents.openhands_agent_sdk.utils import wait_for_git_server, git_push_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,6 @@ def _retrieve_sent_messages(redis_url: str, agent_id: str) -> list[dict]:
     The SendMessageExecutor stores a copy of each sent message in a
     {prefix}{agent_id}:sent_messages key for later retrieval.
     """
-    import json
     try:
         import redis
         url, prefix = _parse_redis_url(redis_url)
@@ -502,6 +502,7 @@ class OpenHandsSDKRunner:
                 conversation.send_message(task)
                 try:
                     conversation.run(blocking=True, timeout=float(self.timeout))
+                    status = "Submitted"
                 except Exception as e:
                     error_str = str(e)
                     if "MaxIterationsReached" in error_str:

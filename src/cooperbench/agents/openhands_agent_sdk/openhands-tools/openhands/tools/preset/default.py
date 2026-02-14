@@ -1,6 +1,5 @@
 """Default preset configuration for OpenHands agents."""
 
-import os
 from openhands.sdk import Agent
 from openhands.sdk.context.condenser import (
     LLMSummarizingCondenser,
@@ -9,7 +8,6 @@ from openhands.sdk.context.condenser.base import CondenserBase
 from openhands.sdk.llm.llm import LLM
 from openhands.sdk.logger import get_logger
 from openhands.sdk.tool import Tool
-
 
 logger = get_logger(__name__)
 
@@ -47,10 +45,10 @@ def get_default_tools(
     register_default_tools(enable_browser=enable_browser)
 
     # Import tools to access their name attributes
+    from openhands.tools.collaboration import ReceiveMessageTool, SendMessageTool
     from openhands.tools.file_editor import FileEditorTool
     from openhands.tools.task_tracker import TaskTrackerTool
     from openhands.tools.terminal import TerminalTool
-    from openhands.tools.collaboration import ReceiveMessageTool, SendMessageTool
 
     tools = [
         Tool(name=TerminalTool.name),
@@ -81,26 +79,29 @@ def get_coop_system_prompt(agent_id: str, teammates: list[str], messaging_enable
     all_agents = [agent_id] + teammates
     agents_str = ", ".join(all_agents)
     teammate_name = teammates[0] if teammates else "teammate"
-    
+
     collab_section = f"""You are {agent_id} working as a team with: {agents_str}.
 
 <collaboration>
 
 ## Scenario
-* You and your teammate are implementing related features in the same codebase.
-* You work in **separate, isolated workspaces** - you cannot see each other's changes.
-* After you both finish, your changes will be merged together.
-* Conflicting edits to the same lines will cause merge failures.
+Your teammate ({teammate_name}) is implementing the other feature in this same codebase right now. You are both editing files in parallel but you cannot see each other's changes. When you're done, your work will be merged — if any of your edits touch the same lines, both patches are thrown away.
 
-## Communication
-* Before editing a file, tell your teammate which file and lines you plan to modify.
-* When you receive a message (shown as [Message from {teammate_name}]: ...), acknowledge and adjust if needed.
-* If you both need the same file, coordinate specific locations (e.g., "I'll add after line 50, you add after line 80").
-* Before finishing, send a summary of your changes.
+## Required workflow
 
-## Tools
-* Send a message: `send_message(recipient="{teammate_name}", content="your message")`
+1. Before you write any code, explore the codebase to understand what files you need to change. Then send a message to {teammate_name} listing every file and function you plan to modify:
+   send_message(recipient="{teammate_name}", content="I plan to modify: <list files and functions>")
+
+2. Wait for a reply from {teammate_name}. Their messages will appear automatically in your conversation as [Message from {teammate_name}]: ... — check for overlaps and coordinate if needed.
+
+3. While you are working, if you discover you need to change files you didn't mention, message {teammate_name} before editing them.
+
+4. When you are done, send a final summary of every file you changed:
+   send_message(recipient="{teammate_name}", content="Done. I changed: <list files and changes>")
+
+Do not skip these steps. If your edits conflict with your teammate's, both of your patches will be discarded.
 """
+
     if git_enabled:
         collab_section += f"""
 ## Git
