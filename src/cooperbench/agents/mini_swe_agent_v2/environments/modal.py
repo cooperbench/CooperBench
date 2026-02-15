@@ -1,4 +1,4 @@
-"""Modal Sandbox environment for cloud execution."""
+"""Modal Sandbox environment for cloud execution (v2 interface)."""
 
 import logging
 import platform
@@ -11,17 +11,17 @@ from pydantic import BaseModel
 
 # Retryable error patterns
 _RETRYABLE_PATTERNS = [
-    "Image build",  # Image build failures
+    "Image build",
     "UNAVAILABLE",
     "DEADLINE_EXCEEDED",
     "INTERNAL",
     "temporarily unavailable",
     "rate limit",
-    "ClientClosed",  # Modal client disconnected
-    "NOT_FOUND",  # Sandbox terminated
+    "ClientClosed",
+    "NOT_FOUND",
     "Sandbox not found",
     "already shut down",
-    "Container ID",  # Container finished
+    "Container ID",
     "finished",
 ]
 
@@ -53,19 +53,15 @@ def _reset_global_app() -> None:
 
 def _get_or_build_image(image_name: str) -> modal.Image:
     """Get cached image or build it (thread-safe, only one build per image)."""
-    # Fast path: image already cached
     if image_name in _image_cache:
         return _image_cache[image_name]
 
-    # Get or create a lock for this specific image
     with _cache_lock:
         if image_name not in _image_locks:
             _image_locks[image_name] = threading.Lock()
         lock = _image_locks[image_name]
 
-    # Only one thread builds the image, others wait
     with lock:
-        # Check again in case another thread built it while we waited
         if image_name in _image_cache:
             return _image_cache[image_name]
 
@@ -99,7 +95,7 @@ class ModalEnvironment:
         logger: logging.Logger | None = None,
         **kwargs,
     ):
-        self.logger = logger or logging.getLogger("cooperbench.agents.mini_swe_agent.modal")
+        self.logger = logger or logging.getLogger("cooperbench.agents.mini_swe_agent_v2.modal")
         self.config = config_class(**kwargs)
         self.sb = None
         self._start_sandbox_with_retry()
@@ -142,13 +138,12 @@ class ModalEnvironment:
                 error_str = str(e) + str(type(e).__name__)
 
                 if attempt < self.config.max_retries - 1 and self._is_retryable(e):
-                    delay = self.config.retry_delay * (2**attempt)  # Exponential backoff
+                    delay = self.config.retry_delay * (2**attempt)
                     self.logger.warning(
                         f"Sandbox creation failed (attempt {attempt + 1}/{self.config.max_retries}): {e}. "
                         f"Retrying in {delay:.1f}s..."
                     )
                     time.sleep(delay)
-                    # Reset client state on client/connection errors
                     if "ClientClosed" in error_str or "Image build" in error_str:
                         self._reset_client()
                 else:
@@ -176,17 +171,15 @@ class ModalEnvironment:
         self.logger.warning("Sandbox terminated unexpectedly, creating new sandbox...")
         old_sb = self.sb
         self.sb = None
-        # Try to clean up old sandbox (may already be gone)
         if old_sb:
             try:
                 old_sb.terminate()
             except Exception:
                 pass
-        # Reset client in case of connection issues
         self._reset_client()
         self._start_sandbox_with_retry()
 
-    def get_template_vars(self) -> dict[str, Any]:
+    def get_template_vars(self, **kwargs) -> dict[str, Any]:
         return self.config.model_dump() | {
             "system": "Linux",
             "release": "modal",
@@ -194,8 +187,22 @@ class ModalEnvironment:
             "machine": platform.machine(),
         }
 
-    def execute(self, command: str, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]:
-        """Execute a command in the Modal Sandbox with retry on sandbox death."""
+    def serialize(self) -> dict:
+        return {
+            "info": {
+                "config": {
+                    "environment": self.config.model_dump(mode="json"),
+                    "environment_type": f"{self.__class__.__module__}.{self.__class__.__name__}",
+                }
+            }
+        }
+
+    def execute(self, action: dict, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]:
+        """Execute a command in the Modal Sandbox with retry on sandbox death.
+
+        v2 interface: action is a dict with {"command": "..."}.
+        """
+        command = action.get("command", "")
         cwd = cwd or self.config.cwd
         last_error: Exception | None = None
 
@@ -208,8 +215,15 @@ class ModalEnvironment:
                 stderr = proc.stderr.read()
                 proc.wait()
                 output = stdout + stderr if stderr else stdout
-                return {"output": output, "returncode": proc.returncode}
+                result = {"output": output, "returncode": proc.returncode, "exception_info": ""}
+                self._check_finished(result)
+                return result
             except Exception as e:
+                # Re-raise Submitted exceptions (task completion)
+                from cooperbench.agents.mini_swe_agent_v2.exceptions import Submitted
+
+                if isinstance(e, Submitted):
+                    raise
                 last_error = e
                 if self._is_sandbox_dead(e) and attempt < self.config.max_retries - 1:
                     self.logger.warning(
@@ -222,6 +236,21 @@ class ModalEnvironment:
         if last_error is not None:
             raise last_error
         raise RuntimeError("No retries attempted")
+
+    def _check_finished(self, output: dict):
+        """Raises Submitted if the output indicates task completion."""
+        from cooperbench.agents.mini_swe_agent_v2.exceptions import Submitted
+
+        lines = output.get("output", "").lstrip().splitlines(keepends=True)
+        if lines and lines[0].strip() == "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" and output["returncode"] == 0:
+            submission = "".join(lines[1:])
+            raise Submitted(
+                {
+                    "role": "exit",
+                    "content": submission,
+                    "extra": {"exit_status": "Submitted", "submission": submission},
+                }
+            )
 
     def cleanup(self):
         """Terminate the Modal Sandbox."""
