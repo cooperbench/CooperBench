@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.5] - 2026-02-14
+
+### Added
+
+- **mini_swe_agent_v2** - New agent framework with improved tool-call based architecture, litellm model integration, cache control, multimodal support, and retry logic
+
+### Changed
+
+- **Python 3.10 support** - Lowered minimum Python version from 3.12 to 3.10, replacing `typing.Self`, `typing.override`, and PEP 695 type aliases with `typing_extensions` equivalents
+- **Removed `browser-use` dependency** - Dropped from both root and vendored openhands-tools dependencies
+- **Removed `openhands-agent-server` dependency** - Dropped unused dependency from vendored openhands-workspace
+- **Fixed lint/type errors** - Resolved ruff F401 unused import and mypy type error in mini_swe_agent_v2
+
 ## [0.0.4] - 2026-02-14
 
 ### Added
