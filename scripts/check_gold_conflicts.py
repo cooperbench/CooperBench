@@ -45,6 +45,7 @@ def _rate_limited_create_sandbox(modal_image, timeout, app):
         app=app,
     )
 
+
 REGISTRY = "akhatua"
 IMAGE_PREFIX = "cooperbench"
 DATASET_DIR = Path(__file__).resolve().parent.parent / "dataset"
@@ -64,10 +65,7 @@ def filter_test_files(patch_content: str) -> str:
     skip = False
     for line in patch_content.split("\n"):
         if line.startswith("diff --git"):
-            skip = any(
-                p in line
-                for p in ["/test_", "/tests/", "_test.py", "/test/", "tests.py"]
-            )
+            skip = any(p in line for p in ["/test_", "/tests/", "_test.py", "/test/", "tests.py"])
         if not skip:
             filtered_lines.append(line)
 
@@ -77,9 +75,7 @@ def filter_test_files(patch_content: str) -> str:
     return result
 
 
-def discover_all_pairs(
-    repo_filter: str | None = None, task_filter: int | None = None
-) -> list[dict]:
+def discover_all_pairs(repo_filter: str | None = None, task_filter: int | None = None) -> list[dict]:
     """Discover all feature pairs, each with their gold patches pre-loaded."""
     pairs = []
 
@@ -253,10 +249,7 @@ def main():
                 status = "CONFLICT" if result["has_conflict"] else "clean"
                 if result["error"]:
                     status = f"ERROR: {result['error'][:60]}"
-                print(
-                    f"  [{done_count}/{len(pairs)}] "
-                    f"{p['repo']}/task{p['task_id']} f{p['f1']}+f{p['f2']}: {status}"
-                )
+                print(f"  [{done_count}/{len(pairs)}] {p['repo']}/task{p['task_id']} f{p['f1']}+f{p['f2']}: {status}")
             except Exception as e:
                 print(f"  [{done_count}/{len(pairs)}] FATAL: {e}")
 
@@ -288,13 +281,12 @@ def main():
             "conflicts": len(conflicts),
             "clean_merges": len(clean),
             "errors": len(errors),
-            "conflict_rate": f"{len(conflicts)/total_checked*100:.1f}%" if total_checked else "N/A",
+            "conflict_rate": f"{len(conflicts) / total_checked * 100:.1f}%" if total_checked else "N/A",
             "elapsed_seconds": round(elapsed, 1),
         },
         "per_task": task_breakdown,
         "conflict_pairs": [
-            {"repo": r["repo"], "task_id": r["task_id"], "f1": r["f1"], "f2": r["f2"]}
-            for r in conflicts
+            {"repo": r["repo"], "task_id": r["task_id"], "f1": r["f1"], "f2": r["f2"]} for r in conflicts
         ],
         "all_results": all_results,
     }

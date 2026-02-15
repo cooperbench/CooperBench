@@ -176,7 +176,9 @@ def run(
 
     # Summary
     session_time = time.time() - bench_start_time
-    _save_summary(log_dir, run_name, len(tasks), completed, skipped, failed, total_cost, session_time, results_list, eval_stats)
+    _save_summary(
+        log_dir, run_name, len(tasks), completed, skipped, failed, total_cost, session_time, results_list, eval_stats
+    )
 
     # Get aggregate totals from all result.json files (includes previous sessions)
     from cooperbench.utils import get_run_totals
