@@ -4,7 +4,9 @@ import base64
 import hashlib
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Literal
+
+from typing_extensions import Self
 
 from pydantic import Field
 

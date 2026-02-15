@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from typing import TypeAlias
 
 import frontmatter
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -132,18 +133,18 @@ class ResolvedPluginSource(BaseModel):
 #: MCP server configuration dict. Keys are server names, values are server configs.
 #: Each config should have 'command' (str), optional 'args' (list[str]), 'env'.
 #: See https://gofastmcp.com/clients/client#configuration-format
-type McpServersDict = dict[str, dict[str, Any]]
+McpServersDict: TypeAlias = dict[str, dict[str, Any]]
 
 #: LSP server configuration dict. Keys are server names, values are server configs.
 #: Each server config should have 'command' (str) and optional 'args' (list[str]),
 #: 'extensionToLanguage' (dict mapping file extensions to language IDs).
 #: See https://github.com/OpenHands/software-agent-sdk/issues/1745 for LSP support.
-type LspServersDict = dict[str, dict[str, Any]]
+LspServersDict: TypeAlias = dict[str, dict[str, Any]]
 
 #: Hooks configuration dict matching HookConfig.to_dict() structure.
 #: Should have 'hooks' key with event types mapping to list of matchers.
 #: See openhands.sdk.hooks.HookConfig for the full structure.
-type HooksConfigDict = dict[str, Any]
+HooksConfigDict: TypeAlias = dict[str, Any]
 
 
 if TYPE_CHECKING:

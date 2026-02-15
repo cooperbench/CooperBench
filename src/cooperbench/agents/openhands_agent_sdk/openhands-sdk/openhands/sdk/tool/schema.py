@@ -14,7 +14,7 @@ from openhands.sdk.utils.visualize import display_dict
 
 
 if TYPE_CHECKING:
-    from typing import Self
+    from typing_extensions import Self
 
 S = TypeVar("S", bound="Schema")
 

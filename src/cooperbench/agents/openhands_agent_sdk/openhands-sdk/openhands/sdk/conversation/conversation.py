@@ -1,6 +1,8 @@
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Self, overload
+from typing import TYPE_CHECKING, overload
+
+from typing_extensions import Self
 
 from openhands.sdk.agent.base import AgentBase
 from openhands.sdk.conversation.base import BaseConversation

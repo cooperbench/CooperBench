@@ -2,7 +2,9 @@ import inspect
 import logging
 import threading
 from abc import ABC
-from typing import Annotated, Any, Self, Union
+from typing import Annotated, Any, Union
+
+from typing_extensions import Self
 
 from pydantic import (
     BaseModel,
