@@ -3,7 +3,9 @@ import json
 from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
+
+from typing_extensions import Self
 
 from pydantic import Field, PrivateAttr, model_validator
 

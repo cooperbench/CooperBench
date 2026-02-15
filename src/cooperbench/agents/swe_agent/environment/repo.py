@@ -2,7 +2,9 @@ import asyncio
 import os
 import shlex
 from pathlib import Path
-from typing import Any, Literal, Protocol, Self
+from typing import Any, Literal, Protocol
+
+from typing_extensions import Self
 
 from git import InvalidGitRepositoryError
 from git import Repo as GitRepo

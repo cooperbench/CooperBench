@@ -1,5 +1,7 @@
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING
+
+from typing_extensions import Self
 
 from pydantic import Field
 from rich.text import Text

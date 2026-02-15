@@ -12,7 +12,6 @@ from pydantic import BaseModel
 from cooperbench.agents.mini_swe_agent_v2.models import GLOBAL_MODEL_STATS
 from cooperbench.agents.mini_swe_agent_v2.models.utils.actions_toolcall import (
     BASH_TOOL,
-    SEND_MESSAGE_TOOL,
     format_toolcall_observation_messages,
     parse_toolcall_actions,
 )
@@ -47,7 +46,7 @@ class LitellmModelConfig(BaseModel):
 
 
 class LitellmModel:
-    abort_exceptions: list[type[Exception]] = [
+    abort_exceptions: list[type[BaseException]] = [
         litellm.exceptions.UnsupportedParamsError,
         litellm.exceptions.NotFoundError,
         litellm.exceptions.PermissionDeniedError,

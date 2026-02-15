@@ -8,7 +8,9 @@ they requested it, preventing starvation that can occur with standard RLock.
 import threading
 import time
 from collections import deque
-from typing import Any, Self
+from typing import Any
+
+from typing_extensions import Self
 
 
 class FIFOLock:
