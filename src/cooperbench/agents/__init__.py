@@ -104,6 +104,7 @@ from cooperbench.agents.registry import get_runner, list_agents, register  # noq
 # Add your agent's shorthand here when registering a new adapter
 AGENT_SHORTHANDS = {
     "mini_swe_agent": "msa",
+    "mini_swe_agent_v2": "msa_v2",
     "swe_agent": "sw",
     "openhands_sdk": "oh",
 }
