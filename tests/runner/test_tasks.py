@@ -158,6 +158,26 @@ class TestLoadSubset:
         lite_subset = load_subset("lite")
         assert subset["tasks"].issubset(lite_subset["tasks"]), "Flash tasks should be subset of lite"
 
+    def test_spark_benchmark_split_is_stable(self):
+        """Verify spark benchmark split hasn't changed - this is a frozen evaluation set."""
+        subset = load_subset("spark")
+
+        # Check structure
+        assert "tasks" in subset, "Subset should have 'tasks' key"
+        assert "pairs" in subset, "Subset should have 'pairs' key"
+
+        # Spark is a 20-pair subset sampled from flash
+        assert len(subset["tasks"]) == 13, "Spark should have 13 tasks"
+        assert len(subset["pairs"]) == 13, "All 13 tasks should have specific pairs"
+
+        # Verify discover_tasks generates expected 20 pairs
+        discovered = discover_tasks(subset="spark")
+        assert len(discovered) == 20, "Spark subset should generate exactly 20 feature pairs"
+
+        # Spark should be a strict subset of flash
+        flash_subset = load_subset("flash")
+        assert subset["tasks"].issubset(flash_subset["tasks"]), "Spark tasks should be subset of flash"
+
     def test_load_subset_returns_dict_with_pairs(self):
         """Test that load_subset returns dict with tasks and pairs."""
         subset = load_subset("lite")
