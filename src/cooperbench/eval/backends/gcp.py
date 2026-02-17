@@ -203,20 +203,35 @@ if [ "$SETTING" = "solo" ]; then
 
 else
     # Coop mode: merge patches, then test both features
+    # Helper: apply patch to index directly (--cached bypasses stat-dirty working tree issues)
+    apply_and_stage() {
+        local PATCH_FILE=$1
+        local LABEL=$2
+        if git apply --cached "$PATCH_FILE" 2>&1; then
+            echo "${LABEL}_OK=git_apply_cached"
+        elif git apply --3way "$PATCH_FILE" 2>&1; then
+            grep '^diff --git' "$PATCH_FILE" | sed 's|diff --git a/||' | sed 's| b/.*||' | sort -u | xargs -r git add 2>&1
+            echo "${LABEL}_OK=git_apply_3way"
+        else
+            echo "${LABEL}_FAILED"
+        fi
+    }
+
     # Create agent1 branch
     git checkout -b agent1 2>&1
     if [ -s /patches/patch1.patch ]; then
-        git apply /patches/patch1.patch 2>&1 || git apply --3way /patches/patch1.patch 2>&1 || true
+        apply_and_stage /patches/patch1.patch PATCH1
     fi
-    git add -A && git commit -m "Agent 1" --allow-empty 2>&1
+    git commit -m "Agent 1" --allow-empty 2>&1
 
     # Create agent2 branch
-    git checkout $BASE_SHA 2>&1
+    rm -f .git/index.lock 2>/dev/null
+    git checkout --force $BASE_SHA 2>&1
     git checkout -b agent2 2>&1
     if [ -s /patches/patch2.patch ]; then
-        git apply /patches/patch2.patch 2>&1 || git apply --3way /patches/patch2.patch 2>&1 || true
+        apply_and_stage /patches/patch2.patch PATCH2
     fi
-    git add -A && git commit -m "Agent 2" --allow-empty 2>&1
+    git commit -m "Agent 2" --allow-empty 2>&1
 
     # Try merge
     MERGE_STATUS="clean"

@@ -90,13 +90,14 @@ class DockerBackend:
         client = self._get_client()
 
         # Run container in detached mode with a long-running command
+        # Override entrypoint to avoid image-specific scripts that exit immediately
         container = client.containers.run(
             image=image,
-            command="sleep infinity",
+            entrypoint="/bin/sh",
+            command=["-c", "sleep infinity"],
             detach=True,
             working_dir=workdir,
             remove=False,
-            # Set timeout via stop_signal behavior (container can be stopped)
             stop_signal="SIGTERM",
         )
 

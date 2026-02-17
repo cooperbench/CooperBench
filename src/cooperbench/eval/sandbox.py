@@ -1,12 +1,15 @@
 """Sandbox execution for patch testing."""
 
 import base64
+import logging
 import re
 from pathlib import Path
 
 from cooperbench.eval.backends import get_backend
 from cooperbench.eval.backends.base import Sandbox
 from cooperbench.utils import get_image_name
+
+logger = logging.getLogger(__name__)
 
 
 def run_patch_test(
@@ -132,6 +135,11 @@ def test_merged(
     patch1_content = _filter_test_files(patch1_content)
     patch2_content = _filter_test_files(patch2_content)
 
+    logger.info(
+        f"[EVAL] test_merged {repo_name}/task{task_id} f{feature1_id}+f{feature2_id}: "
+        f"patch1={len(patch1_content)}B patch2={len(patch2_content)}B"
+    )
+
     tests1_content = tests1_path.read_text()
     tests2_content = tests2_path.read_text()
 
@@ -174,6 +182,15 @@ def test_merged(
                     f"Both naive and union merge strategies failed. "
                     f"Naive: conflicts. Union: {union_result.get('error')}"
                 )
+
+        # Warn if merged diff is empty but patches were non-empty
+        if not merged_diff and (patch1_content.strip() or patch2_content.strip()):
+            logger.warning(
+                f"[EVAL] EMPTY MERGED DIFF despite non-empty input patches! "
+                f"patch1={len(patch1_content)}B patch2={len(patch2_content)}B "
+                f"merge_status={merge_status} strategy={strategy_used}. "
+                f"Setup output:\n{setup_result.get('output', '')[:2000]}"
+            )
 
         # Step 4: Copy the right diff file to merged.patch
         if strategy_used == "naive":
@@ -346,10 +363,85 @@ def _write_patch(sb: Sandbox, filename: str, content: str) -> None:
         raise RuntimeError(f"Failed to write {filename}: {result.stderr_read()}")
 
 
+def _fix_patch_hunks(sb: Sandbox, patch_path: str) -> None:
+    """Fix corrupted patch files where hunk headers don't match actual content.
+
+    Common issue: .strip() on git diff output removes trailing blank context
+    lines (which appear as just a space in diff format), making hunk line
+    counts in @@ headers incorrect. This causes 'corrupt patch' errors.
+
+    Fix: recalculate hunk header line counts from actual content.
+    """
+    fix_script = r"""
+import re, sys
+
+path = sys.argv[1]
+with open(path, 'r') as f:
+    lines = f.readlines()
+
+# Ensure file ends with newline
+if lines and not lines[-1].endswith('\n'):
+    lines[-1] += '\n'
+
+result = []
+i = 0
+while i < len(lines):
+    hunk_match = re.match(r'^@@ -(\d+),(\d+) \+(\d+),(\d+) @@(.*)', lines[i])
+    if not hunk_match:
+        result.append(lines[i])
+        i += 1
+        continue
+
+    old_start = int(hunk_match.group(1))
+    new_start = int(hunk_match.group(3))
+    suffix = hunk_match.group(5)
+
+    # Count actual lines in this hunk
+    j = i + 1
+    old_count = 0
+    new_count = 0
+    while j < len(lines):
+        if lines[j].startswith('@@') or lines[j].startswith('diff '):
+            break
+        if lines[j].startswith('-'):
+            old_count += 1
+        elif lines[j].startswith('+'):
+            new_count += 1
+        elif lines[j].startswith(' ') or lines[j] == '\n':
+            old_count += 1
+            new_count += 1
+        elif lines[j].startswith('\\'):
+            pass  # "\ No newline at end of file"
+        else:
+            break
+        j += 1
+
+    result.append(f'@@ -{old_start},{old_count} +{new_start},{new_count} @@{suffix}\n')
+    for k in range(i + 1, j):
+        result.append(lines[k])
+    i = j
+
+with open(path, 'w') as f:
+    f.writelines(result)
+"""
+    sb.exec("bash", "-c", f"cat > /tmp/fix_patch.py << 'PYEOF'\n{fix_script}\nPYEOF")
+    sb.exec("python3", "/tmp/fix_patch.py", patch_path)
+
+
 def _setup_branches(sb: Sandbox) -> dict:
     """Set up git branches for merge testing."""
+    # Fix patch files before applying (handles truncated trailing context lines)
+    for patch_name in ("patch1.patch", "patch2.patch"):
+        check = sb.exec("test", "-s", f"/patches/{patch_name}")
+        if check.returncode == 0:
+            _fix_patch_hunks(sb, f"/patches/{patch_name}")
+
     commands = """
 cd /workspace/repo
+
+# Clean up stale git locks from previous operations
+rm -f .git/index.lock .git/refs/heads/*.lock .git/HEAD.lock 2>/dev/null
+
 git config user.email "eval@cooperbench.local"
 git config user.name "CooperBench Eval"
 
@@ -357,21 +449,41 @@ git config user.name "CooperBench Eval"
 BASE_SHA=$(git rev-parse HEAD)
 echo "BASE_SHA=$BASE_SHA"
 
+# Helper: apply patch to index directly (--cached bypasses stat-dirty working tree issues)
+apply_and_stage() {
+    local PATCH_FILE=$1
+    local LABEL=$2
+    if git apply --cached "$PATCH_FILE" 2>&1; then
+        echo "${LABEL}_OK=git_apply_cached"
+    elif git apply --3way "$PATCH_FILE" 2>&1; then
+        # 3way modifies working tree; extract file paths from patch and add explicitly
+        grep '^diff --git' "$PATCH_FILE" | sed 's|diff --git a/||' | sed 's| b/.*||' | sort -u | xargs -r git add 2>&1
+        echo "${LABEL}_OK=git_apply_3way"
+    else
+        echo "${LABEL}_FAILED"
+    fi
+}
+
 # Create agent1 branch and apply patch1
 git checkout -b agent1 2>&1
 if [ -s /patches/patch1.patch ]; then
-    git apply /patches/patch1.patch 2>&1 || git apply --3way /patches/patch1.patch 2>&1 || echo "PATCH1_FAILED"
+    echo "PATCH1_SIZE=$(wc -c < /patches/patch1.patch)"
+    apply_and_stage /patches/patch1.patch PATCH1
+else
+    echo "PATCH1_EMPTY"
 fi
-git add -A
 git commit -m "Agent 1 changes" --allow-empty 2>&1
 
 # Create agent2 branch from base and apply patch2
-git checkout $BASE_SHA 2>&1
+rm -f .git/index.lock 2>/dev/null
+git checkout --force $BASE_SHA 2>&1
 git checkout -b agent2 2>&1
 if [ -s /patches/patch2.patch ]; then
-    git apply /patches/patch2.patch 2>&1 || git apply --3way /patches/patch2.patch 2>&1 || echo "PATCH2_FAILED"
+    echo "PATCH2_SIZE=$(wc -c < /patches/patch2.patch)"
+    apply_and_stage /patches/patch2.patch PATCH2
+else
+    echo "PATCH2_EMPTY"
 fi
-git add -A
 git commit -m "Agent 2 changes" --allow-empty 2>&1
 
 echo "SETUP_COMPLETE"
@@ -381,6 +493,18 @@ echo "SETUP_COMPLETE"
 
     if "SETUP_COMPLETE" not in output:
         return {"error": f"Branch setup failed: {output}"}
+
+    # Log patch application status
+    if "PATCH1_FAILED" in output:
+        logger.warning(f"[EVAL] Patch 1 failed to apply. Output:\n{output}")
+    if "PATCH2_FAILED" in output:
+        logger.warning(f"[EVAL] Patch 2 failed to apply. Output:\n{output}")
+
+    for line in output.split("\n"):
+        for prefix in ("PATCH1_", "PATCH2_", "BASE_SHA="):
+            if line.startswith(prefix):
+                logger.info(f"[EVAL] {line.strip()}")
+                break
 
     # Extract base SHA
     base_sha = None
@@ -396,7 +520,8 @@ def _merge_naive(sb: Sandbox, base_sha: str) -> dict:
     """Try naive git merge."""
     commands = f"""
 cd /workspace/repo
-git checkout agent2 2>&1
+rm -f .git/index.lock 2>/dev/null
+git checkout --force agent2 2>&1
 
 # Try naive merge
 if git merge agent1 --no-commit --no-ff 2>&1; then
@@ -428,7 +553,8 @@ def _merge_union(sb: Sandbox, base_sha: str) -> dict:
     """Try union merge strategy."""
     commands = f"""
 cd /workspace/repo
-git checkout agent2 2>&1
+rm -f .git/index.lock 2>/dev/null
+git checkout --force agent2 2>&1
 git reset --hard HEAD 2>&1
 
 # Set up union merge strategy
@@ -466,6 +592,9 @@ def _run_tests(sb: Sandbox, tests_patch: str, feature_patch: str, base_sha: str)
     """Run tests via runner.sh."""
     commands = f"""
 cd /workspace/repo
+
+# Clean up stale git locks
+rm -f .git/index.lock .git/refs/heads/*.lock .git/HEAD.lock 2>/dev/null
 
 # Reset to base commit
 git checkout --force {base_sha} 2>&1
