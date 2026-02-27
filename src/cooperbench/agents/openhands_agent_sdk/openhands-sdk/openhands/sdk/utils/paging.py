@@ -1,10 +1,13 @@
 """Pagination utilities for iterating over paginated search results."""
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 
-class PageProtocol[T](Protocol):
+T = TypeVar("T")
+
+
+class PageProtocol(Protocol[T]):
     """Protocol for page objects returned by search functions.
 
     All page objects should have:
@@ -16,7 +19,7 @@ class PageProtocol[T](Protocol):
     next_page_id: str | None
 
 
-async def page_iterator[T](
+async def page_iterator(
     search_func: Callable[..., Awaitable[PageProtocol[T]]],
     *args: Any,
     **kwargs: Any,

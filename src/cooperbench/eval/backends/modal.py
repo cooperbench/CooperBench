@@ -67,8 +67,13 @@ class ModalBackend:
         workdir: str = "/workspace",
     ) -> Sandbox:
         """Create a Modal sandbox for evaluation."""
+        # Eval runs need a stable long-running process for exec calls.
+        # Task images may have entrypoints that exit immediately, so clear it
+        # and run `sleep infinity` explicitly (mirrors Docker backend behavior).
         modal_image = modal.Image.from_registry(image).entrypoint([])
         sb = modal.Sandbox.create(
+            "sleep",
+            "infinity",
             image=modal_image,
             timeout=timeout,
             workdir=workdir,

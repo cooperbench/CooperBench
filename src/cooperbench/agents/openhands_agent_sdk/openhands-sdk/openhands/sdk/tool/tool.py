@@ -5,6 +5,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
+    Generic,
     Protocol,
     Self,
     TypeVar,
@@ -93,7 +94,7 @@ class ToolAnnotations(BaseModel):
     )
 
 
-class ToolExecutor[ActionT, ObservationT](ABC):
+class ToolExecutor(ABC, Generic[ActionT, ObservationT]):
     """Executor function type for a Tool."""
 
     @abstractmethod
@@ -145,7 +146,7 @@ class ExecutableTool(Protocol):
         ...
 
 
-class ToolDefinition[ActionT, ObservationT](DiscriminatedUnionMixin, ABC):
+class ToolDefinition(DiscriminatedUnionMixin, ABC, Generic[ActionT, ObservationT]):
     """Base class for all tool implementations.
 
     This class serves as a base for the discriminated union of all tool types.
