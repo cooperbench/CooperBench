@@ -2,6 +2,8 @@ from collections.abc import Callable
 from typing import (
     Any,
     Literal,
+    ParamSpec,
+    TypeVar,
 )
 
 import litellm
@@ -18,6 +20,9 @@ from openhands.sdk.observability.utils import get_env
 
 
 logger = get_logger(__name__)
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 def maybe_init_laminar():
@@ -54,7 +59,7 @@ def maybe_init_laminar():
         )
 
 
-def observe[**P, R](
+def observe(
     *,
     name: str | None = None,
     session_id: str | None = None,
