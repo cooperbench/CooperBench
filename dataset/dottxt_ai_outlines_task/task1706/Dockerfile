@@ -26,7 +26,7 @@ ENV LLAMA_CPP_FORCE_CPU=1
 ENV PYTORCH_ENABLE_MPS_FALLBACK=1
 RUN uv pip install --system -e . && \
     uv pip install --system pytest pytest-xdist pytest_mock pytest-asyncio pytest-benchmark pytest-cov && \
-    uv pip install --system torch transformers sentencepiece xgrammar llama-cpp-python==0.3.16 psutil
+    uv pip install --system torch "transformers<5" "tokenizers<0.21" sentencepiece xgrammar llama-cpp-python==0.3.16 psutil
 
 # Copy the runner script
 COPY runner.sh /usr/local/bin/
