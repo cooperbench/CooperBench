@@ -67,7 +67,7 @@ echo "Installing dependencies..."
 uv sync 2>/dev/null || true
 uv pip install --system -e .
 uv pip install --system pytest pytest-xdist pytest_mock pytest-asyncio pytest-benchmark pytest-cov
-uv pip install --system torch transformers sentencepiece xgrammar llama-cpp-python==0.3.16 psutil
+uv pip install --system torch "transformers<5" "tokenizers<0.21" sentencepiece xgrammar llama-cpp-python==0.3.16 psutil
 
 # Run tests with timeout
 echo "Running tests..."
