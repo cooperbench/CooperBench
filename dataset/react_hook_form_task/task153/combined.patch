@@ -2,17 +2,22 @@ diff --git a/src/logic/createFormControl.ts b/src/logic/createFormControl.ts
 index f7079332..4fa17575 100644
 --- a/src/logic/createFormControl.ts
 +++ b/src/logic/createFormControl.ts
-@@ -1097,7 +1097,8 @@ export function createFormControl<
+@@ -1097,7 +1097,13 @@ export function createFormControl<
    };
  
    const handleSubmit: UseFormHandleSubmit<TFieldValues> =
 -    (onValid, onInvalid) => async (e) => {
-+    (onValid, onInvalid, options) => async (e?, context?) => {
++    (onValid, onInvalid, optionsOrOnFinally) => async (e?, context?) => {
++      // Accept onFinally as a bare function (3rd positional arg) or as
++      // options.onFinally for backward compatibility with both call styles.
++      const options = typeof optionsOrOnFinally === 'function'
++        ? { onFinally: optionsOrOnFinally }
++        : optionsOrOnFinally;
 +      let onValidError: Error | undefined = undefined;
        if (e) {
          e.preventDefault && e.preventDefault();
          e.persist && e.persist();
-@@ -1108,36 +1109,107 @@ export function createFormControl<
+@@ -1108,36 +1114,107 @@ export function createFormControl<
          isSubmitting: true,
        });
  
@@ -182,7 +187,7 @@ index 2f20133e..c07f7e4a 100644
 -  onInvalid?: SubmitErrorHandler<TFieldValues>,
 -) => (e?: React.BaseSyntheticEvent) => Promise<void>;
 +  onInvalid?: SubmitErrorHandler<TFieldValues, TSubmitContext>,
-+  options?: {
++  optionsOrOnFinally?: ((formState: FormState<TFieldValues>) => void | Promise<void>) | {
 +    onBeforeValidate?: (data: TFieldValues) => Promise<void> | void;
 +    onAfterValidate?: (errors: FieldErrors<TFieldValues>, data: TFieldValues) => Promise<void> | void;
 +    preventFocusOnError?: boolean;
