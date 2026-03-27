@@ -65,10 +65,11 @@ Pre-defined task subsets are available in `subsets/` for quick evaluation:
 
 | Subset | Tasks | Pairs | Repos | Description |
 |--------|-------|-------|-------|-------------|
+| `spark` | 13 | 20 | 10 | Smoke-test subset (sampled from flash) |
 | `flash` | 20 | 50 | 11 | Dev subset for rapid iteration (sampled from lite) |
 | `lite` | 26 | 100 | 12 | Quick evaluation subset |
 
-Both subsets are generated via **uniform pair-level sampling**:
+All subsets are generated via **uniform pair-level sampling** and form a strict hierarchy: `lite` (100 pairs) → `flash` (50 pairs) → `spark` (20 pairs).
 
 ```python
 random.seed(42)  # fixed seed for reproducibility
