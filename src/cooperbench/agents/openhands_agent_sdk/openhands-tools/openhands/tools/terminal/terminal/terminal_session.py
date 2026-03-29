@@ -429,11 +429,12 @@ class TerminalSession(TerminalSessionBase):
             logger.debug(
                 f"TERMINAL CONTENT GOT after {time.time() - _start_time:.2f} seconds"
             )
+            terminal_lines = cur_terminal_output.splitlines()
             logger.debug(
-                f"BEGIN OF TERMINAL CONTENT: {cur_terminal_output.split('\n')[:10]}"
+                f"BEGIN OF TERMINAL CONTENT: {terminal_lines[:10]}"
             )
             logger.debug(
-                f"END OF TERMINAL CONTENT: {cur_terminal_output.split('\n')[-10:]}"
+                f"END OF TERMINAL CONTENT: {terminal_lines[-10:]}"
             )
             ps1_matches = CmdOutputMetadata.matches_ps1_metadata(cur_terminal_output)
             current_ps1_count = len(ps1_matches)

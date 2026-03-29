@@ -172,11 +172,11 @@ class EventLog(EventsListBase):
         return self._length
 
     def _path(self, idx: int, *, event_id: EventID | None = None) -> str:
-        return f"{self._dir}/{
-            EVENT_FILE_PATTERN.format(
-                idx=idx, event_id=event_id or self._idx_to_id[idx]
-            )
-        }"
+        filename = EVENT_FILE_PATTERN.format(
+            idx=idx,
+            event_id=event_id or self._idx_to_id[idx],
+        )
+        return f"{self._dir}/{filename}"
 
     def _scan_and_build_index(self) -> int:
         try:
