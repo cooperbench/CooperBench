@@ -1,0 +1,3 @@
+[submodule "vendor/SWE-smith"]
+	path = vendor/SWE-smith
+	url = git@github.com:SWE-bench/SWE-smith.git

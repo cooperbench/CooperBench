@@ -92,11 +92,11 @@ class DockerBackend:
         # Run container in detached mode with a long-running command
         container = client.containers.run(
             image=image,
-            command="sleep infinity",
+            command=["-c", "sleep infinity"],
+            entrypoint=["/bin/bash"],
             detach=True,
             working_dir=workdir,
             remove=False,
-            # Set timeout via stop_signal behavior (container can be stopped)
             stop_signal="SIGTERM",
         )
 

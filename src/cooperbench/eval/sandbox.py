@@ -86,6 +86,85 @@ def run_patch_test(
         sb.terminate()
 
 
+def merge_and_test(
+    sb: Sandbox,
+    patch1_content: str,
+    patch2_content: str,
+    tests1_content: str,
+    tests2_content: str,
+) -> dict:
+    """Core merge+test logic on a pre-existing sandbox.
+
+    Creates two branches, applies one patch to each, merges (naive then
+    union fallback), and runs both test suites against the merged result.
+
+    This is the reusable building block used by both :func:`test_merged`
+    (coop evaluation) and ``verify.py`` (solvability checking).
+
+    Returns:
+        Dict with keys: merge, feature1, feature2, both_passed, error.
+    """
+    _write_patch(sb, "patch1.patch", patch1_content)
+    _write_patch(sb, "patch2.patch", patch2_content)
+    _write_patch(sb, "tests1.patch", tests1_content)
+    _write_patch(sb, "tests2.patch", tests2_content)
+
+    setup_result = _setup_branches(sb)
+    if setup_result.get("error"):
+        return _merged_error_result(setup_result["error"])
+
+    base_sha = setup_result.get("base_sha")
+    if not base_sha:
+        return _merged_error_result("Failed to get base commit SHA")
+
+    naive_result = _merge_naive(sb, base_sha)
+
+    merge_status = "clean" if not naive_result["conflict"] else "conflicts"
+    strategy_used = "naive"
+    merged_diff = naive_result["diff"]
+
+    if naive_result["conflict"]:
+        union_result = _merge_union(sb, base_sha)
+        if not union_result.get("error"):
+            strategy_used = "union"
+            merged_diff = union_result["diff"]
+        else:
+            return _merged_error_result(
+                f"Both naive and union merge strategies failed. "
+                f"Naive: conflicts. Union: {union_result.get('error')}"
+            )
+
+    if strategy_used == "naive":
+        sb.exec("cp", "/patches/naive_diff.patch", "/patches/merged.patch")
+    else:
+        sb.exec("cp", "/patches/union_diff.patch", "/patches/merged.patch")
+
+    verify = sb.exec("test", "-f", "/patches/merged.patch")
+    if verify.returncode != 0:
+        return _merged_error_result(f"Failed to create merged.patch (strategy: {strategy_used})")
+
+    test1_result = _run_tests(sb, "tests1.patch", "merged.patch", base_sha)
+    test2_result = _run_tests(sb, "tests2.patch", "merged.patch", base_sha)
+
+    return {
+        "merge": {
+            "status": merge_status,
+            "strategy": strategy_used,
+            "diff": merged_diff[:5000] if merged_diff else "",
+        },
+        "feature1": {
+            "passed": test1_result["passed"],
+            "test_output": test1_result["output"],
+        },
+        "feature2": {
+            "passed": test2_result["passed"],
+            "test_output": test2_result["output"],
+        },
+        "both_passed": test1_result["passed"] and test2_result["passed"],
+        "error": None,
+    }
+
+
 def test_merged(
     repo_name: str,
     task_id: int,
@@ -128,7 +207,6 @@ def test_merged(
     patch1_content = _load_patch(patch1) or ""
     patch2_content = _load_patch(patch2) or ""
 
-    # Filter test files from patches
     patch1_content = _filter_test_files(patch1_content)
     patch2_content = _filter_test_files(patch2_content)
 
@@ -140,75 +218,9 @@ def test_merged(
     sb = eval_backend.create_sandbox(image, timeout)
 
     try:
-        # Write all patches
-        _write_patch(sb, "patch1.patch", patch1_content)
-        _write_patch(sb, "patch2.patch", patch2_content)
-        _write_patch(sb, "tests1.patch", tests1_content)
-        _write_patch(sb, "tests2.patch", tests2_content)
-
-        # Step 1: Apply patches to branches
-        setup_result = _setup_branches(sb)
-        if setup_result.get("error"):
-            return _merged_error_result(setup_result["error"])
-
-        base_sha = setup_result.get("base_sha")
-        if not base_sha:
-            return _merged_error_result("Failed to get base commit SHA")
-
-        # Step 2: Try naive merge
-        naive_result = _merge_naive(sb, base_sha)
-
-        merge_status = "clean" if not naive_result["conflict"] else "conflicts"
-        strategy_used = "naive"
-        merged_diff = naive_result["diff"]
-
-        # Step 3: If conflicts, try union merge
-        if naive_result["conflict"]:
-            union_result = _merge_union(sb, base_sha)
-            if not union_result.get("error"):
-                strategy_used = "union"
-                merged_diff = union_result["diff"]
-            else:
-                # Both naive and union failed - cannot proceed
-                return _merged_error_result(
-                    f"Both naive and union merge strategies failed. "
-                    f"Naive: conflicts. Union: {union_result.get('error')}"
-                )
-
-        # Step 4: Copy the right diff file to merged.patch
-        if strategy_used == "naive":
-            sb.exec("cp", "/patches/naive_diff.patch", "/patches/merged.patch")
-        else:
-            sb.exec("cp", "/patches/union_diff.patch", "/patches/merged.patch")
-
-        # Verify merged.patch was created
-        verify = sb.exec("test", "-f", "/patches/merged.patch")
-        if verify.returncode != 0:
-            return _merged_error_result(f"Failed to create merged.patch (strategy: {strategy_used})")
-
-        # Test feature 1
-        test1_result = _run_tests(sb, "tests1.patch", "merged.patch", base_sha)
-
-        # Test feature 2
-        test2_result = _run_tests(sb, "tests2.patch", "merged.patch", base_sha)
-
-        return {
-            "merge": {
-                "status": merge_status,
-                "strategy": strategy_used,
-                "diff": merged_diff[:5000] if merged_diff else "",  # Truncate for storage
-            },
-            "feature1": {
-                "passed": test1_result["passed"],
-                "test_output": test1_result["output"],
-            },
-            "feature2": {
-                "passed": test2_result["passed"],
-                "test_output": test2_result["output"],
-            },
-            "both_passed": test1_result["passed"] and test2_result["passed"],
-            "error": None,
-        }
+        return merge_and_test(
+            sb, patch1_content, patch2_content, tests1_content, tests2_content,
+        )
     except Exception as e:
         return _merged_error_result(str(e))
     finally:
