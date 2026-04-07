@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 from cooperbench.agents import get_runner
 from cooperbench.utils import console, get_image_name
 
@@ -15,12 +17,17 @@ def execute_solo(
     features: list[int],
     run_name: str,
     agent_name: str = "mini_swe_agent",
-    model_name: str = "gemini/gemini-3-flash-preview",
+    model_name: str = "vertex_ai/gemini-3-flash-preview",
     force: bool = False,
     quiet: bool = False,
     backend: str = "modal",
+    agent_config: str | None = None,
 ) -> dict | None:
-    """Execute a solo task (one agent, multiple features)."""
+    """Execute a solo task (one agent, multiple features).
+
+    Args:
+        agent_config: Path to agent-specific configuration file (optional)
+    """
     run_id = uuid.uuid4().hex[:8]
     start_time = datetime.now()
 
@@ -44,6 +51,8 @@ def execute_solo(
             model_name=model_name,
             quiet=quiet,
             backend=backend,
+            agent_config=agent_config,
+            run_name=run_name,
         )
     except Exception as e:
         result = {
@@ -103,6 +112,10 @@ def execute_solo(
             "status": result.get("status"),
             "cost": result.get("cost", 0),
             "steps": result.get("steps", 0),
+            "input_tokens": result.get("input_tokens", 0),
+            "output_tokens": result.get("output_tokens", 0),
+            "cache_read_tokens": result.get("cache_read_tokens", 0),
+            "cache_write_tokens": result.get("cache_write_tokens", 0),
             "patch_lines": len(result.get("patch", "").splitlines()),
             "error": result.get("error"),
         },
@@ -132,8 +145,14 @@ def _spawn_solo_agent(
     model_name: str,
     quiet: bool = False,
     backend: str = "modal",
+    agent_config: str | None = None,
+    run_name: str | None = None,
 ) -> dict:
-    """Spawn a single agent on multiple features (solo mode)."""
+    """Spawn a single agent on multiple features (solo mode).
+
+    Args:
+        agent_config: Path to agent-specific configuration file (optional)
+    """
     task_dir = Path("dataset") / repo_name / f"task{task_id}"
 
     # Combine feature specs
@@ -147,8 +166,26 @@ def _spawn_solo_agent(
     task = "\n\n---\n\n".join(combined_task)
     image = get_image_name(repo_name, task_id)
 
+    # Compute log directory path
+    log_dir_path = None
+    if run_name:
+        feature_str = "_".join(f"f{f}" for f in sorted(features))
+        log_dir_path = str(Path("logs") / run_name / "solo" / repo_name / str(task_id) / feature_str)
+
     if not quiet:
         console.print("  [dim]solo[/dim] starting...")
+
+    # Load agent config file if provided
+    config = {"backend": backend}
+    if agent_config:
+        config_path = Path(agent_config)
+        if config_path.exists():
+            with open(config_path) as f:
+                agent_config_dict = yaml.safe_load(f)
+                if agent_config_dict:
+                    config.update(agent_config_dict)
+        else:
+            raise FileNotFoundError(f"Agent config file not found: {agent_config}")
 
     # Use the agent framework adapter
     runner = get_runner(agent_name)
@@ -163,7 +200,9 @@ def _spawn_solo_agent(
         git_server_url=None,
         git_enabled=False,
         messaging_enabled=False,
-        config={"backend": backend},
+        config=config,
+        agent_config=agent_config,
+        log_dir=log_dir_path,
     )
 
     return {
@@ -173,6 +212,10 @@ def _spawn_solo_agent(
         "patch": result.patch,
         "cost": result.cost,
         "steps": result.steps,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cache_read_tokens": result.cache_read_tokens,
+        "cache_write_tokens": result.cache_write_tokens,
         "messages": result.messages,
         "error": result.error,
     }

@@ -51,7 +51,7 @@ index 13722b4b..2d60a9b6 100644
          use_tip=True,
          verbose=False,
 +        max_description_chars=2000,
-+        min_instr_chars=30,
++        min_instr_chars=0,
 +        max_instr_chars=600,
 +        rephrase_when_too_long=False,
      ):
@@ -201,7 +201,7 @@ index 13722b4b..2d60a9b6 100644
 +        max_instruct_history=5,
 +        tip_weights=None,
 +        max_description_chars=2000,
-+        min_instr_chars=30,
++        min_instr_chars=0,
 +        max_instr_chars=600,
 +        rephrase_when_too_long=False,
      ):

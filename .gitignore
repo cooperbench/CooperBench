@@ -42,6 +42,7 @@ logs*/
 *.log
 cooperbench_results.xlsx
 generated/
+misc/
 
 # Cache
 .cooperbench_cache/
@@ -66,3 +67,5 @@ dataset/**/requirements_validated.txt
 
 # Agent workspaces (generated at runtime)
 **/agent_workspace/
+.claude/
+workspace/

@@ -156,13 +156,13 @@ index 0000000..da8e92a
 +		rctx := chi.RouteContext(r.Context())
 +		url := r.URL.Path
 +
-+		if rctx.Routes.Match(rctx, r.Method, url) {
++		if rctx.Routes.Match(chi.NewRouteContext(), r.Method, url) {
 +			next.ServeHTTP(w, r)
 +			return
 +		}
 +
 +		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE"} {
-+			if rctx.Routes.Match(rctx, method, url) {
++			if rctx.Routes.Match(chi.NewRouteContext(), method, url) {
 +				w.Header().Add("Allow", method)
 +			}
 +		}
@@ -302,7 +302,7 @@ index 0d1caa6..16317d6 100644
  // With adds inline middlewares for an endpoint handler.
  func (mx *Mux) With(middlewares ...func(http.Handler) http.Handler) Router {
  	// Similarly as in handle(), we must build the mux handler once additional
-@@ -377,12 +418,41 @@ func (mx *Mux) NotFoundHandler() http.HandlerFunc {
+@@ -377,12 +418,31 @@ func (mx *Mux) NotFoundHandler() http.HandlerFunc {
  }
  
  // MethodNotAllowedHandler returns the default Mux 405 responder whenever
@@ -311,26 +311,14 @@ index 0d1caa6..16317d6 100644
 +// a method cannot be resolved for a route. Optionally accepts allowed methods
 +// to set the Allow header.
 +func (mx *Mux) MethodNotAllowedHandler(allowedMethods ...methodTyp) http.HandlerFunc {
-+	// Build allowed methods string
-+	var allowedMethodsStr string
-+	if len(allowedMethods) > 0 {
-+		methods := []string{}
-+		for _, m := range allowedMethods {
-+			if name := GetMethodStringFromType(m); name != "" {
-+				methods = append(methods, name)
-+			}
-+		}
-+		if len(methods) > 0 {
-+			allowedMethodsStr = strings.Join(methods, ", ")
-+		}
-+	}
-+
 +	// If custom handler is set, wrap it to also set Allow header
  	if mx.methodNotAllowedHandler != nil {
 -		return mx.methodNotAllowedHandler
 +		return func(w http.ResponseWriter, r *http.Request) {
-+			if allowedMethodsStr != "" {
-+				w.Header().Set("Allow", allowedMethodsStr)
++			for _, m := range allowedMethods {
++				if name := GetMethodStringFromType(m); name != "" {
++					w.Header().Add("Allow", name)
++				}
 +			}
 +			mx.methodNotAllowedHandler(w, r)
 +		}
@@ -338,8 +326,10 @@ index 0d1caa6..16317d6 100644
 +
 +	// Default handler with Allow header
 +	return func(w http.ResponseWriter, r *http.Request) {
-+		if allowedMethodsStr != "" {
-+			w.Header().Set("Allow", allowedMethodsStr)
++		for _, m := range allowedMethods {
++			if name := GetMethodStringFromType(m); name != "" {
++				w.Header().Add("Allow", name)
++			}
 +		}
 +		w.WriteHeader(405)
 +		w.Write(nil)
@@ -348,7 +338,7 @@ index 0d1caa6..16317d6 100644
  }
  
  // handle registers a http.Handler in the routing tree for a particular http method
-@@ -435,17 +505,37 @@ func (mx *Mux) routeHTTP(w http.ResponseWriter, r *http.Request) {
+@@ -435,17 +495,37 @@ func (mx *Mux) routeHTTP(w http.ResponseWriter, r *http.Request) {
  	}
  	method, ok := methodMap[rctx.RouteMethod]
  	if !ok {
@@ -388,7 +378,7 @@ index 0d1caa6..16317d6 100644
  	} else {
  		mx.NotFoundHandler().ServeHTTP(w, r)
  	}
-@@ -485,3 +575,39 @@ func methodNotAllowedHandler(w http.ResponseWriter, r *http.Request) {
+@@ -485,3 +565,39 @@ func methodNotAllowedHandler(w http.ResponseWriter, r *http.Request) {
  	w.WriteHeader(405)
  	w.Write(nil)
  }

@@ -3,7 +3,7 @@ name = "cooperbench"
 description = "Multi-agent coordination benchmark for collaborative code generation"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dynamic = ["version"]
 authors = [
     {name = "Arpandeep Khatua"},
@@ -35,6 +35,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -43,6 +45,8 @@ classifiers = [
 ]
 dependencies = [
     "docker>=7.0",
+    "google-auth>=2.48.0",
+    "google-cloud-aiplatform>=1.135.0",
     "jinja2>=3.0",
     "litellm>=1.0",
     "modal>=0.70",
@@ -53,6 +57,24 @@ dependencies = [
     "redis>=7.0",
     "rich>=13.0",
     "tenacity>=8.0",
+    # OpenHands Agent SDK (vendored)
+    "openhands-sdk",
+    "openhands-tools",
+    "openhands-workspace",
+    "deprecation>=2.1.0",
+    "fastmcp>=2.11.3",
+    "filelock>=3.20.1",
+    "httpx>=0.27.0",
+    "python-frontmatter>=1.1.0",
+    "python-json-logger>=3.3.0",
+    "websockets>=12",
+    "lmnr>=0.7.24",
+    "bashlex>=0.18",
+    "binaryornot>=0.4.4",
+    "cachetools",
+    "libtmux>=0.53.0",
+    "func-timeout>=4.3.5",
+    "tom-swe>=1.0.3",
 ]
 
 [project.optional-dependencies]
@@ -64,6 +86,7 @@ swe-agent = [
     "unidiff>=0.7",
 ]
 gcp = [
+    "cooperbench",
     "google-cloud-batch>=0.17",
     "google-cloud-compute>=1.0",
     "google-cloud-storage>=2.0",
@@ -111,9 +134,10 @@ exclude = ["src/cooperbench/generation"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py312"
+target-version = "py310"
 exclude = [
-    "src/cooperbench/agents/swe_agent/",  # vendored code
+    "src/cooperbench/agents/swe_agent/",  # third-party code
+    "src/cooperbench/agents/openhands_agent_sdk/",  # adapted from OpenHands SDK
 ]
 
 [tool.ruff.lint]
@@ -132,12 +156,12 @@ ignore = [
 known-first-party = ["cooperbench"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.10"
 ignore_missing_imports = true
 check_untyped_defs = false
 disallow_untyped_defs = false
 disable_error_code = ["override", "misc", "no-any-return", "arg-type", "call-arg", "operator", "assignment", "call-overload", "index", "import-untyped", "dict-item", "var-annotated", "union-attr", "empty-body", "return-value", "attr-defined"]
-exclude = ["tests/", "src/cooperbench/agents/swe_agent/"]
+exclude = ["tests/", "src/cooperbench/agents/swe_agent/", "src/cooperbench/agents/openhands_agent_sdk/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -163,3 +187,9 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+
+[tool.uv.sources]
+openhands-sdk = { path = "src/cooperbench/agents/openhands_agent_sdk/openhands-sdk", editable = true }
+openhands-tools = { path = "src/cooperbench/agents/openhands_agent_sdk/openhands-tools", editable = true }
+openhands-workspace = { path = "src/cooperbench/agents/openhands_agent_sdk/openhands-workspace", editable = true }
+cooperbench = { workspace = true }

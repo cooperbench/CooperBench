@@ -522,11 +522,19 @@ def _parse_results(output: str) -> dict:
     if passed > 0 or failed > 0:
         return {"passed": passed, "failed": failed}
 
-    # go test
+    # go test - verbose output (--- PASS:/--- FAIL:)
     go_pass = len(re.findall(r"--- PASS:", output))
     go_fail = len(re.findall(r"--- FAIL:", output))
     if go_pass or go_fail:
         return {"passed": go_pass, "failed": go_fail}
+
+    # go test - non-verbose output (ok/FAIL package lines)
+    # Format: "ok  github.com/pkg  0.123s" or "FAIL github.com/pkg [build failed]"
+    go_ok_packages = len(re.findall(r"^ok\s+\S+", output, re.MULTILINE))
+    go_fail_packages = len(re.findall(r"^FAIL\s+\S+", output, re.MULTILINE))
+    if go_ok_packages or go_fail_packages:
+        # If any package failed, count it; otherwise count ok packages as passed
+        return {"passed": go_ok_packages if go_fail_packages == 0 else 0, "failed": go_fail_packages}
 
     # cargo test
     cargo_match = re.search(r"test result:.*?(\d+) passed.*?(\d+) failed", output)

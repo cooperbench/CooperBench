@@ -30,8 +30,23 @@ class AgentResult:
     steps: int
     """Number of LLM calls made."""
 
+    input_tokens: int = 0
+    """Total input (prompt) tokens used."""
+
+    output_tokens: int = 0
+    """Total output (completion) tokens used."""
+
+    cache_read_tokens: int = 0
+    """Tokens read from prompt cache."""
+
+    cache_write_tokens: int = 0
+    """Tokens written to prompt cache."""
+
     messages: list[dict[str, Any]] = field(default_factory=list)
     """Full conversation trajectory for analysis."""
+
+    sent_messages: list[dict[str, Any]] = field(default_factory=list)
+    """Inter-agent messages sent during the run (for tool-based agents)."""
 
     error: str | None = None
     """Error message if status is 'Error'."""
@@ -56,6 +71,8 @@ class AgentRunner(Protocol):
         messaging_enabled: bool = True,
         # Agent-specific config
         config: dict[str, Any] | None = None,
+        agent_config: str | None = None,
+        log_dir: str | None = None,
     ) -> AgentResult:
         """Run agent on a task.
 
@@ -70,6 +87,8 @@ class AgentRunner(Protocol):
             git_enabled: Whether git collaboration is enabled
             messaging_enabled: Whether messaging is enabled
             config: Agent-specific configuration
+            agent_config: Path to agent-specific config file (for external agents)
+            log_dir: Directory path for agent output files (optional)
 
         Returns:
             AgentResult with status, patch, cost, steps, messages
@@ -78,7 +97,30 @@ class AgentRunner(Protocol):
 
 
 # Import registry functions for convenience (must be after class definitions to avoid circular imports)
-from cooperbench.agents.registry import get_runner, list_agents, register  # noqa: E402
+from cooperbench.agents.registry import get_runner, list_agents, register  # noqa: E402, I001
+
+
+# Agent framework shorthands for experiment naming
+# Add your agent's shorthand here when registering a new adapter
+AGENT_SHORTHANDS = {
+    "mini_swe_agent": "msa",
+    "mini_swe_agent_v2": "msa_v2",
+    "swe_agent": "sw",
+    "openhands_sdk": "oh",
+}
+
+
+def get_agent_shorthand(agent_name: str) -> str:
+    """Get the shorthand for an agent framework.
+
+    Args:
+        agent_name: Full agent name (e.g., "mini_swe_agent")
+
+    Returns:
+        Shorthand (e.g., "msa") or first 2 chars if not registered
+    """
+    return AGENT_SHORTHANDS.get(agent_name, agent_name[:2])
+
 
 __all__ = [
     "AgentResult",
@@ -86,4 +128,6 @@ __all__ = [
     "get_runner",
     "list_agents",
     "register",
+    "AGENT_SHORTHANDS",
+    "get_agent_shorthand",
 ]

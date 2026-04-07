@@ -7,21 +7,41 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 
-from cooperbench.utils import clean_model_name
+os.environ["LITELLM_LOG"] = "ERROR"
+
+import litellm
+
+litellm.suppress_debug_info = True  # Suppress "Give Feedback / Get Help" print messages on errors
+
+from cooperbench.agents import get_agent_shorthand  # noqa: E402
+from cooperbench.utils import clean_model_name  # noqa: E402
 
 
 def _generate_run_name(
     setting: str,
     model: str,
+    agent: str = "mini_swe_agent",
     subset: str | None = None,
     repo: str | None = None,
     task: int | None = None,
     git_enabled: bool = False,
 ) -> str:
-    """Generate experiment name from parameters."""
+    """Generate experiment name from parameters.
+
+    Format: {setting}-{agent_short}-{git?}-{model}-{subset?}-{repo?}-{task?}
+    Examples:
+        solo-msa-gemini-3-flash
+        solo-oh-gemini-3-flash-lite
+        coop-sw-git-gpt-4o-dspy-8394
+    """
     parts = [setting]
+
+    # Add agent shorthand (defined in cooperbench/agents/__init__.py)
+    parts.append(get_agent_shorthand(agent))
+
     if git_enabled:
         parts.append("git")
     parts.append(clean_model_name(model))
@@ -43,6 +63,26 @@ def main():
         description="CooperBench benchmark runner",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # === config command ===
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Configure execution backends",
+        description="Interactive configuration wizards for backends (GCP, Modal, etc.)",
+    )
+    config_subparsers = config_parser.add_subparsers(dest="backend", required=True)
+
+    # config gcp
+    gcp_config_parser = config_subparsers.add_parser(
+        "gcp",
+        help="Configure GCP backend",
+        description="Set up Google Cloud Platform as execution backend",
+    )
+    gcp_config_parser.add_argument(
+        "--skip-tests",
+        action="store_true",
+        help="Skip validation tests (faster setup, but no verification)",
+    )
 
     # === run command ===
     run_parser = subparsers.add_parser(
@@ -79,8 +119,8 @@ def main():
     run_parser.add_argument(
         "-m",
         "--model",
-        default="gemini/gemini-3-flash-preview",
-        help="LLM model to use (default: gemini/gemini-3-flash-preview)",
+        default="vertex_ai/gemini-3-flash-preview",
+        help="LLM model to use (default: vertex_ai/gemini-3-flash-preview)",
     )
     run_parser.add_argument(
         "-a",
@@ -92,7 +132,7 @@ def main():
         "-c",
         "--concurrency",
         type=int,
-        default=20,
+        default=30,
         help="Number of parallel tasks (default: 20)",
     )
     run_parser.add_argument(
@@ -137,6 +177,10 @@ def main():
         choices=["modal", "docker", "gcp"],
         default="modal",
         help="Execution backend: modal (cloud), docker (local), or gcp (GCP VM) (default: modal)",
+    )
+    run_parser.add_argument(
+        "--agent-config",
+        help="Path to agent-specific configuration file (format determined by agent)",
     )
 
     # === eval command ===
@@ -192,10 +236,21 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "run":
+    if args.command == "config":
+        _config_command(args)
+    elif args.command == "run":
         _run_command(args)
     elif args.command == "eval":
         _eval_command(args)
+
+
+def _config_command(args):
+    """Handle the 'config' subcommand."""
+    from cooperbench.config import config_gcp_command
+
+    if args.backend == "gcp":
+        exit_code = config_gcp_command(skip_tests=args.skip_tests)
+        sys.exit(exit_code)
 
 
 def _run_command(args):
@@ -212,6 +267,7 @@ def _run_command(args):
         run_name = _generate_run_name(
             setting=args.setting,
             model=args.model,
+            agent=args.agent,
             subset=args.subset,
             repo=args.repo,
             task=args.task,
@@ -235,6 +291,7 @@ def _run_command(args):
         auto_eval=not args.no_auto_eval,
         eval_concurrency=args.eval_concurrency,
         backend=args.backend,
+        agent_config=args.agent_config if hasattr(args, "agent_config") else None,
     )
 
 

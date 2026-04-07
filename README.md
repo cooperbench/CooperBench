@@ -27,10 +27,15 @@ pip install -e ".[dev]"
 ### Requirements
 
 - Python 3.12+
-- [Modal](https://modal.com) account (for sandbox execution)
+- **Execution Backend** (choose one):
+  - [Modal](https://modal.com) (default, cloud-based)
+  - [GCP](https://cloud.google.com) (Google Cloud Platform)
+  - Docker (local execution)
 - Redis (for inter-agent communication in coop mode)
 
 ### Setup
+
+#### Option 1: Modal (Default)
 
 1. **Modal**: Sign up at [modal.com](https://modal.com) and run `modal setup`
 2. **Redis**: Run locally with `docker run -p 6379:6379 redis:7` or use a cloud provider
@@ -41,6 +46,28 @@ ANTHROPIC_API_KEY=your_key
 OPENAI_API_KEY=your_key
 GEMINI_API_KEY=your_key
 ```
+
+#### Option 2: GCP (Recommended for Scale)
+
+**Prerequisites**: Install [gcloud CLI](https://cloud.google.com/sdk/docs/install) first
+- macOS: `brew install google-cloud-sdk`
+- Linux: `curl https://sdk.cloud.google.com | bash`
+
+**Setup**:
+```bash
+# 1. Install GCP dependencies
+pip install 'cooperbench[gcp]'
+
+# 2. Run configuration wizard (handles authentication, project setup, validation)
+cooperbench config gcp
+
+# 3. You're ready to run experiments!
+cooperbench run --backend gcp -s lite
+```
+
+**Also needed**: Redis and LLM API keys (same as Option 1)
+
+See [GCP Setup Guide](docs/GCP_SETUP.md) for detailed instructions.
 
 ### Dataset
 
@@ -86,6 +113,20 @@ evaluate(run_name="my-experiment")
 
 ## CLI Reference
 
+### `cooperbench config`
+
+Configure execution backends (GCP, Modal, etc.).
+
+```bash
+# Configure GCP backend
+cooperbench config gcp
+
+# Skip validation tests for faster setup
+cooperbench config gcp --skip-tests
+```
+
+See [GCP Setup Guide](docs/GCP_SETUP.md) for details.
+
 ### `cooperbench run`
 
 Run agents on benchmark tasks.
@@ -104,10 +145,14 @@ cooperbench run -n NAME [OPTIONS]
 | `-a, --agent` | Agent framework | `mini_swe_agent` |
 | `-c, --concurrency` | Parallel tasks | `20` |
 | `--setting` | `coop` or `solo` | `coop` |
+| `--backend` | `modal`, `docker`, or `gcp` | `modal` |
 | `--redis` | Redis URL | `redis://localhost:6379` |
 | `--git` | Enable git collaboration | disabled |
 | `--no-messaging` | Disable agent messaging | enabled |
 | `--force` | Rerun existing results | skip |
+| `--agent-config` | Path to agent config file | none |
+
+**Agent Configuration**: Pass agent-specific parameters via a config file. CooperBench forwards the file path to your agent without parsing it.
 
 ### `cooperbench eval`
 

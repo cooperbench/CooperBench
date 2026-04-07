@@ -1,0 +1,12 @@
+# OpenHands Software Agent SDK - Adapted for CooperBench
+# Source: https://github.com/OpenHands/software-agent-sdk
+
+version: v1.10.0
+commit: c775ff6805ef105cbedfbc87b29e85daec155ef9
+date: 2026-01-27 (release date)
+
+# This code is adapted from the OpenHands Software Agent SDK.
+# Modifications for CooperBench multi-agent collaboration:
+# - Added send_message tool for inter-agent communication
+# - Modified agent loop to receive messages from Redis
+# - Updated system prompt with collaboration instructions

@@ -8,6 +8,7 @@ This directory contains agent framework adapters for CooperBench. Each adapter w
 |-------|-----------|-------------|
 | `mini_swe_agent` | `mini_swe_agent/` | Lightweight SWE agent with bash, file editing, and messaging tools. Uses Modal sandboxes. |
 | `swe_agent` | `swe_agent/` | Full SWE-agent implementation with SWE-ReX deployment. Supports advanced tooling and review. |
+| `openhands_sdk` | `openhands_agent_sdk/` | OpenHands Software Agent SDK. Runs agent-server in Modal with full SDK toolset. |
 
 ## Usage
 
@@ -29,6 +30,44 @@ result = runner.run(
 )
 ```
 
+## Registering External Agents
+
+External packages can register custom agent implementations using the `COOPERBENCH_EXTERNAL_AGENTS` environment variable. This is useful for research projects or custom agent frameworks.
+
+### Steps
+
+1. Create an adapter that conforms to the `AgentRunner` protocol
+2. Register it using the `@register` decorator:
+
+```python
+# myproject/agents/custom_agent/adapter.py
+from cooperbench.agents.registry import register
+from cooperbench.agents import AgentResult
+
+@register("my_custom_agent")
+class CustomAgentRunner:
+    def run(self, task, image, **kwargs) -> AgentResult:
+        # Your implementation
+        ...
+```
+
+3. Set the environment variable to the module path(s):
+
+```bash
+export COOPERBENCH_EXTERNAL_AGENTS="myproject.agents.custom_agent.adapter"
+
+# Multiple agents (comma-separated)
+export COOPERBENCH_EXTERNAL_AGENTS="myproject.agents.agent1.adapter,myproject.agents.agent2.adapter"
+```
+
+4. Use with cooperbench CLI:
+
+```bash
+cooperbench run -a my_custom_agent -r repo_name -t task_id
+```
+
+The external adapter modules must be importable (installed in the same Python environment).
+
 ## AgentRunner Interface
 
 All agents must implement the `AgentRunner` protocol:
@@ -49,7 +88,7 @@ class AgentResult:
 
 class AgentRunner(Protocol):
     """Protocol for agent framework adapters."""
-    
+
     def run(
         self,
         task: str,
@@ -90,7 +129,7 @@ from cooperbench.agents.registry import register
 @register("my_agent")
 class MyAgentRunner:
     """Adapter for MyAgent framework."""
-    
+
     def run(
         self,
         task: str,
@@ -106,13 +145,13 @@ class MyAgentRunner:
         config: dict | None = None,
     ) -> AgentResult:
         """Run the agent on a task."""
-        
+
         # Your implementation here
         # - Start sandbox/environment with the given image
         # - Run agent with the task description
         # - Capture the generated patch
         # - Return AgentResult
-        
+
         return AgentResult(
             status="Submitted",
             patch="diff --git ...",

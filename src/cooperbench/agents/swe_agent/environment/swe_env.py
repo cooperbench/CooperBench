@@ -2,7 +2,9 @@ import asyncio
 import logging
 import shlex
 from pathlib import PurePath
-from typing import Literal, Self
+from typing import Literal
+
+from typing_extensions import Self
 
 from pydantic import BaseModel, ConfigDict, Field
 from swerex.deployment.abstract import AbstractDeployment

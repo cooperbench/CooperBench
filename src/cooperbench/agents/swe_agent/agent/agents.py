@@ -7,7 +7,9 @@ import logging
 import re
 import time
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, Literal
+
+from typing_extensions import Self
 
 import yaml
 from jinja2 import Template

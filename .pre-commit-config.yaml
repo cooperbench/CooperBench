@@ -5,16 +5,18 @@ repos:
       - id: mypy
         additional_dependencies: [pydantic>=2.0]
         args: [--ignore-missing-imports]
+        exclude: ^(src/cooperbench/agents/swe_agent/|src/cooperbench/agents/openhands_agent_sdk/)
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^dataset/
+        exclude: ^(dataset/|src/cooperbench/agents/swe_agent/|src/cooperbench/agents/openhands_agent_sdk/)
       - id: end-of-file-fixer
-        exclude: ^dataset/
+        exclude: ^(dataset/|src/cooperbench/agents/swe_agent/|src/cooperbench/agents/openhands_agent_sdk/)
       - id: check-yaml
       - id: check-added-large-files
         args: ['--maxkb=1000']
       - id: check-merge-conflict
       - id: debug-statements
+        exclude: ^(src/cooperbench/agents/swe_agent/|src/cooperbench/agents/openhands_agent_sdk/)

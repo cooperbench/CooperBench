@@ -91,6 +91,17 @@ class GCPEnvironment:
         if project:
             return project
 
+        # Try cooperbench config
+        try:
+            from cooperbench.config import ConfigManager
+
+            config = ConfigManager()
+            project = config.get("gcp_project_id")
+            if project:
+                return project
+        except Exception:
+            pass
+
         # Try gcloud config
         try:
             result = subprocess.run(
@@ -384,7 +395,8 @@ class GCPEnvironment:
             try:
                 self._wait_for_operation(operation.name, timeout=120)
             except TimeoutError:
-                self.logger.warning(f"VM deletion timed out, may still be deleting: {self._vm_name}")
+                # VM deletion initiated, will complete asynchronously
+                pass
 
             self._vm_created = False
             self._container_started = False

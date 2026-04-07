@@ -4,7 +4,7 @@ agent:
     {% if agent_id %}
     You are {{ agent_id }} working as a team with: {{ agents | join(', ') }}.
     You are all working on related features in the same codebase. Each agent has their own workspace.
-    {% if git_enabled %}Use the shared "team" git remote to sync code.{% endif %}
+    {% if git_enabled %}A shared git remote called "team" is available for code sharing between agents.{% endif %}
     {% if messaging_enabled %}Use send_message to coordinate.{% endif %}
     {% endif %}
 
@@ -24,13 +24,14 @@ agent:
     Each agent has their own workspace. At the end, all agents' changes will be merged together.
     **Important**: Coordinate to avoid merge conflicts - your patches must cleanly combine!
     {% if git_enabled %}
-    ## Git (share code with teammates)
-    You have a shared git remote called "team". Use standard git commands:
+    ## Git
+    A shared remote called "team" is configured. Your branch is `{{ agent_id }}`.
+    Teammates' branches are at `team/<name>` (e.g., `team/agent_0`).
+
+    Syntax example:
     ```bash
-    git add -A && git commit -m "description"  # Save your changes locally
-    git push team {{ agent_id }}               # Share your branch with team
-    git fetch team                             # Get teammates' latest branches  
-    git merge team/<teammate> --no-edit        # Merge a teammate's changes
+    git push team {{ agent_id }}
+    git fetch team
     ```
     {% endif %}
     {% if messaging_enabled %}
@@ -54,10 +55,9 @@ agent:
 
     1. Explore the codebase and find relevant files for your feature
     {% if messaging_enabled %}2. Message teammates about which files you plan to modify{% endif %}
-    3. Implement your changes{% if git_enabled %}, committing and pushing frequently{% endif %}
-    {% if git_enabled %}4. Fetch and merge teammates' changes if working on shared files{% endif %}
-    5. Test your changes work
-    6. {% if git_enabled %}Push final changes and {% endif %}Submit: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
+    3. Implement your changes
+    4. Test your changes work
+    5. {% if git_enabled %}Push final changes and {% endif %}Submit: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
     {% else %}
     ## Recommended Workflow
 
@@ -198,7 +198,7 @@ agent:
     </output_tail>
     {%- endif %}
     Please try another command and make sure to avoid those requiring interactive input.
-  step_limit: 50
+  step_limit: 100
   cost_limit: 1.
   mode: confirm
 environment:

@@ -319,6 +319,17 @@ echo "Task $TASK_INDEX completed"
             COOPERBENCH_VM_IMAGE: Default VM image (e.g., "cooperbench-eval")
         """
         self._project_id = project_id or os.environ.get("GOOGLE_CLOUD_PROJECT")
+
+        # Try cooperbench config if not set
+        if not self._project_id:
+            try:
+                from cooperbench.config import ConfigManager
+
+                config = ConfigManager()
+                self._project_id = config.get("gcp_project_id")
+            except Exception:
+                pass
+
         if not self._project_id:
             raise ValueError("project_id required")
 
@@ -995,6 +1006,17 @@ class GCPBatchBackend:
         bucket_name: str | None = None,
     ) -> None:
         self._project_id = project_id or os.environ.get("GOOGLE_CLOUD_PROJECT")
+
+        # Try cooperbench config if not set
+        if not self._project_id:
+            try:
+                from cooperbench.config import ConfigManager
+
+                config = ConfigManager()
+                self._project_id = config.get("gcp_project_id")
+            except Exception:
+                pass
+
         if not self._project_id:
             raise ValueError("project_id required")
 

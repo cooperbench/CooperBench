@@ -14,32 +14,32 @@ class TestGenerateRunName:
     def test_basic_name_generation(self):
         """Test basic run name generation."""
         name = _generate_run_name("solo", "gpt-4o")
-        assert name == "solo-gpt-4o"
+        assert name == "solo-msa-gpt-4o"
 
     def test_with_subset(self):
         """Test name generation with subset."""
         name = _generate_run_name("solo", "gpt-4o", subset="lite")
-        assert name == "solo-gpt-4o-lite"
+        assert name == "solo-msa-gpt-4o-lite"
 
     def test_with_repo(self):
         """Test name generation with repo filter."""
         name = _generate_run_name("coop", "gpt-4o", repo="llama_index_task")
-        assert name == "coop-gpt-4o-llama-index"
+        assert name == "coop-msa-gpt-4o-llama-index"
 
     def test_with_task(self):
         """Test name generation with task filter."""
         name = _generate_run_name("solo", "gpt-4o", repo="pillow_task", task=25)
-        assert name == "solo-gpt-4o-pillow-25"
+        assert name == "solo-msa-gpt-4o-pillow-25"
 
     def test_with_task_zero(self):
         """Test name generation with task ID 0 (valid task ID)."""
         name = _generate_run_name("solo", "gpt-4o", repo="openai_tiktoken_task", task=0)
-        assert name == "solo-gpt-4o-openai-tiktoken-0"
+        assert name == "solo-msa-gpt-4o-openai-tiktoken-0"
 
     def test_with_all_options(self):
         """Test name generation with all options."""
         name = _generate_run_name("coop", "gemini/gemini-3-flash-preview", subset="lite", repo="pillow_task", task=25)
-        assert name == "coop-gemini-3-flash-lite-pillow-25"
+        assert name == "coop-msa-gemini-3-flash-lite-pillow-25"
 
     def test_cleans_model_name(self):
         """Test that model names are cleaned."""
@@ -58,8 +58,8 @@ class TestGenerateRunName:
         """Test coop vs solo settings."""
         solo_name = _generate_run_name("solo", "gpt-4o")
         coop_name = _generate_run_name("coop", "gpt-4o")
-        assert solo_name.startswith("solo-")
-        assert coop_name.startswith("coop-")
+        assert solo_name.startswith("solo-msa-")
+        assert coop_name.startswith("coop-msa-")
 
 
 class TestCLI:

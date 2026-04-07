@@ -20,7 +20,7 @@ RUN git clone https://github.com/huggingface/datasets.git repo && \
 # Set up Python environment and pre-install dependencies
 WORKDIR /workspace/repo
 RUN uv pip install --system -e .
-RUN uv pip uninstall --system pyarrow && uv pip install --system "pyarrow==20.0.0"
+RUN uv pip uninstall --system pyarrow && uv pip install --system "pyarrow>=17.0.0,<20.0.0"
 # Install tensorflow, explicitly excluding tensorflow-macos (macOS-only package)
 RUN uv pip install --system "tensorflow>=2.16.0,<2.17.0" || uv pip install --system "tensorflow==2.16.2"
 RUN uv pip install --system torch jax

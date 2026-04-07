@@ -66,6 +66,37 @@ FAIL
         assert result["passed"] == 2
         assert result["failed"] == 1
 
+    def test_parse_go_test_non_verbose_passed(self):
+        """Test parsing go test non-verbose output with all packages passing."""
+        output = """
+ok  	github.com/go-chi/chi/v5	0.022s
+ok  	github.com/go-chi/chi/v5/middleware	0.011s [no tests to run]
+"""
+        result = _parse_results(output)
+        assert result["passed"] == 2
+        assert result["failed"] == 0
+
+    def test_parse_go_test_non_verbose_failed(self):
+        """Test parsing go test non-verbose output with build failures."""
+        output = """
+FAIL	github.com/go-chi/chi/v5 [build failed]
+FAIL	github.com/go-chi/chi/v5/middleware [build failed]
+FAIL
+"""
+        result = _parse_results(output)
+        assert result["passed"] == 0
+        assert result["failed"] == 2
+
+    def test_parse_go_test_non_verbose_mixed(self):
+        """Test parsing go test non-verbose output with mixed results."""
+        output = """
+ok  	github.com/go-chi/chi/v5	0.022s
+FAIL	github.com/go-chi/chi/v5/middleware [build failed]
+"""
+        result = _parse_results(output)
+        assert result["passed"] == 0  # Any failure means overall failure
+        assert result["failed"] == 1
+
     def test_parse_cargo_test(self):
         """Test parsing cargo test output."""
         output = """
