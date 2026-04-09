@@ -88,6 +88,7 @@ class DecompositionResult:
     planning_cost: float = 0.0
     total_agent_cost: float = 0.0
     failure_reason: str | None = None
+    failure_detail: str | None = None
     error: str | None = None
 
     def to_dict(self) -> dict:
@@ -312,6 +313,7 @@ def _build_subfeature_prompt(
     task_dir: Path,
     existing_feature_ids: list[int],
     original_feature_id: int,
+    hints: str | None = None,
 ) -> str:
     """Construct the MSA prompt for implementing one specific sub-feature."""
     sf = plan.sub_features[sub_feature_index]
@@ -436,7 +438,7 @@ Do NOT cat any files or add anything else to this command.
 5. Each command runs in a fresh shell. Use `cd /workspace/repo && ...` for every command.
 6. Do NOT create entirely new source files just to force conflicts. Modify existing
    source files that the other features also modify.
-"""
+""" + (f"\n\n## Additional Guidance\n\n{hints}\n" if hints else "")
 
 
 # ---------------------------------------------------------------------------
@@ -455,6 +457,7 @@ def decompose_feature(
     resolve_cost_limit: float = 0.50,
     resolve_step_limit: int = 50,
     skip_heuristic: bool = False,
+    hints: str | None = None,
 ) -> DecompositionResult:
     """Decompose an existing feature into multiple sub-features.
 
@@ -471,6 +474,7 @@ def decompose_feature(
     resolve_cost_limit : max USD per resolution attempt
     resolve_step_limit : max steps per resolution attempt
     skip_heuristic : bypass the size heuristic and always attempt decomposition
+    hints : optional strategic guidance appended to sub-feature prompts
     """
     task_dir = Path(task_dir)
     result = DecompositionResult()
@@ -593,6 +597,7 @@ def decompose_feature(
         # Build prompt
         prompt = _build_subfeature_prompt(
             plan, sf_idx, task_dir, existing_ids, feature_id,
+            hints=hints,
         )
 
         env = None

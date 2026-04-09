@@ -67,6 +67,7 @@ class ExpansionResult:
     resolution_patches: dict[int, str] = field(default_factory=dict)
 
     failure_reason: str | None = None
+    failure_detail: str | None = None
     error: str | None = None
 
     def to_dict(self) -> dict:
@@ -404,6 +405,7 @@ def _preseed_generation_container(
 def _build_generation_prompt(
     task_dir: Path,
     existing_feature_ids: list[int],
+    hints: str | None = None,
 ) -> str:
     """Construct the MSA prompt for the generation agent.
 
@@ -500,7 +502,7 @@ Do NOT cat any files or add anything else to this command.
 5. Each command runs in a fresh shell. Use `cd /workspace/repo && ...` for every command.
 6. Do NOT create entirely new source files just to force conflicts. Modify existing
    source files that the other features also modify.
-"""
+""" + (f"\n\n## Additional Guidance\n\n{hints}\n" if hints else "")
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +554,7 @@ def expand_task(
     resolve: bool = True,
     resolve_cost_limit: float = 0.50,
     resolve_step_limit: int = 50,
+    hints: str | None = None,
 ) -> ExpansionResult:
     """Generate one additional feature for an existing task.
 
@@ -566,6 +569,7 @@ def expand_task(
     resolve : whether to attempt MSA-based resolution for solvability
     resolve_cost_limit : max USD per MSA resolution attempt
     resolve_step_limit : max steps per MSA resolution attempt
+    hints : optional strategic guidance appended to the generation prompt
     """
     task_dir = Path(task_dir)
     result = ExpansionResult()
@@ -593,7 +597,7 @@ def expand_task(
     )
 
     # -- Step 1: Build prompt -----------------------------------------------
-    prompt = _build_generation_prompt(task_dir, existing_ids)
+    prompt = _build_generation_prompt(task_dir, existing_ids, hints=hints)
 
     # -- Step 2: Invoke standalone mini-swe-agent ----------------------------
     logger.info(

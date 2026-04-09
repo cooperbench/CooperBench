@@ -127,6 +127,7 @@ dataset/flask_task/task5955/
 - **3b**: Build the solvability checker specifically -- resolver agent + dual test suite runner. Test on known-solvable pairs from the existing dataset. **[DONE]**
 - **3c/3d**: Build the expansion orchestrator (`expand.py`) with the incremental loop and agent-in-the-loop validation via `validate_feature.sh`. Wire in `verify.py` for external verification and `resolve.py` for solvability. Tested on `pallets_click_task/task2068` (generated feature13, solvable with all 12 existing features). **[DONE]**
 - **3e**: Add the decomposition strategy (`decompose.py`). Two-phase approach: LLM planning call decomposes a large feature into sub-features, then per-sub-feature MSA agents implement them iteratively with the same validation infrastructure as expand.py. Tested on `dspy_task/task8394` (decomposed feature4 into 2 sub-features: feature6 "Global Cache Statistics" solvable with 5 features, feature7 "Per-Call Cache Usage" solvable with 4 features). **[DONE]**
+- **3f**: Controller agent (`controller.py`) -- LLM tool-calling loop that orchestrates decompose/expand/stop decisions per task. Tracks entanglement graph (conflict + solvability adjacency), full action history with failure details, and feature provenance. Includes quality assessment via separate LLM call. Hard guardrails (max features, budget, consecutive failures). Cold-start bootstrap computes conflict graph for pre-existing features. CLI supports `--task` and `--repo` modes. Added `hints` parameter to expand/decompose for controller-directed guidance. Tested on `dspy_task/task8394` (bootstrapped 18/21 conflict pairs, quality assessment correctly identified rich pairs). **[DONE]**
 
 ---
 
@@ -168,3 +169,34 @@ dataset/flask_task/task5955/
 | Per-Call Cache Usage Tracking | feature7 | Passed | 3,4,5,6 | 3,4,5,6 (all 4) | ~$0.25 gen + $0.38 resolve |
 
 Total cost: $0.83. Both sub-features accepted and saved to dataset with resolution patches.
+
+### Phase 3f: `controller.py` (completed)
+
+**Files changed:**
+
+- `src/cooperbench/generation/controller.py` (new) -- LLM tool-calling controller agent with:
+  - Data structures: `FeatureInfo` (with provenance), `EntanglementEdge` (with `solvability_checked` flag), `ActionRecord` (with `failure_detail`), `TaskState`, `ControllerConfig`
+  - Cold-start bootstrap: `_bootstrap_conflicts()` computes conflict-only entanglement for all existing feature pairs on first run
+  - Quality assessment: `_assess_quality()` -- separate LLM call that reviews gold patches, resolution patches, and descriptions to judge coordination richness
+  - Tool schemas: `expand`, `decompose`, `assess_quality`, `stop`
+  - `run_controller()`: multi-turn litellm tool-calling loop with hard guardrails
+  - CLI with `--task` and `--repo` modes, repo-level iteration with cross-task summaries
+- `src/cooperbench/generation/expand.py` -- added `hints: str | None` parameter to `expand_task()` and `_build_generation_prompt()`, added `failure_detail` field to `ExpansionResult`
+- `src/cooperbench/generation/decompose.py` -- added `hints: str | None` parameter to `decompose_feature()` and `_build_subfeature_prompt()`, added `failure_detail` field to `DecompositionResult`
+
+**Test results (dspy_task/task8394, 7 existing features):**
+
+| Step | Action | Result | Notes |
+|------|--------|--------|-------|
+| Bootstrap | Conflict check all 21 pairs | 18 conflicts, 3 clean | ~2 min for 21 Docker-based checks |
+| 1 | assess_quality | Rich coordination identified for most pairs | Correctly assessed f1-f2 as "rich" |
+| 2 | expand | Failed (MSA format error) | `gemini-2.0-flash` incompatible with MSA; use `gemini-3-flash-preview` |
+| 3 | expand | Failed (same issue) | Consecutive failure count = 2 |
+| 4 | stop | Controller stopped | "Reached consecutive failure limit" |
+
+**Key design decisions:**
+- Validation (tests + conflicts + solvable) is a hard gate -- features that fail any check are discarded, not scored
+- Quality assessment is advisory -- judges "trivial vs rich" coordination but doesn't gate acceptance
+- Entanglement graph distinguishes "solvability unchecked" from "not solvable" via `solvability_checked` flag
+- Controller receives full history with failure reasons to adjust strategy
+- `hints` parameter lets controller guide downstream agents toward specific code regions
