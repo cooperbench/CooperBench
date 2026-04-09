@@ -1,0 +1,136 @@
+diff --git a/src/click/_termui_impl.py b/src/click/_termui_impl.py
+index 7b97bfb..7b10d2b 100644
+--- a/src/click/_termui_impl.py
++++ b/src/click/_termui_impl.py
+@@ -485,11 +485,13 @@ class Editor:
+         env: cabc.Mapping[str, str] | None = None,
+         require_save: bool = True,
+         extension: str = ".txt",
++        readonly: bool = False,
+     ) -> None:
+         self.editor = editor
+         self.env = env
+         self.require_save = require_save
+         self.extension = extension
++        self.readonly = readonly
+ 
+     def get_editor(self) -> str:
+         if self.editor is not None:
+@@ -505,7 +507,7 @@ class Editor:
+                 return editor
+         return "vi"
+ 
+-    def edit_file(self, filename: str) -> None:
++    def edit_files(self, filenames: cabc.Iterable[str]) -> None:
+         import subprocess
+ 
+         editor = self.get_editor()
+@@ -515,8 +517,16 @@ class Editor:
+             environ = os.environ.copy()
+             environ.update(self.env)
+ 
++        exc_filenames = " ".join(f'"{filename}"' for filename in filenames)
++        cmd = f"{editor} {exc_filenames}"
++        if self.readonly:
++            if "vim" in editor or "vi" in editor:
++                cmd = f"{editor} -R {exc_filenames}"
++            elif "nano" in editor:
++                cmd = f"{editor} -v {exc_filenames}"
++
+         try:
+-            c = subprocess.Popen(f'{editor} "{filename}"', env=environ, shell=True)
++            c = subprocess.Popen(cmd, env=environ, shell=True)
+             exit_code = c.wait()
+             if exit_code != 0:
+                 raise ClickException(
+@@ -559,7 +569,7 @@ class Editor:
+             # recorded, so get the new recorded value.
+             timestamp = os.path.getmtime(name)
+ 
+-            self.edit_file(name)
++            self.edit_files((name,))
+ 
+             if self.require_save and os.path.getmtime(name) == timestamp:
+                 return None
+diff --git a/src/click/termui.py b/src/click/termui.py
+index e14e670..d79479d 100644
+--- a/src/click/termui.py
++++ b/src/click/termui.py
+@@ -643,13 +643,35 @@ def secho(
+     return echo(message, file=file, nl=nl, err=err, color=color)
+ 
+ 
++@t.overload
++def edit(
++    text: t.AnyStr,
++    editor: str | None = None,
++    env: cabc.Mapping[str, str] | None = None,
++    require_save: bool = True,
++    extension: str = ".txt",
++) -> t.AnyStr: ...
++
++
++@t.overload
++def edit(
++    text: None = None,
++    editor: str | None = None,
++    env: cabc.Mapping[str, str] | None = None,
++    require_save: bool = True,
++    extension: str = ".txt",
++    filename: str | cabc.Iterable[str] | None = None,
++) -> None: ...
++
++
+ def edit(
+     text: t.AnyStr | None = None,
+     editor: str | None = None,
+     env: cabc.Mapping[str, str] | None = None,
+     require_save: bool = True,
+     extension: str = ".txt",
+-    filename: str | None = None,
++    filename: str | cabc.Iterable[str] | None = None,
++    readonly: bool = False,
+ ) -> t.AnyStr | None:
+     r"""Edits the given text in the defined editor.  If an editor is given
+     (should be the full path to the executable but the regular operating
+@@ -674,18 +696,36 @@ def edit(
+     :param extension: the extension to tell the editor about.  This defaults
+                       to `.txt` but changing this might change syntax
+                       highlighting.
+-    :param filename: if provided it will edit this file instead of the
++    :param readonly: if provided, the editor will be opened in read-only mode if the\n                     editor supports it.\n    :param filename: if provided it will edit this file instead of the
+                      provided text contents.  It will not use a temporary
+-                     file as an indirection in that case.
++                     file as an indirection in that case. If the editor supports
++                     editing multiple files at once, a sequence of files may be
++                     passed as well. Invoke `click.file` once per file instead
++                     if multiple files cannot be managed at once or editing the
++                     files serially is desired.
++
++    .. versionchanged:: 8.2.0
++        ``filename`` now accepts any ``Iterable[str]`` in addition to a ``str``
++        if the ``editor`` supports editing multiple files at once.
++
+     """
+     from ._termui_impl import Editor
+ 
+-    ed = Editor(editor=editor, env=env, require_save=require_save, extension=extension)
++    ed = Editor(
++        editor=editor,
++        env=env,
++        require_save=require_save,
++        extension=extension,
++        readonly=readonly,
++    )
+ 
+     if filename is None:
+         return ed.edit(text)
+ 
+-    ed.edit_file(filename)
++    if isinstance(filename, str):
++        filename = (filename,)
++
++    ed.edit_files(filenames=filename)
+     return None
+ 
+ 

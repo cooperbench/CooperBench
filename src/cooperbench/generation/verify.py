@@ -168,12 +168,19 @@ def check_solvability(
     conflicting_feature_id: int,
     timeout: int = 600,
     backend: str = "docker",
+    resolve: bool = False,
+    model_name: str = "gemini/gemini-3-flash-preview",
+    cost_limit: float = 0.50,
+    step_limit: int = 50,
 ) -> dict:
     """Test whether a candidate + existing feature are jointly solvable.
 
     Applies the existing feature's gold patch as *patch1* and the candidate
     patch as *patch2*, then uses :func:`sandbox.merge_and_test` to attempt
     naive merge (then union fallback) and runs both test suites.
+
+    When *resolve* is ``True`` and auto-merge fails, falls back to MSA-based
+    conflict resolution via :func:`resolve.resolve_conflict`.
 
     Returns dict matching the shape of :func:`sandbox.test_merged` output,
     plus ``solvable: bool``.
@@ -192,7 +199,7 @@ def check_solvability(
     existing_patch = existing_patch_path.read_text()
     existing_tests = existing_tests_path.read_text()
 
-    existing_patch = _filter_test_files(existing_patch)
+    existing_patch_filtered = _filter_test_files(existing_patch)
     candidate_patch_filtered = _filter_test_files(candidate_patch)
 
     image = get_image_name(repo_name, task_id)
@@ -202,17 +209,46 @@ def check_solvability(
     try:
         result = merge_and_test(
             sb,
-            patch1_content=existing_patch,
+            patch1_content=existing_patch_filtered,
             patch2_content=candidate_patch_filtered,
             tests1_content=existing_tests,
             tests2_content=candidate_tests,
         )
         result["solvable"] = result.get("both_passed", False)
-        return result
     except Exception as e:
-        return {"solvable": False, "error": str(e)}
+        result = {"solvable": False, "error": str(e)}
     finally:
         sb.terminate()
+
+    if result["solvable"] or not resolve:
+        return result
+
+    # Auto-merge failed and resolve=True: try MSA-based resolution
+    logger.info("Auto-merge failed for feature %d; invoking MSA resolver …", conflicting_feature_id)
+
+    from cooperbench.generation.resolve import resolve_conflict
+
+    existing_md_path = existing_dir / "feature.md"
+    existing_md = existing_md_path.read_text() if existing_md_path.exists() else None
+
+    resolution = resolve_conflict(
+        repo_name, task_id,
+        patch1=existing_patch,
+        patch2=candidate_patch,
+        tests1=existing_tests,
+        tests2=candidate_tests,
+        feature_md1=existing_md,
+        feature_md2=None,
+        model_name=model_name,
+        cost_limit=cost_limit,
+        step_limit=step_limit,
+        timeout=timeout,
+        backend=backend,
+    )
+
+    result["solvable"] = resolution.resolved
+    result["resolution"] = resolution.to_dict()
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +264,10 @@ def verify_candidate(
     checks: list[str] | None = None,
     timeout: int = 600,
     backend: str = "docker",
+    resolve: bool = False,
+    model_name: str = "gemini/gemini-3-flash-preview",
+    cost_limit: float = 0.50,
+    step_limit: int = 50,
 ) -> VerificationResult:
     """Run all (or selected) verification checks on a candidate feature.
 
@@ -249,6 +289,15 @@ def verify_candidate(
         ``None`` runs all three sequentially, short-circuiting on failure.
     backend : str
         Sandbox backend (``"docker"`` or ``"modal"``).
+    resolve : bool
+        If ``True``, fall back to MSA-based conflict resolution when
+        auto-merge fails in the solvability check.
+    model_name : str
+        LLM model for MSA resolver (only used when *resolve* is True).
+    cost_limit : float
+        Max USD spend for MSA resolver per pair.
+    step_limit : int
+        Max LLM calls for MSA resolver per pair.
 
     Returns
     -------
@@ -279,7 +328,10 @@ def verify_candidate(
             result.failure_reason = "tests_error"
             return result
 
-        if not result.tests_ok:
+        if result.tests_ok:
+            logger.info("  ✓ tests passed (%d passed, %d failed)", result.tests_passed, result.tests_failed)
+        else:
+            logger.info("  ✗ tests FAILED (%d passed, %d failed)", result.tests_passed, result.tests_failed)
             result.failure_reason = "tests_failed"
             if run_all:
                 return result
@@ -298,6 +350,7 @@ def verify_candidate(
         if c.get("errors"):
             result.error = "; ".join(c["errors"])
 
+        logger.info("  conflicts with: %s | clean with: %s", result.conflicts, result.clean)
         if not result.conflicts:
             result.failure_reason = "no_conflicts"
             if run_all:
@@ -329,16 +382,28 @@ def verify_candidate(
                 candidate_tests=tests_patch,
                 conflicting_feature_id=fid,
                 timeout=timeout, backend=backend,
+                resolve=resolve, model_name=model_name,
+                cost_limit=cost_limit, step_limit=step_limit,
             )
-            result.solvability_details[fid] = {
+            detail: dict = {
                 "both_passed": s.get("both_passed", False),
                 "solvable": s.get("solvable", False),
                 "merge_strategy": (s.get("merge", {}) or {}).get("strategy"),
                 "merge_status": (s.get("merge", {}) or {}).get("status"),
                 "error": s.get("error"),
             }
+            if "resolution" in s:
+                res = s["resolution"]
+                detail["resolution_strategy"] = res.get("strategy")
+                detail["resolution_cost"] = res.get("agent_cost")
+                detail["resolution_steps"] = res.get("agent_steps")
+                detail["unsolvable_reason"] = res.get("unsolvable_reason")
+            result.solvability_details[fid] = detail
             if s.get("solvable"):
                 result.solvable_pairs.append(fid)
+                logger.info("  ✓ feature %d: SOLVABLE (strategy=%s)", fid, detail.get("merge_strategy") or detail.get("resolution_strategy"))
+            else:
+                logger.info("  ✗ feature %d: NOT solvable (error=%s)", fid, detail.get("error") or "merge/resolution failed")
 
         if not result.solvable_pairs:
             result.failure_reason = "not_solvable"
@@ -365,6 +430,7 @@ def verify_candidate(
     if result.overall_ok:
         result.failure_reason = None
 
+    logger.info("=== VERDICT: %s (reason=%s) ===", "PASS" if result.overall_ok else "FAIL", result.failure_reason or "all checks passed")
     return result
 
 
@@ -413,15 +479,44 @@ def main() -> None:
         "--timeout", type=int, default=600,
     )
     parser.add_argument(
+        "--resolve", action="store_true",
+        help="Fall back to MSA-based conflict resolution when auto-merge fails.",
+    )
+    parser.add_argument(
+        "--model", default="gemini/gemini-3-flash-preview",
+        help="LLM model for MSA resolver (default: gemini/gemini-3-flash-preview).",
+    )
+    parser.add_argument(
+        "--cost-limit", type=float, default=0.50,
+        help="Max USD spend for MSA resolver per pair (default: 0.50).",
+    )
+    parser.add_argument(
+        "--step-limit", type=int, default=50,
+        help="Max LLM calls for MSA resolver per pair (default: 50).",
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true",
     )
 
     args = parser.parse_args()
 
+    # Configure logging: keep third-party libs quiet, only show our output
+    app_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
+        level=logging.WARNING,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        datefmt="%H:%M:%S",
     )
+    for name in ("cooperbench", "__main__"):
+        logging.getLogger(name).setLevel(app_level)
+    # MSA agent traces: show at INFO so we see step/thought/cmd/output
+    for name in ("cooperbench.generation.resolve.agent", "agent",
+                 "minisweagent", "minisweagent.environment"):
+        logging.getLogger(name).setLevel(app_level)
+    # Silence noisy third-party loggers even if -v is set
+    for name in ("LiteLLM", "litellm", "urllib3", "docker", "httpcore",
+                 "httpx", "openai", "google", "grpc", "litellm_model"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     # Parse task identifier
     parts = args.task.strip("/").split("/")
@@ -470,6 +565,10 @@ def main() -> None:
         checks=args.checks,
         timeout=args.timeout,
         backend=args.backend,
+        resolve=args.resolve,
+        model_name=args.model,
+        cost_limit=args.cost_limit,
+        step_limit=args.step_limit,
     )
 
     # Structured JSON output
