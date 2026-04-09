@@ -100,9 +100,17 @@ VALIDATE_FEATURE_SH = r"""#!/bin/bash
 #   2. Tests pass (via runner.sh)
 #   3. At least one merge conflict with an existing feature
 # Non-zero exit blocks submission.
+#
+# Verbose test output is saved to /patches/.test_output.log (read it to
+# debug failures).  Only compact pass/fail summaries are printed to stdout
+# so that the output stays short enough for the agent to see the final
+# submission instruction.
 
 set -e
 cd /workspace/repo
+
+LOG="/patches/.test_output.log"
+> "$LOG"
 
 if [ ! -f /patches/.base_sha ]; then
     echo "ERROR: Run 'bash /patches/setup.sh' first!"
@@ -150,33 +158,42 @@ echo "Tests patch: $(wc -l < /patches/candidate_tests.patch) lines"
 
 # ── Step 2: Run tests ─────────────────────────────────────────────────────
 echo ""
-echo "=== Step 2: Testing that your tests pass ==="
+echo "=== Step 2: Running tests (verbose output in /patches/.test_output.log) ==="
 
 git checkout "$BASE_SHA" --force 2>/dev/null
 git reset --hard 2>/dev/null
 git clean -fdx 2>/dev/null
 
-# runner.sh runs the task's default test suite -- ensures base tests still pass
-bash /usr/local/bin/runner.sh candidate_tests.patch candidate_feature.patch
-echo "Base tests PASSED"
+echo "--- runner.sh output ---" >> "$LOG"
+if ! bash /usr/local/bin/runner.sh candidate_tests.patch candidate_feature.patch >> "$LOG" 2>&1; then
+    echo "FAIL: Base tests did not pass. See /patches/.test_output.log for details."
+    echo "Last 30 lines:"
+    tail -30 "$LOG"
+    exit 1
+fi
+echo "Base tests: PASSED"
 
-# Also run any NEW test files the agent created (runner.sh only runs pre-set tests)
 git checkout "$BASE_SHA" --force 2>/dev/null
 git reset --hard 2>/dev/null
 git clean -fdx 2>/dev/null
 git apply /patches/candidate_feature.patch 2>/dev/null || git apply --3way /patches/candidate_feature.patch 2>/dev/null
 git apply /patches/candidate_tests.patch 2>/dev/null || git apply --3way /patches/candidate_tests.patch 2>/dev/null
-pip install -e ".[test]" > /dev/null 2>&1 || pip install -e . > /dev/null 2>&1
-pip install pytest pytest-xdist pytest_mock > /dev/null 2>&1
+pip install -e ".[test]" >> "$LOG" 2>&1 || pip install -e . >> "$LOG" 2>&1
+pip install pytest pytest-xdist pytest_mock >> "$LOG" 2>&1
 
 NEW_TEST_FILES=$(echo "$TEST_FILES" | tr ' ' '\n' | head -5)
-echo "Running new test files: $NEW_TEST_FILES"
-python -m pytest $NEW_TEST_FILES -v
-echo "New tests PASSED"
+echo "--- pytest new test files ---" >> "$LOG"
+if ! python -m pytest $NEW_TEST_FILES -v >> "$LOG" 2>&1; then
+    echo "FAIL: New tests did not pass. See /patches/.test_output.log for details."
+    echo "Last 30 lines:"
+    tail -30 "$LOG"
+    exit 1
+fi
+echo "New tests ($NEW_TEST_FILES): PASSED"
 
 # ── Step 3: Check merge conflicts with existing features ──────────────────
 echo ""
-echo "=== Step 3: Checking for merge conflicts with existing features ==="
+echo "=== Step 3: Checking for merge conflicts ==="
 
 git config user.email "expand@cooperbench.local" 2>/dev/null || true
 git config user.name "CooperBench Expander" 2>/dev/null || true
@@ -192,53 +209,43 @@ for feature_dir in /patches/existing/feature*/; do
     [ -f "$EXISTING_PATCH" ] || continue
     TOTAL_CHECKED=$((TOTAL_CHECKED + 1))
 
-    # Clean state
     git checkout "$BASE_SHA" --force 2>/dev/null
     git reset --hard 2>/dev/null
     git clean -fdx 2>/dev/null
 
-    # Delete temp branches from prior runs
     git branch -D "existing_$FEATURE_ID" 2>/dev/null || true
     git branch -D "candidate_vs_$FEATURE_ID" 2>/dev/null || true
 
-    # Branch: existing feature
     git checkout -b "existing_$FEATURE_ID" 2>/dev/null
     if ! git apply "$EXISTING_PATCH" 2>/dev/null && ! git apply --3way "$EXISTING_PATCH" 2>/dev/null; then
-        echo "  Feature $FEATURE_ID: could not apply existing patch (skip)"
+        echo "  f$FEATURE_ID: skip (patch failed)"
         git checkout "$BASE_SHA" --force 2>/dev/null
         continue
     fi
     git add -A && git commit -m "Existing feature $FEATURE_ID" --allow-empty 2>/dev/null
 
-    # Branch: candidate feature
     git checkout "$BASE_SHA" --force 2>/dev/null
     git checkout -b "candidate_vs_$FEATURE_ID" 2>/dev/null
     git apply /patches/candidate_feature.patch 2>/dev/null || git apply --3way /patches/candidate_feature.patch 2>/dev/null
     git add -A && git commit -m "Candidate feature" --allow-empty 2>/dev/null
 
-    # Attempt merge
     MERGE_OUTPUT=$(git merge "existing_$FEATURE_ID" --no-ff --no-commit 2>&1 || true)
     if echo "$MERGE_OUTPUT" | grep -qi "conflict"; then
         CONFLICT_COUNT=$((CONFLICT_COUNT + 1))
         CONFLICT_LIST="$CONFLICT_LIST $FEATURE_ID"
-        echo "  Feature $FEATURE_ID: CONFLICT (good!)"
+        echo "  f$FEATURE_ID: CONFLICT"
     else
-        echo "  Feature $FEATURE_ID: clean merge (no conflict)"
+        echo "  f$FEATURE_ID: clean"
     fi
 
     git merge --abort 2>/dev/null || true
     git checkout "$BASE_SHA" --force 2>/dev/null
 done
 
-echo ""
-echo "Checked $TOTAL_CHECKED existing feature(s). Conflicts: $CONFLICT_COUNT (features:$CONFLICT_LIST)"
+echo "Checked $TOTAL_CHECKED features. Conflicts: $CONFLICT_COUNT ($CONFLICT_LIST)"
 
 if [ "$CONFLICT_COUNT" -eq 0 ]; then
-    echo ""
-    echo "ERROR: Your feature must create merge conflicts with at least one existing feature."
-    echo "Your changes should modify overlapping code regions (same functions/methods/lines)"
-    echo "as at least one of the existing features. Re-examine the existing feature patches"
-    echo "at /patches/existing/feature*/feature.patch and adjust your code."
+    echo "ERROR: No merge conflicts found. Modify overlapping code regions."
     exit 1
 fi
 
@@ -253,10 +260,8 @@ git apply /patches/candidate_feature.patch 2>/dev/null || git apply --3way /patc
 git apply /patches/candidate_tests.patch 2>/dev/null || git apply --3way /patches/candidate_tests.patch 2>/dev/null
 
 echo ""
-echo "VALIDATION PASSED (tests pass, conflicts with features:$CONFLICT_LIST)"
-echo "Patches saved to /patches/candidate_feature.patch and /patches/candidate_tests.patch"
-echo ""
-echo "Now submit by running exactly: echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
+echo "ALL CHECKS PASSED. Conflicts with:$CONFLICT_LIST"
+echo ">>> Now submit: echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
 """
 
 

@@ -1,0 +1,78 @@
+diff --git a/dspy/clients/test_cache_stats.py b/dspy/clients/test_cache_stats.py
+new file mode 100644
+index 00000000..2f9bd764
+--- /dev/null
++++ b/dspy/clients/test_cache_stats.py
+@@ -0,0 +1,72 @@
++import unittest
++import os
++import shutil
++import tempfile
++from dspy.clients.cache import Cache
++
++class TestCacheStats(unittest.TestCase):
++    def setUp(self):
++        self.test_dir = tempfile.mkdtemp()
++        self.cache = Cache(
++            enable_disk_cache=True,
++            enable_memory_cache=True,
++            disk_cache_dir=self.test_dir
++        )
++
++    def tearDown(self):
++        shutil.rmtree(self.test_dir)
++
++    def test_initial_stats(self):
++        stats = self.cache.stats()
++        self.assertEqual(stats['hits'], 0)
++        self.assertEqual(stats['mem_hits'], 0)
++        self.assertEqual(stats['disk_hits'], 0)
++        self.assertEqual(stats['misses'], 0)
++
++    def test_cache_miss_stats(self):
++        request = {"prompt": "Hello"}
++        self.cache.get(request)
++        stats = self.cache.stats()
++        self.assertEqual(stats['misses'], 1)
++        self.assertEqual(stats['hits'], 0)
++
++    def test_memory_hit_stats(self):
++        request = {"prompt": "Hello"}
++        self.cache.put(request, "World")
++        
++        # First call should hit memory
++        self.cache.get(request)
++        stats = self.cache.stats()
++        self.assertEqual(stats['mem_hits'], 1)
++        self.assertEqual(stats['hits'], 1)
++        self.assertEqual(stats['misses'], 0)
++
++    def test_disk_hit_stats(self):
++        request = {"prompt": "Hello"}
++        self.cache.put(request, "World")
++        
++        # Clear memory cache to force disk hit
++        self.cache.reset_memory_cache()
++        
++        self.cache.get(request)
++        stats = self.cache.stats()
++        self.assertEqual(stats['disk_hits'], 1)
++        self.assertEqual(stats['hits'], 1)
++        self.assertEqual(stats['mem_hits'], 0)
++        self.assertEqual(stats['misses'], 0)
++
++    def test_reset_stats(self):
++        request = {"prompt": "Hello"}
++        self.cache.get(request)
++        self.cache.put(request, "World")
++        self.cache.get(request)
++        
++        self.cache.reset_stats()
++        stats = self.cache.stats()
++        self.assertEqual(stats['hits'], 0)
++        self.assertEqual(stats['mem_hits'], 0)
++        self.assertEqual(stats['disk_hits'], 0)
++        self.assertEqual(stats['misses'], 0)
++
++if __name__ == '__main__':
++    unittest.main()

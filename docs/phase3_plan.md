@@ -124,10 +124,9 @@ dataset/flask_task/task5955/
 ## Implementation Breakdown
 
 - **3a**: Build `verify.py` -- the deterministic verification module (tests + conflicts + solvability check). Test on existing benchmark tasks that have known feature pairs. **[DONE]**
-- **3b**: Build the solvability checker specifically -- resolver agent + dual test suite runner. Test on known-solvable pairs from the existing dataset.
-- **3c**: Build the expansion orchestrator (`expand.py`) with the incremental loop, history tracking, and overlap map. Wire in the verification script.
-- **3d**: Modify the agent prompt and sandbox setup so mini-swe-agent can call `verify.py` in-loop. Test on a Flask seed task.
-- **3e**: Add the decomposition strategy. Test on a large PR.
+- **3b**: Build the solvability checker specifically -- resolver agent + dual test suite runner. Test on known-solvable pairs from the existing dataset. **[DONE]**
+- **3c/3d**: Build the expansion orchestrator (`expand.py`) with the incremental loop and agent-in-the-loop validation via `validate_feature.sh`. Wire in `verify.py` for external verification and `resolve.py` for solvability. Tested on `pallets_click_task/task2068` (generated feature13, solvable with all 12 existing features). **[DONE]**
+- **3e**: Add the decomposition strategy (`decompose.py`). Two-phase approach: LLM planning call decomposes a large feature into sub-features, then per-sub-feature MSA agents implement them iteratively with the same validation infrastructure as expand.py. Tested on `dspy_task/task8394` (decomposed feature4 into 2 sub-features: feature6 "Global Cache Statistics" solvable with 5 features, feature7 "Per-Call Cache Usage" solvable with 4 features). **[DONE]**
 
 ---
 
@@ -150,3 +149,22 @@ dataset/flask_task/task5955/
 | flask task5939, tests-only | 133 passed | N/A | N/A | Individual `--check tests` mode works |
 
 **Key finding:** Benchmark feature pairs in `pallets_click_task` are designed to require LLM-based conflict resolution -- the naive+union heuristic in `merge_and_test()` is insufficient. This confirms Phase 3b (resolver agent) is necessary for real solvability assessment.
+
+### Phase 3e: `decompose.py` (completed)
+
+**Files changed:**
+
+- `src/cooperbench/generation/decompose.py` (new) -- two-phase decomposition pipeline:
+  1. `_generate_decomposition_plan()`: cheap `litellm.completion()` call to analyse a feature patch and produce a structured plan of N sub-features (2--5).
+  2. `decompose_feature()`: iterates over the plan, spinning up one MSA agent per sub-feature, reusing `VALIDATE_FEATURE_SH` and `_extract_patches_from_container()` from `expand.py`.
+- Imports shared infrastructure from `expand.py` (`VALIDATE_FEATURE_SH`, `SETUP_SCRIPT`, `_LoggingAgent`, `_extract_patches_from_container`).
+- Includes `_should_decompose()` heuristic gate (>= 3 files OR >= 50 non-test diff lines).
+
+**Test results (dspy_task/task8394, decomposing feature4 -- 236 lines, 4 files):**
+
+| Sub-feature | Feature ID | Tests | Conflicts | Solvable With | Cost |
+|---|---|---|---|---|---|
+| Global Cache Statistics Tracking | feature6 | Passed | 1,2,3,4,5 | 1,2,3,4,5 (all 5) | ~$0.02 gen + $0.18 resolve |
+| Per-Call Cache Usage Tracking | feature7 | Passed | 3,4,5,6 | 3,4,5,6 (all 4) | ~$0.25 gen + $0.38 resolve |
+
+Total cost: $0.83. Both sub-features accepted and saved to dataset with resolution patches.
