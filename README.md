@@ -111,6 +111,50 @@ run(
 evaluate(run_name="my-experiment")
 ```
 
+## Running with Harbor
+
+CooperBench is also available as a [Harbor](https://github.com/harbor-framework/harbor) adapter, which provides parallelized cloud execution on [Modal](https://modal.com) via Docker-in-Docker sandboxes, built-in oracle validation, and standardized result collection.
+
+Requires Modal authentication (run `modal setup`) and an LLM API key.
+
+### Install and Prepare Tasks
+
+```bash
+# Install Harbor
+uv tool install harbor
+
+# Clone Harbor and prepare the adapter
+git clone https://github.com/harbor-framework/harbor.git
+cd harbor/adapters/cooperbench
+uv sync
+
+# Generate flash subset (50 pairs) with openhands-sdk harness
+uv run python -m cooperbench.main \
+  --subset flash \
+  --agent-harness openhands-sdk \
+  --output-dir ../../datasets/cooperbench
+```
+
+### Run on Modal
+
+```bash
+cd ../..  # back to harbor root
+
+# Set up .env with your API key
+echo "GEMINI_API_KEY=your_key" > .env
+
+# Run the flash subset (50 tasks, concurrency 10)
+uv run harbor run -p datasets/cooperbench --agent nop -e modal \
+  --env-file .env --n-concurrent 10 \
+  --ae COOPERBENCH_MODEL=gemini/gemini-3-flash-preview
+
+# Run oracle (validates infrastructure, expects 100% pass)
+uv run harbor run -p datasets/cooperbench --agent oracle -e modal \
+  --env-file .env --n-concurrent 28
+```
+
+See the [Harbor CooperBench adapter](https://github.com/harbor-framework/harbor/tree/main/adapters/cooperbench) for full documentation.
+
 ## CLI Reference
 
 ### `cooperbench config`
