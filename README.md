@@ -228,6 +228,26 @@ logs/<run_name>/<repo>/task<id>/features_<i>_<j>/
    - **Communication failures (26%)** — questions go unanswered, breaking decision loops
    - **Commitment failures (32%)** — agents break promises or make unverifiable claims
 
+## Data Creation Pipeline
+
+CooperBench includes an end-to-end pipeline for generating new benchmark tasks from any GitHub repository. It leverages pre-built Docker images from [SWE-smith](https://github.com/SWE-smith/SWE-smith) to avoid building environments from scratch.
+
+```bash
+# 1. Convert a SWE-smith image to CooperBench format (once per repo)
+python -m cooperbench.generation.convert_swesmith base \
+    --swesmith-image jyangballin/swesmith.x86_64.pallets_1776_flask.bc098406 \
+    --github-url https://github.com/pallets/flask.git \
+    --repo-name flask_task --push
+
+# 2. Run the full pipeline (collect PRs → filter → onboard → controller)
+python -m cooperbench.generation.pipeline \
+    --repo pallets/flask --repo-name flask_task \
+    --repo-url https://github.com/pallets/flask.git \
+    --use-swesmith --max-tasks 10 --concurrency 5
+```
+
+See the [Data Creation Guide](src/cooperbench/generation/README.md) for the full walkthrough.
+
 ## Development
 
 ```bash

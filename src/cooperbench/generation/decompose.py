@@ -607,7 +607,7 @@ def decompose_feature(
                 model_name=model_name,
                 cost_tracking="ignore_errors",
                 **{k: v for k, v in model_defaults.items()
-                   if k not in ("model_name", "cost_tracking")},
+                   if k not in ("model_name", "cost_tracking", "format_error_template")},
             )
             env = DockerEnvironment(
                 image=image,

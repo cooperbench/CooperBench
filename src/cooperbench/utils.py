@@ -20,7 +20,7 @@ from rich.console import Console
 
 console = Console()
 
-REGISTRY = "akhatua"
+REGISTRY = "priyank0003"
 IMAGE_PREFIX = "cooperbench"
 
 
@@ -28,6 +28,16 @@ def get_image_name(repo_name: str, task_id: int) -> str:
     """Generate Docker Hub image name for a task."""
     repo_clean = repo_name.replace("_task", "").replace("_", "-")
     return f"{REGISTRY}/{IMAGE_PREFIX}-{repo_clean}:task{task_id}"
+
+
+def get_base_image_name(repo_name: str, *, registry: str | None = None) -> str:
+    """Generate Docker Hub image name for a per-repo base image.
+
+    Used by the SWE-smith converter (Tier 1).
+    """
+    reg = registry or REGISTRY
+    repo_clean = repo_name.replace("_task", "").replace("_", "-")
+    return f"{reg}/{IMAGE_PREFIX}-{repo_clean}:base"
 
 
 def clean_model_name(model: str) -> str:
@@ -161,6 +171,7 @@ __all__ = [
     "REGISTRY",
     "IMAGE_PREFIX",
     "get_image_name",
+    "get_base_image_name",
     "clean_model_name",
     "ResourceTracker",
     "setup_cleanup_handlers",

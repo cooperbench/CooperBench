@@ -277,6 +277,89 @@ def generate_runner_sh(
 
 
 # ---------------------------------------------------------------------------
+# runner.sh generation (conda-aware, for SWE-smith converted images)
+# ---------------------------------------------------------------------------
+
+RUNNER_SH_CONDA_TEMPLATE = textwrap.dedent("""\
+    #!/bin/bash
+    set -e
+
+    # Activate the conda environment used by SWE-smith images
+    source /opt/miniconda3/etc/profile.d/conda.sh
+    conda activate testbed
+
+    cleanup() {{
+        echo "Cleaning up repository..."
+        cd /workspace/repo 2>/dev/null || true
+        git reset --hard HEAD 2>/dev/null || true
+        git clean -fdx 2>/dev/null || true
+    }}
+    trap cleanup EXIT INT TERM
+
+    TEST_PATCH="$1"
+    FEATURE_PATCH="$2"
+
+    if [[ -z "$TEST_PATCH" ]]; then
+        echo "Usage: runner.sh <test_patch> [feature_patch]"
+        exit 1
+    fi
+
+    cd /workspace/repo
+    git reset --hard HEAD
+    git clean -fdx
+
+    # Apply feature patch if provided
+    if [[ -n "$FEATURE_PATCH" ]]; then
+        echo "Applying feature patch: $FEATURE_PATCH"
+        if [[ -f "/patches/$FEATURE_PATCH" ]]; then
+            git apply --ignore-whitespace --ignore-space-change "/patches/$FEATURE_PATCH" \\
+                || git apply --3way "/patches/$FEATURE_PATCH"
+        else
+            echo "Error: Feature patch not found at /patches/$FEATURE_PATCH"
+            exit 1
+        fi
+    fi
+
+    # Apply test patch
+    echo "Applying test patch: $TEST_PATCH"
+    if [[ -f "/patches/$TEST_PATCH" ]]; then
+        git apply --ignore-whitespace --ignore-space-change "/patches/$TEST_PATCH" \\
+            || git apply --3way "/patches/$TEST_PATCH"
+    else
+        echo "Error: Test patch not found at /patches/$TEST_PATCH"
+        exit 1
+    fi
+
+    # Re-install package so code changes are picked up
+    pip install -e . 2>/dev/null || true
+
+    # Auto-detect test files from the test patch
+    TEST_FILES=$(grep '^diff --git a/' "/patches/$TEST_PATCH" 2>/dev/null \\
+        | sed 's|diff --git a/\\([^ ]*\\) b/.*|\\1|')
+    if [[ -z "$TEST_FILES" ]]; then
+        echo "Warning: Could not detect test files from patch, running tests/"
+        TEST_FILES="tests/"
+    fi
+
+    echo "Running tests: $TEST_FILES"
+    python -m pytest $TEST_FILES -x -v
+
+    echo "Test execution completed!"
+""")
+
+
+def generate_runner_sh_conda() -> str:
+    """Return a conda-aware runner.sh for SWE-smith converted images.
+
+    Unlike the standard template, this:
+    - Activates the conda ``testbed`` environment
+    - Auto-detects test files from the test patch at runtime
+    - Does not require test file paths baked in at generation time
+    """
+    return RUNNER_SH_CONDA_TEMPLATE
+
+
+# ---------------------------------------------------------------------------
 # feature.md generation via LLM
 # ---------------------------------------------------------------------------
 
@@ -523,13 +606,18 @@ def convert_pr_to_task(
     system_deps: str = "git curl build-essential",
     base_image: str = "python:3.11-slim",
     model_name: str = "gemini/gemini-2.0-flash",
+    use_swesmith: bool = False,
 ) -> Path:
     """Create a full CooperBench task directory from an SWE-smith instance.
+
+    When *use_swesmith* is True, skips Dockerfile generation (the Docker image
+    is created via :func:`convert_swesmith.convert_task` instead) and uses
+    the conda-aware runner.sh template.
 
     Directory layout::
 
         dataset/{repo_name}/task{pull_number}/
-            Dockerfile
+            Dockerfile          # only when use_swesmith=False
             runner.sh
             feature1/
                 feature.md
@@ -548,19 +636,34 @@ def convert_pr_to_task(
     (feature_dir / "tests.patch").write_text(instance["test_patch"])
     logger.info("Wrote patches for PR #%d", task_id)
 
-    dockerfile = generate_dockerfile(
-        repo_url=repo_url,
-        commit_sha=instance["base_commit"],
-        install_cmd=install_cmd,
-        system_deps=system_deps,
-        base_image=base_image,
-    )
-    (task_dir / "Dockerfile").write_text(dockerfile)
+    if use_swesmith:
+        # SWE-smith path: no Dockerfile, conda-aware runner, and build
+        # the per-task Docker image via the converter
+        runner_sh = generate_runner_sh_conda()
+        (task_dir / "runner.sh").write_text(runner_sh)
+        os.chmod(task_dir / "runner.sh", 0o755)
 
-    test_files = extract_test_files(instance["test_patch"])
-    runner_sh = generate_runner_sh(test_files, reinstall_cmd=reinstall_cmd)
-    (task_dir / "runner.sh").write_text(runner_sh)
-    os.chmod(task_dir / "runner.sh", 0o755)
+        from cooperbench.generation.convert_swesmith import convert_task
+        convert_task(
+            repo_name=repo_name,
+            task_id=task_id,
+            base_commit=instance["base_commit"],
+        )
+    else:
+        # Standard path: generate Dockerfile + standard runner.sh
+        dockerfile = generate_dockerfile(
+            repo_url=repo_url,
+            commit_sha=instance["base_commit"],
+            install_cmd=install_cmd,
+            system_deps=system_deps,
+            base_image=base_image,
+        )
+        (task_dir / "Dockerfile").write_text(dockerfile)
+
+        test_files = extract_test_files(instance["test_patch"])
+        runner_sh = generate_runner_sh(test_files, reinstall_cmd=reinstall_cmd)
+        (task_dir / "runner.sh").write_text(runner_sh)
+        os.chmod(task_dir / "runner.sh", 0o755)
 
     logger.info("Generating feature.md for PR #%d via %s …", task_id, model_name)
     feature_md = generate_feature_md(
@@ -591,8 +694,13 @@ def run_pipeline(
     model_name: str = "gemini/gemini-2.0-flash",
     skip_build: bool = False,
     skip_validate: bool = False,
+    use_swesmith: bool = False,
 ) -> list[TaskResult]:
     """Run the full onboarding pipeline: convert → build → validate.
+
+    When *use_swesmith* is True, the Docker image is created via the
+    SWE-smith converter (Tier 2) during the convert stage, so the
+    separate build stage is skipped automatically.
 
     Each candidate is processed independently; a failure in one PR does not
     stop processing of subsequent PRs.
@@ -600,6 +708,10 @@ def run_pipeline(
     Returns a list of :class:`TaskResult` objects (one per candidate).
     """
     dataset_dir = dataset_dir or Path("dataset")
+
+    if use_swesmith:
+        skip_build = True
+
     results: list[TaskResult] = []
 
     for i, inst in enumerate(candidates, 1):
@@ -623,6 +735,7 @@ def run_pipeline(
                 system_deps=system_deps,
                 base_image=base_image,
                 model_name=model_name,
+                use_swesmith=use_swesmith,
             )
             tr.convert_ok = True
             tr.task_dir = task_dir
