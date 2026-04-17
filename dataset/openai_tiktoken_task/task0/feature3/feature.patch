@@ -27,7 +27,7 @@ index 6bc9736..779cf03 100644
          allowed_special: Literal["all"] | AbstractSet[str] = set(),  # noqa: B006
          disallowed_special: Literal["all"] | Collection[str] = "all",
 -    ) -> list[int]:
-+        return_frequency: bool = False,
++        analyze_frequency: bool = False,
 +    ) -> Union[list[int], Tuple[list[int], Dict[int, int]]]:
          """Encodes a string into tokens.
  
@@ -36,7 +36,7 @@ index 6bc9736..779cf03 100644
            cause all text corresponding to special tokens to be encoded as natural text.
          - Setting `allowed_special` to "all" will cause this function to treat all text
            corresponding to special tokens to be encoded as special tokens.
-+        - Setting `return_frequency` to True will return a tuple of (tokens, frequencies), where
++        - Setting `analyze_frequency` to True will return a tuple of (tokens, frequencies), where
 +          frequencies is a dict mapping token IDs to their frequencies.
  
          ```
@@ -45,7 +45,7 @@ index 6bc9736..779cf03 100644
          # Raises ValueError
          >>> enc.encode("<|endoftext|>", disallowed_special=())
          [27, 91, 437, 1659, 5239, 91, 29]
-+        >>> enc.encode("hello world", return_frequency=True)
++        >>> enc.encode("hello world", analyze_frequency=True)
 +        ([31373, 995], {31373: 1, 995: 1})
          ```
          """
@@ -67,7 +67,7 @@ index 6bc9736..779cf03 100644
 -
 +            tokens = self._core_bpe.encode(text, allowed_special)
 + 
-+        if return_frequency:
++        if analyze_frequency:
 +            frequencies = self._count_token_frequency(tokens)
 +            return tokens, frequencies
 + 

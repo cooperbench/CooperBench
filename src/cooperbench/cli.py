@@ -1,6 +1,7 @@
 """CooperBench CLI - benchmark runner.
 
 Usage:
+    cooperbench prepare                       # download dataset from HuggingFace
     cooperbench run -n my-experiment --setting solo -r llama_index_task
     cooperbench run --setting solo -s lite  # auto-generates name: solo-lite-gemini-3-flash
     cooperbench eval -n my-experiment --force
@@ -63,6 +64,21 @@ def main():
         description="CooperBench benchmark runner",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # === prepare command ===
+    prepare_parser = subparsers.add_parser(
+        "prepare",
+        help="Download the CooperBench dataset from HuggingFace",
+        description=(
+            "Download the CooperBench dataset (CodeConflict/cooperbench-dataset) "
+            "into ./dataset so `run`/`eval` can use it."
+        ),
+    )
+    prepare_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Delete ./dataset before downloading.",
+    )
 
     # === config command ===
     config_parser = subparsers.add_parser(
@@ -242,6 +258,10 @@ def main():
         _run_command(args)
     elif args.command == "eval":
         _eval_command(args)
+    elif args.command == "prepare":
+        from cooperbench.dataset import _prepare_command
+
+        _prepare_command(args)
 
 
 def _config_command(args):
