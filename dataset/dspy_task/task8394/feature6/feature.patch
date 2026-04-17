@@ -1,0 +1,89 @@
+diff --git a/dspy/clients/cache.py b/dspy/clients/cache.py
+index bfa7dbde..5d299adf 100644
+--- a/dspy/clients/cache.py
++++ b/dspy/clients/cache.py
+@@ -2,6 +2,7 @@ import copy
+ import inspect
+ import logging
+ import threading
++from collections import Counter
+ from functools import wraps
+ from hashlib import sha256
+ from typing import Any, Dict, Optional
+@@ -58,6 +59,14 @@ class Cache:
+             self.disk_cache = {}
+ 
+         self._lock = threading.RLock()
++        
++        # Cache statistics tracking
++        self._stats = Counter({
++            'hits': 0,
++            'mem_hits': 0,
++            'disk_hits': 0,
++            'misses': 0
++        })
+ 
+     def __contains__(self, key: str) -> bool:
+         """Check if a key is in the cache."""
+@@ -103,20 +112,31 @@ class Cache:
+             logger.debug(f"Failed to generate cache key for request: {request}")
+             return None
+ 
++        # Check memory cache first
+         if self.enable_memory_cache and key in self.memory_cache:
+             with self._lock:
+                 response = self.memory_cache[key]
++                # Track memory cache hit
++                self._stats['hits'] += 1
++                self._stats['mem_hits'] += 1
++        # Check disk cache if not in memory
+         elif self.enable_disk_cache and key in self.disk_cache:
+             # Found on disk but not in memory cache, add to memory cache
+             response = self.disk_cache[key]
+-            if self.enable_memory_cache:
+-                with self._lock:
++            with self._lock:
++                # Track disk cache hit
++                self._stats['hits'] += 1
++                self._stats['disk_hits'] += 1
++                if self.enable_memory_cache:
+                     self.memory_cache[key] = response
+         else:
++            # Cache miss
++            with self._lock:
++                self._stats['misses'] += 1
+             return None
+ 
+         response = copy.deepcopy(response)
+-        if hasattr(response, "usage"):
++        if hasattr(response, "usage") and response.usage:
+             # Clear the usage data when cache is hit, because no LM call is made
+             response.usage = {}
+         return response
+@@ -168,6 +188,26 @@ class Cache:
+             with open(filepath, "rb") as f:
+                 self.memory_cache = cloudpickle.load(f)
+ 
++    def stats(self) -> Dict[str, int]:
++        """Return current cache statistics.
++
++        Returns:
++            Dict containing cache statistics: hits, mem_hits, disk_hits, misses
++        """
++        with self._lock:
++            return dict(self._stats)
++
++    def reset_stats(self) -> None:
++        """Reset all cache statistics to zero."""
++        with self._lock:
++            self._stats.clear()
++            self._stats.update({
++                'hits': 0,
++                'mem_hits': 0,
++                'disk_hits': 0,
++                'misses': 0
++            })
++
+ 
+ def request_cache(
+     cache_arg_name: Optional[str] = None,

@@ -1,0 +1,66 @@
+diff --git a/tests/utils/test_cache_usage_tracking.py b/tests/utils/test_cache_usage_tracking.py
+new file mode 100644
+index 00000000..f1085f36
+--- /dev/null
++++ b/tests/utils/test_cache_usage_tracking.py
+@@ -0,0 +1,60 @@
++import dspy
++from dspy.utils.usage_tracker import track_cache_usage
++from dspy.primitives.prediction import Prediction
++import unittest
++from unittest.mock import MagicMock
++
++class TestCacheUsageTracking(unittest.TestCase):
++    def test_cache_usage_tracker_basic(self):
++        with track_cache_usage() as tracker:
++            tracker.add_cache_hit('memory')
++            tracker.add_cache_hit('disk')
++            tracker.add_cache_miss()
++            
++            usage = tracker.get_cache_usage()
++            self.assertEqual(usage['hits'], 2)
++            self.assertEqual(usage['mem_hits'], 1)
++            self.assertEqual(usage['disk_hits'], 1)
++            self.assertEqual(usage['misses'], 1)
++
++    def test_prediction_cache_usage_get_set(self):
++        pred = Prediction(answer="test")
++        usage = {'hits': 1, 'mem_hits': 1, 'disk_hits': 0, 'misses': 0}
++        pred.set_cache_usage(usage)
++        self.assertEqual(pred.get_cache_usage(), usage)
++
++    def test_module_integration(self):
++        class SimpleModule(dspy.Module):
++            def forward(self, x):
++                return Prediction(answer=x)
++
++        module = SimpleModule()
++        
++        # Test with track_usage=True
++        with dspy.settings.context(track_usage=True):
++            output = module("test")
++            self.assertIsNotNone(output.get_cache_usage())
++            self.assertEqual(output.get_cache_usage()['hits'], 0)
++
++    def test_cache_notification(self):
++        cache = dspy.clients.cache.Cache(
++            enable_disk_cache=False,
++            enable_memory_cache=True,
++            disk_cache_dir="tmp_cache",
++        )
++        
++        request = {"query": "test"}
++        response = Prediction(answer="cached")
++        cache.memory_cache[cache.cache_key(request)] = response
++        
++        with track_cache_usage() as tracker:
++            # Manually trigger cache.get within the tracker context
++            with dspy.settings.context(cache_usage_tracker=tracker):
++                cache.get(request)
++            
++            usage = tracker.get_cache_usage()
++            self.assertEqual(usage['mem_hits'], 1)
++            self.assertEqual(usage['hits'], 1)
++
++if __name__ == '__main__':
++    unittest.main()

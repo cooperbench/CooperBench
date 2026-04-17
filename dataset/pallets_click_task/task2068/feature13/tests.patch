@@ -1,0 +1,51 @@
+diff --git a/tests/test_edit_readonly.py b/tests/test_edit_readonly.py
+new file mode 100644
+index 0000000..7ad03df
+--- /dev/null
++++ b/tests/test_edit_readonly.py
+@@ -0,0 +1,45 @@
++import pytest
++import click
++from unittest import mock
++import os
++
++def test_edit_readonly_vim():
++    with mock.patch("subprocess.Popen") as mock_popen:
++        mock_popen.return_value.wait.return_value = 0
++        with mock.patch("os.environ.get", return_value="vim"):
++            # We need to make sure 'which vim' would return success if it's called
++            # but since we're forcing the editor via env var or param, it might not be needed.
++            click.edit("test content", editor="vim", readonly=True)
++            
++            # Check if -R was passed
++            args, kwargs = mock_popen.call_args
++            assert "vim -R" in args[0]
++
++def test_edit_readonly_nano():
++    with mock.patch("subprocess.Popen") as mock_popen:
++        mock_popen.return_value.wait.return_value = 0
++        click.edit("test content", editor="nano", readonly=True)
++        
++        # Check if -v was passed
++        args, kwargs = mock_popen.call_args
++        assert "nano -v" in args[0]
++
++def test_edit_no_readonly_by_default():
++    with mock.patch("subprocess.Popen") as mock_popen:
++        mock_popen.return_value.wait.return_value = 0
++        click.edit("test content", editor="vim")
++        
++        args, kwargs = mock_popen.call_args
++        assert "-R" not in args[0]
++
++def test_edit_readonly_filename(tmp_path):
++    f = tmp_path / "test.txt"
++    f.write_text("content")
++    
++    with mock.patch("subprocess.Popen") as mock_popen:
++        mock_popen.return_value.wait.return_value = 0
++        click.edit(filename=str(f), editor="vim", readonly=True)
++        
++        args, kwargs = mock_popen.call_args
++        assert "vim -R" in args[0]
++        assert str(f) in args[0]

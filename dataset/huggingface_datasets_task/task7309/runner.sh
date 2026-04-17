@@ -17,10 +17,10 @@ trap cleanup EXIT INT TERM
 # Get input params
 TEST_PATCH="$1"
 FEATURE_PATCH="$2"
-TEST_PATH="tests/io/test_parquet.py"
+TEST_PATH="${3:-tests/io/test_parquet.py}"  # Optional 3rd param, default to original
 
 if [[ -z "$TEST_PATCH" ]]; then
-    echo "Usage: docker run -v \$(pwd):/patches <image> <test_patch> [feature_patch]"
+    echo "Usage: docker run -v \$(pwd):/patches <image> <test_patch> [feature_patch] [test_path]"
     exit 1
 fi
 
