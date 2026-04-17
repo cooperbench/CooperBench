@@ -55,6 +55,7 @@ class DockerEnvironment:
 
         run_kwargs = {
             "image": self.config.image,
+            "entrypoint": "",
             "command": "sleep infinity",
             "detach": True,
             "working_dir": self.config.cwd,

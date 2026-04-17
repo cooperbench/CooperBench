@@ -82,10 +82,12 @@ class DockerEnvironment:
             container_name,
             "-w",
             self.config.cwd,
+            "--entrypoint",
+            "/bin/bash",
             *self.config.run_args,
             self.config.image,
-            "sleep",
-            self.config.container_timeout,
+            "-c",
+            f"sleep {self.config.container_timeout}",
         ]
         self.logger.debug(f"Starting container with command: {shlex.join(cmd)}")
         result = subprocess.run(

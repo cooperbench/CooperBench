@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.9] - 2026-04-17
+
+### Fixed
+
+- **Docker backend entrypoint handling for `mini_swe_agent` and `mini_swe_agent_v2`** - Containers whose images set an `ENTRYPOINT` (e.g. the benchmark dataset images that use `/usr/local/bin/runner.sh` as their entrypoint) were exiting immediately because `sleep infinity` / `sleep <timeout>` was passed as arguments to the entrypoint rather than as the container command. Both docker environments now explicitly clear the entrypoint (`--entrypoint ""` / `/bin/bash -c`), matching the behaviour of the Modal and GCP backends.
+
 ## [0.0.8] - 2026-04-17
 
 ### Fixed
