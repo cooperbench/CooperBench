@@ -15,7 +15,7 @@ def run_patch_test(
     feature_id: int,
     agent_patch: str | Path | None = None,
     timeout: int = 600,
-    backend: str = "modal",
+    backend: str = "docker",
 ) -> dict:
     """Test a single patch against one feature's tests.
 
@@ -94,7 +94,7 @@ def test_merged(
     patch1: str | Path | None = None,
     patch2: str | Path | None = None,
     timeout: int = 600,
-    backend: str = "modal",
+    backend: str = "docker",
 ) -> dict:
     """Test merged patches from two agents (coop mode).
 
@@ -222,7 +222,7 @@ def test_solo(
     feature2_id: int,
     patch: str | Path | None = None,
     timeout: int = 600,
-    backend: str = "modal",
+    backend: str = "docker",
 ) -> dict:
     """Test a solo patch against both features' tests.
 

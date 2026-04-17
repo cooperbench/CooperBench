@@ -5,7 +5,7 @@ from cooperbench.agents.mini_swe_agent.environments.modal import ModalEnvironmen
 __all__ = ["ModalEnvironment", "get_environment"]
 
 
-def get_environment(name: str = "modal"):
+def get_environment(name: str = "docker"):
     """Get an environment by name.
 
     Args:

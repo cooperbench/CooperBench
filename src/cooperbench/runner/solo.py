@@ -20,7 +20,7 @@ def execute_solo(
     model_name: str = "vertex_ai/gemini-3-flash-preview",
     force: bool = False,
     quiet: bool = False,
-    backend: str = "modal",
+    backend: str = "docker",
     agent_config: str | None = None,
 ) -> dict | None:
     """Execute a solo task (one agent, multiple features).
@@ -144,7 +144,7 @@ def _spawn_solo_agent(
     agent_name: str,
     model_name: str,
     quiet: bool = False,
-    backend: str = "modal",
+    backend: str = "docker",
     agent_config: str | None = None,
     run_name: str | None = None,
 ) -> dict:
