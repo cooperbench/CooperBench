@@ -68,7 +68,7 @@ class MiniSweAgentRunner:
             default_config.update(config)
 
         agent_config = default_config.get("agent", {})
-        backend = default_config.get("backend", "modal")
+        backend = default_config.get("backend", "docker")
 
         # Create sandbox environment based on backend
         if backend == "docker":

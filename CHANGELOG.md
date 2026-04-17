@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.7] - 2026-04-17
+
+### Changed
+
+- **Docker is now the default backend** for both `cooperbench run` and `cooperbench eval`, as well as every helper API (`evaluate`, `_evaluate_single`, `run_patch_test`, `test_merged`, `test_solo`, `get_backend`, `get_environment`, agent adapter config fallbacks, and the coop/solo runners). Previously defaulted to `modal`.
+
+### Fixed
+
+- **Auto-eval now honours `--backend`** - `cooperbench run --backend <X>` no longer silently falls back to modal during the inline evaluation phase; the value is threaded through both the single-task and multi-task auto-eval paths (`runner/core.py`).
+
 ## [0.0.6] - 2026-04-17
 
 ### Added

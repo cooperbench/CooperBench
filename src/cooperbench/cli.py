@@ -191,8 +191,8 @@ def main():
     run_parser.add_argument(
         "--backend",
         choices=["modal", "docker", "gcp"],
-        default="modal",
-        help="Execution backend: modal (cloud), docker (local), or gcp (GCP VM) (default: modal)",
+        default="docker",
+        help="Execution backend: modal (cloud), docker (local), or gcp (GCP VM) (default: docker)",
     )
     run_parser.add_argument(
         "--agent-config",
@@ -246,8 +246,8 @@ def main():
     eval_parser.add_argument(
         "--backend",
         choices=["modal", "docker", "gcp"],
-        default="modal",
-        help="Execution backend: modal (cloud), docker (local), or gcp (GCP Batch) (default: modal)",
+        default="docker",
+        help="Execution backend: modal (cloud), docker (local), or gcp (GCP Batch) (default: docker)",
     )
 
     args = parser.parse_args()

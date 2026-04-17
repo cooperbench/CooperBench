@@ -28,7 +28,7 @@ def execute_coop(
     quiet: bool = False,
     git_enabled: bool = False,
     messaging_enabled: bool = True,
-    backend: str = "modal",
+    backend: str = "docker",
     agent_config: str | None = None,
 ) -> dict | None:
     """Execute a cooperative task (two agents, separate features).
@@ -237,7 +237,7 @@ def _spawn_agent(
     git_network: str | None = None,
     messaging_enabled: bool = True,
     quiet: bool = False,
-    backend: str = "modal",
+    backend: str = "docker",
     agent_config: str | None = None,
     run_name: str | None = None,
     features: list[int] | None = None,

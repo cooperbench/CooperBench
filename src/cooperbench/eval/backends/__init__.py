@@ -13,7 +13,7 @@ __all__ = [
 ]
 
 
-def get_backend(name: str = "modal") -> EvalBackend:
+def get_backend(name: str = "docker") -> EvalBackend:
     """Get an evaluation backend by name.
 
     For interactive/adhoc evaluation (Docker, Modal).

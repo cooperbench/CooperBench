@@ -21,7 +21,7 @@ def evaluate(
     features: list[int] | None = None,
     concurrency: int = 10,
     force: bool = False,
-    backend: str = "modal",
+    backend: str = "docker",
 ) -> None:
     """Evaluate completed runs.
 
@@ -269,7 +269,7 @@ def _run_gcp_batch(runs: list[dict], parallelism: int, force: bool) -> tuple:
     return passed, failed, errors, skipped, results
 
 
-def _evaluate_single(run_info: dict, force: bool = False, backend: str = "modal") -> dict | None:
+def _evaluate_single(run_info: dict, force: bool = False, backend: str = "docker") -> dict | None:
     """Evaluate a single run."""
     log_dir = Path(run_info["log_dir"])
     eval_file = log_dir / "eval.json"

@@ -49,7 +49,7 @@ class MiniSweAgentV2Runner:
         agent_cfg = default_config.get("agent", {})
         model_cfg = default_config.get("model", {})
         env_cfg = default_config.get("environment", {})
-        backend = default_config.get("backend", "modal")
+        backend = default_config.get("backend", "docker")
 
         # Create environment based on backend
         env_kwargs = {
