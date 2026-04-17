@@ -2,7 +2,7 @@
 
 [![arXiv](https://img.shields.io/badge/arXiv-2601.13295-b31b1b.svg)](https://arxiv.org/abs/2601.13295)
 [![Website](https://img.shields.io/badge/Website-cooperbench.com-blue.svg)](https://cooperbench.com)
-[![Dataset](https://img.shields.io/badge/HuggingFace-Dataset-yellow.svg)](https://huggingface.co/datasets/cooperbench/cooperbench)
+[![Dataset](https://img.shields.io/badge/HuggingFace-Dataset-yellow.svg)](https://huggingface.co/datasets/CodeConflict/cooperbench-dataset)
 [![PyPI](https://img.shields.io/pypi/v/cooperbench.svg)](https://pypi.org/project/cooperbench/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
@@ -71,10 +71,10 @@ See [GCP Setup Guide](docs/GCP_SETUP.md) for detailed instructions.
 
 ### Dataset
 
-Download the benchmark dataset:
+Download the benchmark dataset from HuggingFace into `./dataset`:
 
 ```bash
-git clone https://huggingface.co/datasets/cooperbench/cooperbench dataset/
+cooperbench prepare
 ```
 
 ## Quick Start

@@ -75,6 +75,7 @@ dependencies = [
     "libtmux>=0.53.0",
     "func-timeout>=4.3.5",
     "tom-swe>=1.0.3",
+    "huggingface-hub>=0.24",
 ]
 
 [project.optional-dependencies]
