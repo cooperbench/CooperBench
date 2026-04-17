@@ -467,6 +467,9 @@ def _run_tests(sb: Sandbox, tests_patch: str, feature_patch: str, base_sha: str)
     commands = f"""
 cd /workspace/repo
 
+# Remove any stale git lock left by a previous operation
+rm -f .git/index.lock .git/refs/heads/.lock
+
 # Reset to base commit
 git checkout --force {base_sha} 2>&1
 git reset --hard {base_sha} 2>&1
