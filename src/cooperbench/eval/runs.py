@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from cooperbench.runner.tasks import load_subset
+from cooperbench.runner.tasks import DEFAULT_DATASET_DIR, DEFAULT_LOGS_DIR, load_subset
 
 
 def discover_runs(
@@ -12,11 +12,13 @@ def discover_runs(
     repo_filter: str | None = None,
     task_filter: int | None = None,
     features_filter: list[int] | None = None,
+    logs_dir: Path | str | None = None,
+    dataset_dir: Path | str | None = None,
 ) -> list[dict]:
-    """Discover completed runs from logs/ directory.
+    """Discover completed runs from a logs directory.
 
-    Supports both new structure (logs/{run_name}/{setting}/{repo}/)
-    and legacy structure (logs/{run_name}/{repo}/).
+    Supports both new structure (``<logs_dir>/{run_name}/{setting}/{repo}/``)
+    and legacy structure (``<logs_dir>/{run_name}/{repo}/``).
 
     Args:
         run_name: Name of the run
@@ -24,12 +26,16 @@ def discover_runs(
         repo_filter: Filter by repository name
         task_filter: Filter by task ID
         features_filter: Specific feature pair to find
+        logs_dir: Root of the logs tree.  Defaults to ``./logs``.
+        dataset_dir: Root of the dataset tree (for subset resolution).
+            Defaults to ``./dataset``.
 
     Returns:
         List of run dicts with repo, task_id, features, log_dir, setting
     """
     runs = []
-    log_dir = Path("logs") / run_name
+    logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
+    log_dir = logs_root / run_name
 
     if not log_dir.exists():
         return runs
@@ -37,7 +43,7 @@ def discover_runs(
     # Load subset filter if specified
     subset_data = None
     if subset:
-        subset_data = load_subset(subset)
+        subset_data = load_subset(subset, dataset_dir=dataset_dir)
 
     # Check for new structure (solo/, coop/)
     for setting in ["solo", "coop"]:

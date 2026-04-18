@@ -56,6 +56,7 @@ def run(
     backend: str = "docker",
     agent_config: str | None = None,
     dataset_dir: str | None = None,
+    logs_dir: str | None = None,
 ) -> None:
     """Run benchmark tasks.
 
@@ -78,6 +79,7 @@ def run(
         backend: Execution backend ("modal" or "docker")
         agent_config: Path to agent-specific configuration file (optional)
         dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
+        logs_dir: Root to write run logs under.  Defaults to ``./logs``.
     """
     # Install cleanup handler to terminate Modal sandboxes on Ctrl+C
     if install_cleanup_handler:
@@ -105,7 +107,9 @@ def run(
         if messaging_enabled:
             ensure_redis(redis_url)
 
-    log_dir = Path("logs") / run_name
+    from cooperbench.runner.tasks import DEFAULT_LOGS_DIR
+    logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
+    log_dir = logs_root / run_name
     log_dir.mkdir(parents=True, exist_ok=True)
 
     _save_config(log_dir, run_name, agent, model_name, setting, concurrency, len(tasks))
@@ -130,6 +134,7 @@ def run(
                 backend=backend,
                 agent_config=agent_config,
                 dataset_dir=dataset_dir,
+                logs_dir=logs_dir,
             )
         else:
             return execute_coop(
@@ -147,6 +152,7 @@ def run(
                 backend=backend,
                 agent_config=agent_config,
                 dataset_dir=dataset_dir,
+                logs_dir=logs_dir,
             )
 
     eval_stats = None
@@ -163,7 +169,7 @@ def run(
                 _print_single_result(result, tasks[0], is_solo)
             # Evaluate single task if auto_eval enabled (runs for skipped too, _evaluate_single handles existing evals)
             if auto_eval:
-                run_info = _build_run_info(result, tasks[0], setting, run_name)
+                run_info = _build_run_info(result, tasks[0], setting, run_name, logs_dir=logs_dir)
                 if run_info:
                     from cooperbench.eval.evaluate import _evaluate_single
 
@@ -190,7 +196,7 @@ def run(
     # Get aggregate totals from all result.json files (includes previous sessions)
     from cooperbench.utils import get_run_totals
 
-    run_totals = get_run_totals(run_name, setting)
+    run_totals = get_run_totals(run_name, setting, logs_dir=logs_dir)
 
     # Use session time if no skipped (exact), otherwise aggregate (approximate)
     time_info = {
@@ -253,13 +259,21 @@ def _save_config(
         json.dump(run_config, f, indent=2)
 
 
-def _build_run_info(result: dict, task_info: dict, setting: str, run_name: str) -> dict | None:
+def _build_run_info(
+    result: dict,
+    task_info: dict,
+    setting: str,
+    run_name: str,
+    logs_dir: str | None = None,
+) -> dict | None:
     """Build run_info dict for evaluation from run result."""
     log_dir = result.get("log_dir")
     if not log_dir:
         # Reconstruct log_dir for older results that don't have it
+        from cooperbench.runner.tasks import DEFAULT_LOGS_DIR
+        logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
         feature_str = "_".join(f"f{f}" for f in sorted(task_info["features"]))
-        log_dir = str(Path("logs") / run_name / setting / task_info["repo"] / str(task_info["task_id"]) / feature_str)
+        log_dir = str(logs_root / run_name / setting / task_info["repo"] / str(task_info["task_id"]) / feature_str)
 
     return {
         "log_dir": log_dir,
@@ -414,7 +428,7 @@ def _run_with_progress(
 
                         # Submit eval if enabled (for done or skipped - _evaluate_single handles existing evals)
                         if auto_eval and status in ("done", "skip") and eval_executor:
-                            run_info = _build_run_info(result, task_info, setting, run_name)
+                            run_info = _build_run_info(result, task_info, setting, run_name, logs_dir=logs_dir)
                             if run_info:
                                 eval_future = eval_executor.submit(_evaluate_single, run_info, force, backend, dataset_dir)
                                 eval_futures[eval_future] = (task_info, result, task_name, feat_str)

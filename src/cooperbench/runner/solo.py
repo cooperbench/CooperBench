@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from cooperbench.agents import get_runner
-from cooperbench.runner.tasks import DEFAULT_DATASET_DIR
+from cooperbench.runner.tasks import DEFAULT_DATASET_DIR, DEFAULT_LOGS_DIR
 from cooperbench.utils import console, get_image_name
 
 
@@ -24,18 +24,21 @@ def execute_solo(
     backend: str = "docker",
     agent_config: str | None = None,
     dataset_dir: Path | str | None = None,
+    logs_dir: Path | str | None = None,
 ) -> dict | None:
     """Execute a solo task (one agent, multiple features).
 
     Args:
         agent_config: Path to agent-specific configuration file (optional)
         dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
+        logs_dir: Root to write run logs under.  Defaults to ``./logs``.
     """
     run_id = uuid.uuid4().hex[:8]
     start_time = datetime.now()
 
+    logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
     feature_str = "_".join(f"f{f}" for f in sorted(features))
-    log_dir = Path("logs") / run_name / "solo" / repo_name / str(task_id) / feature_str
+    log_dir = logs_root / run_name / "solo" / repo_name / str(task_id) / feature_str
     result_file = log_dir / "result.json"
 
     if result_file.exists() and not force:
@@ -57,6 +60,7 @@ def execute_solo(
             agent_config=agent_config,
             run_name=run_name,
             dataset_dir=dataset_dir,
+            logs_dir=logs_dir,
         )
     except Exception as e:
         result = {
@@ -152,15 +156,18 @@ def _spawn_solo_agent(
     agent_config: str | None = None,
     run_name: str | None = None,
     dataset_dir: Path | str | None = None,
+    logs_dir: Path | str | None = None,
 ) -> dict:
     """Spawn a single agent on multiple features (solo mode).
 
     Args:
         agent_config: Path to agent-specific configuration file (optional)
         dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
+        logs_dir: Root to write run logs under.  Defaults to ``./logs``.
     """
     root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
     task_dir = root / repo_name / f"task{task_id}"
+    logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
 
     # Combine feature specs
     combined_task = []
@@ -177,7 +184,7 @@ def _spawn_solo_agent(
     log_dir_path = None
     if run_name:
         feature_str = "_".join(f"f{f}" for f in sorted(features))
-        log_dir_path = str(Path("logs") / run_name / "solo" / repo_name / str(task_id) / feature_str)
+        log_dir_path = str(logs_root / run_name / "solo" / repo_name / str(task_id) / feature_str)
 
     if not quiet:
         console.print("  [dim]solo[/dim] starting...")

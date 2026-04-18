@@ -98,7 +98,7 @@ def setup_cleanup_handlers(tracker: ResourceTracker) -> None:
     atexit.register(tracker.cleanup_all)
 
 
-def get_run_totals(run_name: str, setting: str) -> dict:
+def get_run_totals(run_name: str, setting: str, logs_dir: str | None = None) -> dict:
     """Get time metrics and cost from all result.json files.
 
     Returns both:
@@ -108,6 +108,7 @@ def get_run_totals(run_name: str, setting: str) -> dict:
     Args:
         run_name: Name of the experiment run
         setting: "solo" or "coop"
+        logs_dir: Root of the logs tree.  Defaults to ``./logs``.
 
     Returns:
         {"wall_time": float, "run_time": float, "total_cost": float, "task_count": int}
@@ -116,7 +117,9 @@ def get_run_totals(run_name: str, setting: str) -> dict:
     from datetime import datetime
     from pathlib import Path
 
-    log_dir = Path("logs") / run_name / setting
+    from cooperbench.runner.tasks import DEFAULT_LOGS_DIR
+    logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
+    log_dir = logs_root / run_name / setting
     if not log_dir.exists():
         return {"wall_time": 0.0, "run_time": 0.0, "total_cost": 0.0, "task_count": 0}
 

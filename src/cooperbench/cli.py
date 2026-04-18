@@ -203,6 +203,11 @@ def main():
         default=None,
         help="Root of the dataset tree (default: ./dataset).",
     )
+    run_parser.add_argument(
+        "--log-dir",
+        default=None,
+        help="Root to write run logs under (default: ./logs).",
+    )
 
     # === eval command ===
     eval_parser = subparsers.add_parser(
@@ -258,6 +263,11 @@ def main():
         "--dataset-dir",
         default=None,
         help="Root of the dataset tree (default: ./dataset).",
+    )
+    eval_parser.add_argument(
+        "--log-dir",
+        default=None,
+        help="Root of the logs tree (default: ./logs).",
     )
 
     args = parser.parse_args()
@@ -323,6 +333,7 @@ def _run_command(args):
         backend=args.backend,
         agent_config=args.agent_config if hasattr(args, "agent_config") else None,
         dataset_dir=args.dataset_dir if hasattr(args, "dataset_dir") else None,
+        logs_dir=args.log_dir if hasattr(args, "log_dir") else None,
     )
 
 
@@ -348,6 +359,7 @@ def _eval_command(args):
         force=args.force,
         backend=args.backend,
         dataset_dir=args.dataset_dir if hasattr(args, "dataset_dir") else None,
+        logs_dir=args.log_dir if hasattr(args, "log_dir") else None,
     )
 
 

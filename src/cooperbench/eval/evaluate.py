@@ -24,6 +24,7 @@ def evaluate(
     force: bool = False,
     backend: str = "docker",
     dataset_dir: str | None = None,
+    logs_dir: str | None = None,
 ) -> None:
     """Evaluate completed runs.
 
@@ -37,6 +38,7 @@ def evaluate(
         force: Force re-evaluation even if eval.json exists
         backend: Execution backend ("modal", "docker", "gcp")
         dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
+        logs_dir: Root of the logs tree.  Defaults to ``./logs``.
     """
     runs = discover_runs(
         run_name=run_name,
@@ -44,6 +46,8 @@ def evaluate(
         repo_filter=repo,
         task_filter=task_id,
         features_filter=features,
+        logs_dir=logs_dir,
+        dataset_dir=dataset_dir,
     )
 
     if not runs:
@@ -111,7 +115,9 @@ def evaluate(
             passed, failed, errors, skipped, results = _run_with_progress(runs, eval_run, concurrency)
 
     # Save summary
-    log_dir = Path("logs") / run_name
+    from cooperbench.runner.tasks import DEFAULT_LOGS_DIR
+    logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
+    log_dir = logs_root / run_name
     _save_summary(log_dir, run_name, len(runs), passed, failed, errors, skipped, results)
     _print_summary(passed, failed, errors, skipped, len(runs))
 

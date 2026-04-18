@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 DEFAULT_DATASET_DIR = Path("dataset")
+DEFAULT_LOGS_DIR = Path("logs")
 
 
 def load_subset(subset_name: str, dataset_dir: Path | str | None = None) -> dict:
