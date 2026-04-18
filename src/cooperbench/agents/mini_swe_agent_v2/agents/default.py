@@ -299,6 +299,43 @@ class DefaultAgent:
         return {"output": f"Message sent to {recipient}", "returncode": 0, "exception_info": ""}
 
 
+    def serialize(self, *extra_dicts) -> dict:
+        """Serialize agent state to a json-compatible nested dictionary for saving."""
+        last_message = self.messages[-1] if self.messages else {}
+        last_extra = last_message.get("extra", {})
+        agent_data = {
+            "info": {
+                "model_stats": {
+                    "instance_cost": self.cost,
+                    "api_calls": self.n_calls,
+                },
+                "config": {
+                    "agent": self.config.model_dump(mode="json"),
+                    "agent_type": f"{self.__class__.__module__}.{self.__class__.__name__}",
+                },
+                "mini_version": __version__,
+                "exit_status": last_extra.get("exit_status", ""),
+                "submission": last_extra.get("submission", ""),
+            },
+            "messages": self.messages,
+            "trajectory_format": "mini-swe-agent-1.1",
+        }
+        if self._compaction_count > 0:
+            self._close_current_segment("solver")
+            agent_data["segments"] = self._segments
+        return recursive_merge(agent_data, self.model.serialize(), self.env.serialize(), *extra_dicts)
+
+    def save(self, path: Path | None, *extra_dicts) -> dict:
+        """Save the trajectory of the agent to a file if path is given. Returns full serialized data.
+        You can pass additional dictionaries with extra data to be (recursively) merged into the output data.
+        """
+        data = self.serialize(*extra_dicts)
+        if path:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, indent=2))
+        return data
+
+
 import re as _re
 
 
@@ -341,39 +378,3 @@ def _strip_send_message(cmd: str) -> str:
     cmd = _re.sub(r"&&\s*&&", "&&", cmd)
     cmd = _re.sub(r"\|\|\s*\|\|", "||", cmd)
     return cmd.strip()
-
-    def serialize(self, *extra_dicts) -> dict:
-        """Serialize agent state to a json-compatible nested dictionary for saving."""
-        last_message = self.messages[-1] if self.messages else {}
-        last_extra = last_message.get("extra", {})
-        agent_data = {
-            "info": {
-                "model_stats": {
-                    "instance_cost": self.cost,
-                    "api_calls": self.n_calls,
-                },
-                "config": {
-                    "agent": self.config.model_dump(mode="json"),
-                    "agent_type": f"{self.__class__.__module__}.{self.__class__.__name__}",
-                },
-                "mini_version": __version__,
-                "exit_status": last_extra.get("exit_status", ""),
-                "submission": last_extra.get("submission", ""),
-            },
-            "messages": self.messages,
-            "trajectory_format": "mini-swe-agent-1.1",
-        }
-        if self._compaction_count > 0:
-            self._close_current_segment("solver")
-            agent_data["segments"] = self._segments
-        return recursive_merge(agent_data, self.model.serialize(), self.env.serialize(), *extra_dicts)
-
-    def save(self, path: Path | None, *extra_dicts) -> dict:
-        """Save the trajectory of the agent to a file if path is given. Returns full serialized data.
-        You can pass additional dictionaries with extra data to be (recursively) merged into the output data.
-        """
-        data = self.serialize(*extra_dicts)
-        if path:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(data, indent=2))
-        return data
