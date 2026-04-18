@@ -252,7 +252,10 @@ class DefaultAgent:
         self.comm.send(recipient, content)
         self.log(f"SENT to {recipient}: {content[:80]}...")
         self.sent_messages.append({"to": recipient, "content": content})
-        return {"output": f"Message sent to {recipient}", "returncode": 0}
+        # Include exception_info (even empty) so the observation_template's
+        # `{% if output.exception_info %}` check works under StrictUndefined
+        # — matches the docker/modal env return shape.
+        return {"output": f"Message sent to {recipient}", "returncode": 0, "exception_info": ""}
 
     def serialize(self, *extra_dicts) -> dict:
         """Serialize agent state to a json-compatible nested dictionary for saving."""
