@@ -113,6 +113,31 @@ class LitellmModel:
                 raise RuntimeError(msg) from e
         return {"cost": cost}
 
+    def summarize_context(self, messages: list[dict], summary_prompt: str) -> dict:
+        """Call the model to summarize conversation history for context compaction."""
+        summary_messages = self._prepare_messages_for_api(messages) + [
+            {"role": "user", "content": summary_prompt}
+        ]
+        for attempt in retry(logger=logger, abort_exceptions=self.abort_exceptions):
+            with attempt:
+                response = litellm.completion(
+                    model=self.config.model_name,
+                    messages=summary_messages,
+                    **self.config.model_kwargs,
+                )
+        cost_output = self._calculate_cost(response)
+        GLOBAL_MODEL_STATS.add(cost_output["cost"])
+        return {
+            "role": "assistant",
+            "content": response.choices[0].message.content or "",
+            "extra": {
+                "summary": True,
+                **cost_output,
+                "response": response.model_dump(),
+                "timestamp": time.time(),
+            },
+        }
+
     def _parse_actions(self, response) -> list[dict]:
         """Parse tool calls from the response. Raises FormatError if unknown tool."""
         tool_calls = response.choices[0].message.tool_calls or []

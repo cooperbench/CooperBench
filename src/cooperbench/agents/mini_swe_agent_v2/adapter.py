@@ -4,6 +4,9 @@ This adapter wraps the mini-swe-agent v2 framework (tool-calling version)
 to conform to the AgentRunner interface used by CooperBench.
 """
 
+import logging
+from pathlib import Path
+
 import yaml
 
 from cooperbench.agents import AgentResult
@@ -13,7 +16,10 @@ from cooperbench.agents.mini_swe_agent_v2.connectors import GitConnector
 from cooperbench.agents.mini_swe_agent_v2.connectors.messaging import MessagingConnector
 from cooperbench.agents.mini_swe_agent_v2.models.litellm_model import LitellmModel
 from cooperbench.agents.mini_swe_agent_v2.models.utils.actions_toolcall import SEND_MESSAGE_TOOL
+from cooperbench.agents.mini_swe_agent_v2.utils.serialize import recursive_merge
 from cooperbench.agents.registry import register
+
+logger = logging.getLogger(__name__)
 
 
 @register("mini_swe_agent_v2")
@@ -42,9 +48,10 @@ class MiniSweAgentV2Runner:
         with open(config_path) as f:
             default_config = yaml.safe_load(f)
 
-        # Merge passed config overrides into default config
+        # Deep-merge passed config overrides into default config so that partial
+        # overrides (e.g. only agent.compaction_enabled) don't clobber sibling keys.
         if config is not None:
-            default_config.update(config)
+            default_config = recursive_merge(default_config, config)
 
         agent_cfg = default_config.get("agent", {})
         model_cfg = default_config.get("model", {})
@@ -122,6 +129,15 @@ class MiniSweAgentV2Runner:
 
         # Extract patch (committed + uncommitted changes)
         patch = self._get_patch(env, base_commit)
+
+        # Save full trajectory (includes segments when compaction occurred)
+        if log_dir and agent._compaction_count > 0:
+            traj_path = Path(log_dir) / f"{agent_id}_full_traj.json"
+            agent.save(traj_path)
+            logger.info(
+                f"[{agent_id}] Full trajectory with segments saved to {traj_path} "
+                f"({agent._compaction_count} compaction(s))"
+            )
 
         # Cleanup
         env.cleanup()

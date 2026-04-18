@@ -29,6 +29,19 @@ class AgentConfig(BaseModel):
     """Stop agent after exceeding (!) this cost."""
     output_path: Path | None = None
     """Save the trajectory to this path."""
+    compaction_enabled: bool = True
+    """Enable context compaction (summarization of old messages)."""
+    compaction_token_trigger: int = 28000
+    """Compact when prompt token count exceeds this threshold."""
+    compaction_keep_recent_turns: int = 2
+    """Number of recent assistant turns to keep verbatim after compaction."""
+    compaction_summary_prompt: str = (
+        "Please summarize the conversation above. Include: the original task, "
+        "key findings, files examined or modified, commands run and their results, "
+        "decisions made, and current status. Be thorough — the agent will continue "
+        "working from your summary without access to the original history."
+    )
+    """Prompt appended to conversation history when requesting a summary."""
 
 
 class DefaultAgent:
@@ -54,6 +67,11 @@ class DefaultAgent:
         self.cost = 0.0
         self.n_calls = 0
         self.sent_messages: list[dict] = []
+        # Compaction state
+        self._last_prompt_tokens: int = 0
+        self._compaction_count: int = 0
+        self._segments: list[dict] = []
+        self._current_segment_messages: list[dict] = []
 
     def log(self, msg: str):
         """Log message with agent prefix."""
@@ -129,6 +147,67 @@ class DefaultAgent:
                 )
         return self.execute_actions(self.query())
 
+    def _get_prompt_tokens(self, message: dict) -> int:
+        return message.get("extra", {}).get("response", {}).get("usage", {}).get("prompt_tokens", 0)
+
+    def _should_compact(self) -> bool:
+        return self.config.compaction_enabled and self._last_prompt_tokens >= self.config.compaction_token_trigger
+
+    @staticmethod
+    def _find_turn_boundary(messages: list[dict], n_turns: int) -> int:
+        """Return the index where the last n_turns complete assistant turns start."""
+        assistant_indices = [i for i, m in enumerate(messages) if m.get("role") == "assistant"]
+        if not assistant_indices or n_turns <= 0:
+            return len(messages)
+        start = max(0, len(assistant_indices) - n_turns)
+        return assistant_indices[start]
+
+    def _close_current_segment(self, kind: str = "solver") -> None:
+        """Append accumulated messages as a named segment and reset the buffer."""
+        msgs = self._current_segment_messages or self.messages
+        if msgs:
+            self._segments.append({"kind": kind, "messages": list(msgs)})
+            self._current_segment_messages = []
+
+    def _compact_messages(self) -> None:
+        """Summarize old messages and replace history, keeping recent turns verbatim."""
+        summarize_fn = getattr(self.model, "summarize_context", None)
+        if not callable(summarize_fn):
+            self.log("Model does not support summarize_context, skipping compaction")
+            return
+
+        prefix = self.messages[:2]  # system + task
+        conversation = self.messages[2:]
+        boundary = self._find_turn_boundary(conversation, self.config.compaction_keep_recent_turns)
+        old_turns = conversation[:boundary]
+        recent_turns = conversation[boundary:]
+
+        if not old_turns:
+            return
+
+        self._close_current_segment("solver")
+
+        summarizer_input = prefix + old_turns
+        summary_msg = summarize_fn(
+            summarizer_input,
+            summary_prompt=self.config.compaction_summary_prompt,
+        )
+        self._segments.append({
+            "kind": "summarizer",
+            "messages": [
+                *[{k: v for k, v in m.items() if k != "extra"} for m in summarizer_input],
+                {"role": "user", "content": self.config.compaction_summary_prompt},
+                summary_msg,
+            ],
+        })
+
+        self.messages = prefix + [summary_msg] + recent_turns
+        self._compaction_count += 1
+        self.log(
+            f"Compaction #{self._compaction_count}: {self._last_prompt_tokens} prompt tokens -> compacted "
+            f"({len(old_turns)} messages summarized, {len(recent_turns)} kept)"
+        )
+
     def query(self) -> dict:
         """Query the model and return model messages. Override to add hooks."""
         if 0 < self.config.step_limit <= self.n_calls or 0 < self.config.cost_limit <= self.cost:
@@ -139,10 +218,14 @@ class DefaultAgent:
                     "extra": {"exit_status": "LimitsExceeded", "submission": ""},
                 }
             )
+        if self._should_compact():
+            self._compact_messages()
         self.n_calls += 1
         message = self.model.query(self.messages)
         self.cost += message.get("extra", {}).get("cost", 0.0)
+        self._last_prompt_tokens = self._get_prompt_tokens(message)
         self.add_messages(message)
+        self._current_segment_messages = list(self.messages)
         return message
 
     def execute_actions(self, message: dict) -> list[dict]:
@@ -192,6 +275,9 @@ class DefaultAgent:
             "messages": self.messages,
             "trajectory_format": "mini-swe-agent-1.1",
         }
+        if self._compaction_count > 0:
+            self._close_current_segment("solver")
+            agent_data["segments"] = self._segments
         return recursive_merge(agent_data, self.model.serialize(), self.env.serialize(), *extra_dicts)
 
     def save(self, path: Path | None, *extra_dicts) -> dict:

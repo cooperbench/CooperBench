@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.11] - 2026-04-18
+
+### Added
+
+- **Context compaction (summarization) for `mini_swe_agent_v2`** — long-running agents no longer exhaust the model context window. When the previous LLM response's `prompt_tokens` reaches `compaction_token_trigger` (default `28000`), the agent calls the model a second time (without tools) to summarize old turns and replaces the live history with `[system, task, summary] + recent_turns` (last `compaction_keep_recent_turns=2` assistant turns kept verbatim). Repeated compactions naturally fold the previous summary back into `old_turns`. Configurable via `agent.compaction_enabled` / `compaction_token_trigger` / `compaction_keep_recent_turns` / `compaction_summary_prompt`; **enabled by default**.
+- **Full-trajectory artifact** — when any compaction occurs, the adapter writes `{log_dir}/{agent_id}_full_traj.json` containing a `segments` list (alternating `solver` / `summarizer` blocks) so the unabridged pre-compaction history is preserved for analysis even though the live `messages` list has been shortened.
+- **`LitellmModel.summarize_context(messages, summary_prompt)`** — separate completion call (no tools) used by the agent's compaction step; tracks cost via `GLOBAL_MODEL_STATS` and tags the resulting message with `extra.summary=True`.
+
+### Changed
+
+- **`mini_swe_agent_v2` adapter config merge** — switched from shallow `dict.update` to `recursive_merge`, so partial overrides (e.g. only `agent.compaction_enabled`) no longer clobber sibling keys from the default YAML.
+
 ## [0.0.10] - 2026-04-18
 
 ### Fixed
