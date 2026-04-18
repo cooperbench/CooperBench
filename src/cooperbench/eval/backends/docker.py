@@ -89,9 +89,15 @@ class DockerBackend:
         """Create a Docker container sandbox for evaluation."""
         client = self._get_client()
 
-        # Run container in detached mode with a long-running command
+        # Run container in detached mode with a long-running command.
+        # entrypoint="" clears any ENTRYPOINT baked into the image (benchmark
+        # dataset images set /usr/local/bin/runner.sh as their entrypoint,
+        # which would otherwise consume "sleep infinity" as an argument and
+        # exit immediately, matching the handling in the Modal and GCP
+        # backends).
         container = client.containers.run(
             image=image,
+            entrypoint="",
             command="sleep infinity",
             detach=True,
             working_dir=workdir,

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.10] - 2026-04-18
+
+### Fixed
+
+- **Docker eval backend entrypoint handling** - `eval/backends/docker.py` started its sandbox container with `command="sleep infinity"` but no `entrypoint` override, so images that set an `ENTRYPOINT` (e.g. the benchmark dataset images with `/usr/local/bin/runner.sh`) would consume `sleep infinity` as entrypoint arguments and exit immediately. Every subsequent `docker exec` then hit "container is not running". Clear the entrypoint on startup (`entrypoint=""`) so `sleep infinity` runs as PID 1; `runner.sh` is still invoked explicitly via `docker exec` during evaluation. Matches the Modal and GCP eval backends and completes the fix started in 0.0.9 for the agent-side environments.
+
 ## [0.0.9] - 2026-04-17
 
 ### Fixed
