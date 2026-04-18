@@ -52,7 +52,7 @@ agent:
     {% if messaging_enabled %}2. Message teammates about which files you plan to modify (send_message tool){% endif %}
     3. Implement your changes
     4. Test your changes work
-    5. Submit: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`  (your patch is extracted from your local workspace — no need to push anything first)
+    5. Submit: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
     {% else %}
 
     ## Recommended Workflow
