@@ -118,12 +118,19 @@ class LitellmModel:
         summary_messages = self._prepare_messages_for_api(messages) + [
             {"role": "user", "content": summary_prompt}
         ]
+        # Summarization calls intentionally send no `tools`, so any
+        # user-supplied `tool_choice` in model_kwargs (e.g. "required")
+        # must be dropped — vLLM / OpenAI reject `tool_choice` without
+        # `tools`.
+        summary_kwargs = {
+            k: v for k, v in self.config.model_kwargs.items() if k != "tool_choice"
+        }
         for attempt in retry(logger=logger, abort_exceptions=self.abort_exceptions):
             with attempt:
                 response = litellm.completion(
                     model=self.config.model_name,
                     messages=summary_messages,
-                    **self.config.model_kwargs,
+                    **summary_kwargs,
                 )
         cost_output = self._calculate_cost(response)
         GLOBAL_MODEL_STATS.add(cost_output["cost"])
