@@ -11,7 +11,7 @@ import modal
 import yaml
 
 from cooperbench.agents import get_runner
-from cooperbench.agents.mini_swe_agent.connectors import create_git_server
+from cooperbench.agents.mini_swe_agent_v2.connectors import create_git_server
 from cooperbench.config import ConfigManager
 from cooperbench.runner.tasks import DEFAULT_DATASET_DIR, DEFAULT_LOGS_DIR
 from cooperbench.utils import console, get_image_name
@@ -22,7 +22,7 @@ def execute_coop(
     task_id: int,
     features: list[int],
     run_name: str,
-    agent_name: str = "mini_swe_agent",
+    agent_name: str = "mini_swe_agent_v2",
     model_name: str = "vertex_ai/gemini-3-flash-preview",
     redis_url: str = "redis://localhost:6379",
     force: bool = False,

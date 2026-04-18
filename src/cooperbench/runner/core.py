@@ -21,11 +21,7 @@ from rich.table import Table
 
 from cooperbench.infra.redis import ensure_redis
 
-# Optional import for cleanup handler (may not exist in all versions)
-try:
-    from cooperbench.agents.mini_swe_agent.environments.modal import install_cleanup_handler
-except ImportError:
-    install_cleanup_handler = None
+install_cleanup_handler = None
 from cooperbench.runner.coop import execute_coop
 from cooperbench.runner.solo import execute_solo
 from cooperbench.runner.tasks import discover_tasks
@@ -44,7 +40,7 @@ def run(
     task_id: int | None = None,
     features: list[int] | None = None,
     model_name: str = "vertex_ai/gemini-3-flash-preview",
-    agent: str = "mini_swe_agent",
+    agent: str = "mini_swe_agent_v2",
     concurrency: int = 20,
     force: bool = False,
     redis_url: str = "redis://localhost:6379",

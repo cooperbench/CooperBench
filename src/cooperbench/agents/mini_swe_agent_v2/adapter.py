@@ -88,9 +88,12 @@ class MiniSweAgentV2Runner:
         if use_messaging:
             comm = MessagingConnector(agent_id=agent_id, agents=agents, url=comm_url)
 
-        # Create LLM model with send_message tool if messaging is enabled
-        extra_tools = [SEND_MESSAGE_TOOL] if use_messaging else None
-        model = LitellmModel(model_name=model_name, extra_tools=extra_tools, **model_cfg)
+        # Register only the bash tool with the model.  send_message is
+        # intercepted by DefaultAgent.execute_actions from inside the bash
+        # command string (``send_message <recipient> <<'MSG' ... MSG``).
+        # Exposing a separate send_message tool confuses smaller models
+        # into alternating between tools unreliably.
+        model = LitellmModel(model_name=model_name, **model_cfg)
 
         # Setup git connector if enabled
         if git_enabled and git_server_url and agents:

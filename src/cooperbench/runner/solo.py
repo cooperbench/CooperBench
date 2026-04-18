@@ -17,7 +17,7 @@ def execute_solo(
     task_id: int,
     features: list[int],
     run_name: str,
-    agent_name: str = "mini_swe_agent",
+    agent_name: str = "mini_swe_agent_v2",
     model_name: str = "vertex_ai/gemini-3-flash-preview",
     force: bool = False,
     quiet: bool = False,

@@ -24,7 +24,7 @@ from cooperbench.utils import clean_model_name  # noqa: E402
 def _generate_run_name(
     setting: str,
     model: str,
-    agent: str = "mini_swe_agent",
+    agent: str = "mini_swe_agent_v2",
     subset: str | None = None,
     repo: str | None = None,
     task: int | None = None,
@@ -141,7 +141,7 @@ def main():
     run_parser.add_argument(
         "-a",
         "--agent",
-        default="mini_swe_agent",
+        default="mini_swe_agent_v2",
         help="Agent framework to use (default: mini_swe_agent)",
     )
     run_parser.add_argument(

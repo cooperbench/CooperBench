@@ -19,7 +19,7 @@ from cooperbench.agents import get_runner, list_agents
 print(list_agents())  # ['mini_swe_agent', 'swe_agent']
 
 # Get an agent runner
-runner = get_runner("mini_swe_agent")
+runner = get_runner("mini_swe_agent_v2")
 
 # Run on a task
 result = runner.run(

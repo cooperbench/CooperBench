@@ -231,31 +231,116 @@ class DefaultAgent:
     def execute_actions(self, message: dict) -> list[dict]:
         """Execute actions in message, add observation messages, return them.
 
-        Handles both bash and send_message tool calls.
+        Only the ``bash`` tool is registered with the model (see adapter.py) —
+        ``send_message`` is invoked by the agent embedding a shell command
+        like ``send_message <recipient> <<'MSG' ... MSG`` inside the bash
+        command string.  We parse any such calls out of the command, run
+        them through the messaging connector, and execute the remainder (if
+        any) against the docker env.  Single-tool registration is much
+        more reliable for smaller models than exposing two tools.
         """
+        import re
         actions = message.get("extra", {}).get("actions", [])
         outputs = []
         for action in actions:
             tool_name = action.get("tool_name", "bash")
             if tool_name == "send_message" and self.comm:
-                output = self._handle_send_message(action)
-            else:
-                outputs.append(self.env.execute(action))
+                # Defensive: supported for legacy callers that still
+                # register send_message as a tool.
+                outputs.append(self._handle_send_message(action))
                 continue
-            outputs.append(output)
+
+            cmd = action.get("command", "")
+            if self.comm:
+                sm_matches = _parse_send_messages(cmd)
+                if sm_matches:
+                    sm_outputs = []
+                    for recipient, content, wait in sm_matches:
+                        r = self._handle_send_message(
+                            {"recipient": recipient, "content": content, "wait": wait}
+                        )
+                        sm_outputs.append(r["output"])
+                    remaining = _strip_send_message(cmd)
+                    combined = "\n".join(sm_outputs)
+                    if not remaining.strip():
+                        outputs.append({"output": combined, "returncode": 0, "exception_info": ""})
+                        continue
+                    env_out = self.env.execute({**action, "command": remaining})
+                    env_out["output"] = combined + "\n" + env_out.get("output", "")
+                    outputs.append(env_out)
+                    continue
+
+            outputs.append(self.env.execute(action))
         return self.add_messages(*self.model.format_observation_messages(message, outputs, self.get_template_vars()))
 
     def _handle_send_message(self, action: dict) -> dict:
-        """Handle a send_message tool call via the messaging connector."""
+        """Handle a send_message call via the messaging connector.
+
+        ``wait=True`` (when the agent wrote ``send_message --wait ...`` in
+        bash) uses ``send_and_wait`` so the peer's reply comes back in the
+        same tool output.
+        """
         recipient = action.get("recipient", "")
         content = action.get("content", "")
+        wait = action.get("wait", False)
+
+        if wait and hasattr(self.comm, "send_and_wait"):
+            replies = self.comm.send_and_wait(recipient, content, timeout=60)
+            self.log(f"SENT (blocking) to {recipient}: {content[:80]}...")
+            self.sent_messages.append({"to": recipient, "content": content})
+            output = f"Message sent to {recipient}"
+            for r in replies or []:
+                output += f"\n\n[Reply from {r['from']}]: {r['content']}"
+            return {"output": output, "returncode": 0, "exception_info": ""}
+
         self.comm.send(recipient, content)
         self.log(f"SENT to {recipient}: {content[:80]}...")
         self.sent_messages.append({"to": recipient, "content": content})
-        # Include exception_info (even empty) so the observation_template's
-        # `{% if output.exception_info %}` check works under StrictUndefined
-        # — matches the docker/modal env return shape.
         return {"output": f"Message sent to {recipient}", "returncode": 0, "exception_info": ""}
+
+
+import re as _re
+
+
+def _parse_send_messages(cmd: str) -> list[tuple[str, str, bool]]:
+    """Extract (recipient, content, wait) tuples from send_message calls.
+
+    ``--wait`` may appear before or after the recipient.  Supports three
+    formats: heredoc (``<<'MSG'``), double-quoted, single-quoted.
+    """
+    matches: list[tuple[str, str, bool]] = []
+    for m in _re.finditer(
+        r"send_message\s+(--wait\s+)?(\w+)(\s+--wait)?\s+<<'?(\w+)'?\s*\n(.*?)\n\4",
+        cmd,
+        _re.DOTALL,
+    ):
+        wait = bool(m.group(1) or m.group(3))
+        matches.append((m.group(2), m.group(5), wait))
+    if not matches:
+        for m in _re.finditer(r'send_message\s+(--wait\s+)?(\w+)(\s+--wait)?\s+"([^"]*)"', cmd):
+            wait = bool(m.group(1) or m.group(3))
+            matches.append((m.group(2), m.group(4), wait))
+        for m in _re.finditer(r"send_message\s+(--wait\s+)?(\w+)(\s+--wait)?\s+'([^']*)'", cmd):
+            wait = bool(m.group(1) or m.group(3))
+            matches.append((m.group(2), m.group(4), wait))
+    return matches
+
+
+def _strip_send_message(cmd: str) -> str:
+    """Remove send_message calls from a compound bash command."""
+    cmd = _re.sub(
+        r"send_message\s+(--wait\s+)?\w+(\s+--wait)?\s+<<'?(\w+)'?\s*\n.*?\n\3",
+        "",
+        cmd,
+        flags=_re.DOTALL,
+    )
+    cmd = _re.sub(r'send_message\s+(--wait\s+)?\w+(\s+--wait)?\s+"[^"]*"', "", cmd)
+    cmd = _re.sub(r"send_message\s+(--wait\s+)?\w+(\s+--wait)?\s+'[^']*'", "", cmd)
+    cmd = _re.sub(r"^\s*&&\s*", "", cmd)
+    cmd = _re.sub(r"\s*&&\s*$", "", cmd)
+    cmd = _re.sub(r"&&\s*&&", "&&", cmd)
+    cmd = _re.sub(r"\|\|\s*\|\|", "||", cmd)
+    return cmd.strip()
 
     def serialize(self, *extra_dicts) -> dict:
         """Serialize agent state to a json-compatible nested dictionary for saving."""

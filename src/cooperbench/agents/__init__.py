@@ -103,7 +103,6 @@ from cooperbench.agents.registry import get_runner, list_agents, register  # noq
 # Agent framework shorthands for experiment naming
 # Add your agent's shorthand here when registering a new adapter
 AGENT_SHORTHANDS = {
-    "mini_swe_agent": "msa",
     "mini_swe_agent_v2": "msa_v2",
     "swe_agent": "sw",
     "openhands_sdk": "oh",
@@ -114,7 +113,7 @@ def get_agent_shorthand(agent_name: str) -> str:
     """Get the shorthand for an agent framework.
 
     Args:
-        agent_name: Full agent name (e.g., "mini_swe_agent")
+        agent_name: Full agent name (e.g., "mini_swe_agent_v2")
 
     Returns:
         Shorthand (e.g., "msa") or first 2 chars if not registered
