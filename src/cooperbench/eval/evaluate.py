@@ -10,6 +10,7 @@ from rich.table import Table
 
 from cooperbench.eval.runs import discover_runs
 from cooperbench.eval.sandbox import _sanitize_patch, test_merged, test_solo
+from cooperbench.runner.tasks import DEFAULT_DATASET_DIR
 from cooperbench.utils import console
 
 
@@ -22,6 +23,7 @@ def evaluate(
     concurrency: int = 10,
     force: bool = False,
     backend: str = "docker",
+    dataset_dir: str | None = None,
 ) -> None:
     """Evaluate completed runs.
 
@@ -34,6 +36,7 @@ def evaluate(
         concurrency: Number of parallel evaluations
         force: Force re-evaluation even if eval.json exists
         backend: Execution backend ("modal", "docker", "gcp")
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
     """
     runs = discover_runs(
         run_name=run_name,
@@ -69,7 +72,7 @@ def evaluate(
 
     # For GCP with multiple runs, use batch mode for efficiency
     if backend in ("gcp", "gcp_batch") and len(runs) > 1:
-        passed, failed, errors, skipped, results = _run_gcp_batch(runs, concurrency, force)
+        passed, failed, errors, skipped, results = _run_gcp_batch(runs, concurrency, force, dataset_dir=dataset_dir)
     else:
         # Docker/Modal: run interactively
         results = []
@@ -79,7 +82,7 @@ def evaluate(
         skipped = 0
 
         def eval_run(run_info: dict) -> dict | None:
-            return _evaluate_single(run_info, force=force, backend=backend)
+            return _evaluate_single(run_info, force=force, backend=backend, dataset_dir=dataset_dir)
 
         if is_single:
             # Single run - show detailed output
@@ -113,7 +116,12 @@ def evaluate(
     _print_summary(passed, failed, errors, skipped, len(runs))
 
 
-def _run_gcp_batch(runs: list[dict], parallelism: int, force: bool) -> tuple:
+def _run_gcp_batch(
+    runs: list[dict],
+    parallelism: int,
+    force: bool,
+    dataset_dir: Path | str | None = None,
+) -> tuple:
     """Run evaluations using GCP Batch (all tasks submitted at once).
 
     This is much more efficient for large-scale evaluation because:
@@ -125,6 +133,7 @@ def _run_gcp_batch(runs: list[dict], parallelism: int, force: bool) -> tuple:
         runs: List of run_info dicts from discover_runs
         parallelism: Max parallel tasks in batch job
         force: Force re-evaluation (unused here, filtering done earlier)
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
 
     Returns:
         Tuple of (passed, failed, errors, skipped, results)
@@ -133,10 +142,12 @@ def _run_gcp_batch(runs: list[dict], parallelism: int, force: bool) -> tuple:
     from cooperbench.eval.backends.gcp import EvalTask
     from cooperbench.eval.sandbox import _filter_test_files, _load_patch
 
+    root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
+
     # Convert runs to EvalTask objects
     tasks = []
     for i, run_info in enumerate(runs):
-        task_dir = Path("dataset") / run_info["repo"] / f"task{run_info['task_id']}"
+        task_dir = root / run_info["repo"] / f"task{run_info['task_id']}"
         f1, f2 = run_info["features"]
 
         tests1_path = task_dir / f"feature{f1}" / "tests.patch"
@@ -269,7 +280,12 @@ def _run_gcp_batch(runs: list[dict], parallelism: int, force: bool) -> tuple:
     return passed, failed, errors, skipped, results
 
 
-def _evaluate_single(run_info: dict, force: bool = False, backend: str = "docker") -> dict | None:
+def _evaluate_single(
+    run_info: dict,
+    force: bool = False,
+    backend: str = "docker",
+    dataset_dir: str | None = None,
+) -> dict | None:
     """Evaluate a single run."""
     log_dir = Path(run_info["log_dir"])
     eval_file = log_dir / "eval.json"
@@ -296,6 +312,7 @@ def _evaluate_single(run_info: dict, force: bool = False, backend: str = "docker
             feature2_id=f2,
             patch=patch,
             backend=backend,
+            dataset_dir=dataset_dir,
         )
 
         eval_result = {
@@ -326,6 +343,7 @@ def _evaluate_single(run_info: dict, force: bool = False, backend: str = "docker
             patch1=patch1,
             patch2=patch2,
             backend=backend,
+            dataset_dir=dataset_dir,
         )
 
         eval_result = {

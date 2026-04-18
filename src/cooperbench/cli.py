@@ -198,6 +198,11 @@ def main():
         "--agent-config",
         help="Path to agent-specific configuration file (format determined by agent)",
     )
+    run_parser.add_argument(
+        "--dataset-dir",
+        default=None,
+        help="Root of the dataset tree (default: ./dataset).",
+    )
 
     # === eval command ===
     eval_parser = subparsers.add_parser(
@@ -248,6 +253,11 @@ def main():
         choices=["modal", "docker", "gcp"],
         default="docker",
         help="Execution backend: modal (cloud), docker (local), or gcp (GCP Batch) (default: docker)",
+    )
+    eval_parser.add_argument(
+        "--dataset-dir",
+        default=None,
+        help="Root of the dataset tree (default: ./dataset).",
     )
 
     args = parser.parse_args()
@@ -312,6 +322,7 @@ def _run_command(args):
         eval_concurrency=args.eval_concurrency,
         backend=args.backend,
         agent_config=args.agent_config if hasattr(args, "agent_config") else None,
+        dataset_dir=args.dataset_dir if hasattr(args, "dataset_dir") else None,
     )
 
 
@@ -336,6 +347,7 @@ def _eval_command(args):
         concurrency=args.concurrency,
         force=args.force,
         backend=args.backend,
+        dataset_dir=args.dataset_dir if hasattr(args, "dataset_dir") else None,
     )
 
 

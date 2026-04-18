@@ -5,18 +5,23 @@ from itertools import combinations
 from pathlib import Path
 
 
-def load_subset(subset_name: str) -> dict:
-    """Load a subset definition from dataset/subsets/.
+DEFAULT_DATASET_DIR = Path("dataset")
+
+
+def load_subset(subset_name: str, dataset_dir: Path | str | None = None) -> dict:
+    """Load a subset definition from ``<dataset_dir>/subsets/``.
 
     Args:
         subset_name: Name of the subset (e.g., 'lite')
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
 
     Returns:
         Dict with:
           - tasks: set of (repo, task_id) tuples
           - pairs: dict mapping (repo, task_id) to list of [f1, f2] pairs (if specified)
     """
-    subset_path = Path("dataset/subsets") / f"{subset_name}.json"
+    root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
+    subset_path = root / "subsets" / f"{subset_name}.json"
     if not subset_path.exists():
         raise ValueError(f"Subset '{subset_name}' not found at {subset_path}")
 
@@ -40,25 +45,27 @@ def discover_tasks(
     repo_filter: str | None = None,
     task_filter: int | None = None,
     features_filter: list[int] | None = None,
+    dataset_dir: Path | str | None = None,
 ) -> list[dict]:
-    """Discover benchmark tasks from dataset/.
+    """Discover benchmark tasks from ``dataset_dir``.
 
     Args:
         subset: Use a predefined subset (e.g., 'lite')
         repo_filter: Filter by repository name
         task_filter: Filter by task ID
         features_filter: Specific feature pair to use
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
 
     Returns:
         List of task dicts with repo, task_id, features
     """
-    dataset_dir = Path("dataset")
+    dataset_dir = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
     tasks = []
 
     # Load subset filter if specified
     subset_data = None
     if subset:
-        subset_data = load_subset(subset)
+        subset_data = load_subset(subset, dataset_dir=dataset_dir)
 
     for repo_dir in sorted(dataset_dir.iterdir()):
         if not repo_dir.is_dir() or repo_dir.name == "README.md":

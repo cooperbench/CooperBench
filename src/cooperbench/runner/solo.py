@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from cooperbench.agents import get_runner
+from cooperbench.runner.tasks import DEFAULT_DATASET_DIR
 from cooperbench.utils import console, get_image_name
 
 
@@ -22,11 +23,13 @@ def execute_solo(
     quiet: bool = False,
     backend: str = "docker",
     agent_config: str | None = None,
+    dataset_dir: Path | str | None = None,
 ) -> dict | None:
     """Execute a solo task (one agent, multiple features).
 
     Args:
         agent_config: Path to agent-specific configuration file (optional)
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
     """
     run_id = uuid.uuid4().hex[:8]
     start_time = datetime.now()
@@ -53,6 +56,7 @@ def execute_solo(
             backend=backend,
             agent_config=agent_config,
             run_name=run_name,
+            dataset_dir=dataset_dir,
         )
     except Exception as e:
         result = {
@@ -147,13 +151,16 @@ def _spawn_solo_agent(
     backend: str = "docker",
     agent_config: str | None = None,
     run_name: str | None = None,
+    dataset_dir: Path | str | None = None,
 ) -> dict:
     """Spawn a single agent on multiple features (solo mode).
 
     Args:
         agent_config: Path to agent-specific configuration file (optional)
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
     """
-    task_dir = Path("dataset") / repo_name / f"task{task_id}"
+    root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
+    task_dir = root / repo_name / f"task{task_id}"
 
     # Combine feature specs
     combined_task = []

@@ -55,6 +55,7 @@ def run(
     eval_concurrency: int = 10,
     backend: str = "docker",
     agent_config: str | None = None,
+    dataset_dir: str | None = None,
 ) -> None:
     """Run benchmark tasks.
 
@@ -76,12 +77,16 @@ def run(
         eval_concurrency: Max parallel evaluations (default: 10)
         backend: Execution backend ("modal" or "docker")
         agent_config: Path to agent-specific configuration file (optional)
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
     """
     # Install cleanup handler to terminate Modal sandboxes on Ctrl+C
     if install_cleanup_handler:
         install_cleanup_handler()
 
-    tasks = discover_tasks(subset=subset, repo_filter=repo, task_filter=task_id, features_filter=features)
+    tasks = discover_tasks(
+        subset=subset, repo_filter=repo, task_filter=task_id,
+        features_filter=features, dataset_dir=dataset_dir,
+    )
 
     if not tasks:
         console.print("[yellow]no tasks found[/yellow]")
@@ -124,6 +129,7 @@ def run(
                 quiet=not is_single,
                 backend=backend,
                 agent_config=agent_config,
+                dataset_dir=dataset_dir,
             )
         else:
             return execute_coop(
@@ -140,6 +146,7 @@ def run(
                 messaging_enabled=messaging_enabled,
                 backend=backend,
                 agent_config=agent_config,
+                dataset_dir=dataset_dir,
             )
 
     eval_stats = None
@@ -160,7 +167,7 @@ def run(
                 if run_info:
                     from cooperbench.eval.evaluate import _evaluate_single
 
-                    eval_result = _evaluate_single(run_info, force=force, backend=backend)
+                    eval_result = _evaluate_single(run_info, force=force, backend=backend, dataset_dir=dataset_dir)
                     if eval_result:
                         stats = _process_eval_result(eval_result, tasks[0])
                         if stats:
@@ -409,7 +416,7 @@ def _run_with_progress(
                         if auto_eval and status in ("done", "skip") and eval_executor:
                             run_info = _build_run_info(result, task_info, setting, run_name)
                             if run_info:
-                                eval_future = eval_executor.submit(_evaluate_single, run_info, force, backend)
+                                eval_future = eval_executor.submit(_evaluate_single, run_info, force, backend, dataset_dir)
                                 eval_futures[eval_future] = (task_info, result, task_name, feat_str)
                             progress.console.print(f"{status_display} {task_name} [dim][{feat_str}][/dim]")
                         else:

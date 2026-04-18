@@ -6,6 +6,7 @@ from pathlib import Path
 
 from cooperbench.eval.backends import get_backend
 from cooperbench.eval.backends.base import Sandbox
+from cooperbench.runner.tasks import DEFAULT_DATASET_DIR
 from cooperbench.utils import get_image_name
 
 
@@ -16,6 +17,7 @@ def run_patch_test(
     agent_patch: str | Path | None = None,
     timeout: int = 600,
     backend: str = "docker",
+    dataset_dir: Path | str | None = None,
 ) -> dict:
     """Test a single patch against one feature's tests.
 
@@ -26,11 +28,13 @@ def run_patch_test(
         agent_patch: Patch content (str) or path to .patch file
         timeout: Max seconds for sandbox execution
         backend: Evaluation backend ("modal", "docker", "gcp_batch")
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
 
     Returns:
         Dict with keys: passed, tests_passed, tests_failed, output, error
     """
-    task_dir = Path("dataset") / repo_name / f"task{task_id}"
+    root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
+    task_dir = root / repo_name / f"task{task_id}"
     feature_dir = task_dir / f"feature{feature_id}"
     tests_patch_path = feature_dir / "tests.patch"
     gold_patch_path = feature_dir / "feature.patch"
@@ -95,6 +99,7 @@ def test_merged(
     patch2: str | Path | None = None,
     timeout: int = 600,
     backend: str = "docker",
+    dataset_dir: Path | str | None = None,
 ) -> dict:
     """Test merged patches from two agents (coop mode).
 
@@ -110,12 +115,14 @@ def test_merged(
         patch2: Second agent's patch
         timeout: Max seconds for sandbox execution
         backend: Evaluation backend
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
 
     Returns:
         Dict with keys: merge (status/strategy/diff), feature1, feature2,
         both_passed, error
     """
-    task_dir = Path("dataset") / repo_name / f"task{task_id}"
+    root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
+    task_dir = root / repo_name / f"task{task_id}"
 
     tests1_path = task_dir / f"feature{feature1_id}" / "tests.patch"
     tests2_path = task_dir / f"feature{feature2_id}" / "tests.patch"
@@ -223,6 +230,7 @@ def test_solo(
     patch: str | Path | None = None,
     timeout: int = 600,
     backend: str = "docker",
+    dataset_dir: Path | str | None = None,
 ) -> dict:
     """Test a solo patch against both features' tests.
 
@@ -237,12 +245,14 @@ def test_solo(
         patch: The solo agent's combined patch
         timeout: Max seconds for sandbox execution
         backend: Evaluation backend
+        dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
 
     Returns:
         Dict with keys: setting, patch_lines, feature1, feature2,
         both_passed, error
     """
-    task_dir = Path("dataset") / repo_name / f"task{task_id}"
+    root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
+    task_dir = root / repo_name / f"task{task_id}"
 
     tests1_path = task_dir / f"feature{feature1_id}" / "tests.patch"
     tests2_path = task_dir / f"feature{feature2_id}" / "tests.patch"
