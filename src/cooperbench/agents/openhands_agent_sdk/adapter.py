@@ -666,8 +666,9 @@ class ModalSandboxContext:
     def __enter__(self) -> str:
         """Start sandbox, run agent-server, and return the tunnel URL."""
         
-        # Build image and clear entrypoint (Modal will add its own default command)
-        image = modal.Image.from_registry(self.image_name).entrypoint([])
+        # Preserve image ENTRYPOINT.
+        # The `-oh` images set ENTRYPOINT to launch `openhands.agent_server`.
+        image = modal.Image.from_registry(self.image_name)
         
         # Get or create app
         app = modal.App.lookup("cooperbench", create_if_missing=True)
@@ -682,65 +683,12 @@ class ModalSandboxContext:
             timeout=self.timeout,
             app=app,
             secrets=secrets,
+            # Start outside /workspace/repo to avoid import shadowing
+            # (e.g., openai_tiktoken_task shadows litellm's `tiktoken` import).
+            workdir="/",
             # Expose port 8000 for the agent-server
             encrypted_ports=[8000],
         )
-        
-        
-        # IMPORTANT: We use a Python wrapper to ensure collaboration tools are
-        # imported in the SAME process as the agent-server. This is needed because
-        # Modal may cache Docker images and the __init__.py auto-import might not
-        # be in the cached image.
-        #
-        # We write the wrapper to a file first, then execute it (heredocs don't
-        # work well with sandbox.exec's bash -c).
-        
-        wrapper_script = '''
-import sys
-import os
-
-sys.argv = ['agent_server', '--host', '0.0.0.0', '--port', '8000']
-
-# Force import collaboration tools to register them BEFORE server starts
-try:
-    from openhands.tools.collaboration import SendMessageTool, ReceiveMessageTool
-    print('[STARTUP] Collaboration tools registered:', SendMessageTool.name, ReceiveMessageTool.name, flush=True)
-except Exception as e:
-    print('[STARTUP] WARNING: Failed to import collaboration tools:', e, flush=True)
-
-# Now run the agent server (tools are registered in this process)
-from openhands.agent_server.__main__ import main
-main()
-'''
-
-        # Bash script to set up credentials and run the Python wrapper
-        startup_script = """
-#!/bin/bash
-set -e
-
-# Write Google Cloud credentials if provided
-if [ -n "$GOOGLE_APPLICATION_CREDENTIALS_JSON" ]; then
-    echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/gcp-credentials.json
-    export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-credentials.json
-fi
-
-# Run the Python wrapper
-exec /opt/agent-server-venv/bin/python /tmp/agent_wrapper.py
-"""
-        
-        # Write the Python wrapper script to the sandbox using base64 (safe encoding)
-        import base64
-        wrapper_b64 = base64.b64encode(wrapper_script.encode()).decode()
-        write_wrapper = self._sandbox.exec("bash", "-c", f"echo '{wrapper_b64}' | base64 -d > /tmp/agent_wrapper.py")
-        write_wrapper.wait()
-        
-        # Start the agent-server manually (since we cleared the entrypoint)
-        self._server_proc = self._sandbox.exec(
-            "bash", "-c", startup_script,
-        )
-        
-        # Give the server a moment to start and capture initial output
-        time.sleep(3)
         
         # Get tunnel URL
         tunnel_info = self._sandbox.tunnels()[8000]
