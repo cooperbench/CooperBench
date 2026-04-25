@@ -19,11 +19,11 @@ class TestAgentRegistry:
     def test_mini_swe_agent_registered(self):
         """Test that mini_swe_agent is registered."""
         agents = list_agents()
-        assert "mini_swe_agent" in agents
+        assert "mini_swe_agent_v2" in agents
 
     def test_get_runner_returns_instance(self):
         """Test that get_runner returns an instance."""
-        runner = get_runner("mini_swe_agent")
+        runner = get_runner("mini_swe_agent_v2")
         assert runner is not None
         assert hasattr(runner, "run")
 
@@ -50,13 +50,13 @@ class TestMiniSweAgentAdapter:
 
     def test_adapter_has_run_method(self):
         """Test that adapter has run method."""
-        runner = get_runner("mini_swe_agent")
+        runner = get_runner("mini_swe_agent_v2")
         assert hasattr(runner, "run")
         assert callable(runner.run)
 
     def test_adapter_run_signature(self):
         """Test that run method has correct parameters."""
-        runner = get_runner("mini_swe_agent")
+        runner = get_runner("mini_swe_agent_v2")
         sig = inspect.signature(runner.run)
         params = list(sig.parameters.keys())
 
@@ -203,7 +203,7 @@ class WhitespaceAgentRunner:
 
         # Built-in agents should still work
         agents = list_agents()
-        assert "mini_swe_agent" in agents or "swe_agent" in agents
+        assert "mini_swe_agent_v2" in agents or "swe_agent" in agents
 
     def test_empty_env_var(self, monkeypatch):
         """Test that empty COOPERBENCH_EXTERNAL_AGENTS is handled correctly."""
@@ -223,4 +223,4 @@ class WhitespaceAgentRunner:
         agents = list_agents()
         assert len(agents) >= 1
         # At least one built-in agent should be registered
-        assert "mini_swe_agent" in agents or "swe_agent" in agents
+        assert "mini_swe_agent_v2" in agents or "swe_agent" in agents

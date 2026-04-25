@@ -115,9 +115,7 @@ class LitellmModel:
 
     def summarize_context(self, messages: list[dict], summary_prompt: str) -> dict:
         """Call the model to summarize conversation history for context compaction."""
-        summary_messages = self._prepare_messages_for_api(messages) + [
-            {"role": "user", "content": summary_prompt}
-        ]
+        summary_messages = self._prepare_messages_for_api(messages) + [{"role": "user", "content": summary_prompt}]
         for attempt in retry(logger=logger, abort_exceptions=self.abort_exceptions):
             with attempt:
                 response = litellm.completion(

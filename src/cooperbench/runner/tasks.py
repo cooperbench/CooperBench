@@ -4,7 +4,6 @@ import json
 from itertools import combinations
 from pathlib import Path
 
-
 DEFAULT_DATASET_DIR = Path("dataset")
 DEFAULT_LOGS_DIR = Path("logs")
 

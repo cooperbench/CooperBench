@@ -44,13 +44,13 @@ class TestSmoke:
 
         agents = list_agents()
         assert isinstance(agents, list)
-        assert "mini_swe_agent" in agents
+        assert "mini_swe_agent_v2" in agents
 
     def test_mini_swe_agent_loadable(self):
-        """Test that mini_swe_agent can be loaded."""
+        """Test that mini_swe_agent_v2 can be loaded."""
         from cooperbench.agents import get_runner
 
-        runner = get_runner("mini_swe_agent")
+        runner = get_runner("mini_swe_agent_v2")
         assert runner is not None
         assert hasattr(runner, "run")
 

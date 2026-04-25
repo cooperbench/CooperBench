@@ -69,6 +69,7 @@ def list_agents() -> list[str]:
 def _auto_register():
     """Import all adapter modules to register them."""
     import cooperbench.agents.mini_swe_agent_v2.adapter  # noqa: F401
+
     try:
         import cooperbench.agents.swe_agent.adapter  # noqa: F401
     except ImportError:

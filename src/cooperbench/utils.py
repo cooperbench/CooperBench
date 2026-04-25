@@ -118,6 +118,7 @@ def get_run_totals(run_name: str, setting: str, logs_dir: str | None = None) -> 
     from pathlib import Path
 
     from cooperbench.runner.tasks import DEFAULT_LOGS_DIR
+
     logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
     log_dir = logs_root / run_name / setting
     if not log_dir.exists():

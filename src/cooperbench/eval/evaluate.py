@@ -116,6 +116,7 @@ def evaluate(
 
     # Save summary
     from cooperbench.runner.tasks import DEFAULT_LOGS_DIR
+
     logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
     log_dir = logs_root / run_name
     _save_summary(log_dir, run_name, len(runs), passed, failed, errors, skipped, results)

@@ -4,6 +4,7 @@ or https://minimal-agent.com for a tutorial on the basic building principles.
 
 import json
 import logging
+import re
 import traceback
 from pathlib import Path
 
@@ -192,14 +193,16 @@ class DefaultAgent:
             summarizer_input,
             summary_prompt=self.config.compaction_summary_prompt,
         )
-        self._segments.append({
-            "kind": "summarizer",
-            "messages": [
-                *[{k: v for k, v in m.items() if k != "extra"} for m in summarizer_input],
-                {"role": "user", "content": self.config.compaction_summary_prompt},
-                summary_msg,
-            ],
-        })
+        self._segments.append(
+            {
+                "kind": "summarizer",
+                "messages": [
+                    *[{k: v for k, v in m.items() if k != "extra"} for m in summarizer_input],
+                    {"role": "user", "content": self.config.compaction_summary_prompt},
+                    summary_msg,
+                ],
+            }
+        )
 
         self.messages = prefix + [summary_msg] + recent_turns
         self._compaction_count += 1
@@ -239,7 +242,6 @@ class DefaultAgent:
         any) against the docker env.  Single-tool registration is much
         more reliable for smaller models than exposing two tools.
         """
-        import re
         actions = message.get("extra", {}).get("actions", [])
         outputs = []
         for action in actions:
@@ -256,9 +258,7 @@ class DefaultAgent:
                 if sm_matches:
                     sm_outputs = []
                     for recipient, content, wait in sm_matches:
-                        r = self._handle_send_message(
-                            {"recipient": recipient, "content": content, "wait": wait}
-                        )
+                        r = self._handle_send_message({"recipient": recipient, "content": content, "wait": wait})
                         sm_outputs.append(r["output"])
                     remaining = _strip_send_message(cmd)
                     combined = "\n".join(sm_outputs)
@@ -298,7 +298,6 @@ class DefaultAgent:
         self.sent_messages.append({"to": recipient, "content": content})
         return {"output": f"Message sent to {recipient}", "returncode": 0, "exception_info": ""}
 
-
     def serialize(self, *extra_dicts) -> dict:
         """Serialize agent state to a json-compatible nested dictionary for saving."""
         last_message = self.messages[-1] if self.messages else {}
@@ -336,9 +335,6 @@ class DefaultAgent:
         return data
 
 
-import re as _re
-
-
 def _parse_send_messages(cmd: str) -> list[tuple[str, str, bool]]:
     """Extract (recipient, content, wait) tuples from send_message calls.
 
@@ -346,18 +342,18 @@ def _parse_send_messages(cmd: str) -> list[tuple[str, str, bool]]:
     formats: heredoc (``<<'MSG'``), double-quoted, single-quoted.
     """
     matches: list[tuple[str, str, bool]] = []
-    for m in _re.finditer(
+    for m in re.finditer(
         r"send_message\s+(--wait\s+)?(\w+)(\s+--wait)?\s+<<'?(\w+)'?\s*\n(.*?)\n\4",
         cmd,
-        _re.DOTALL,
+        re.DOTALL,
     ):
         wait = bool(m.group(1) or m.group(3))
         matches.append((m.group(2), m.group(5), wait))
     if not matches:
-        for m in _re.finditer(r'send_message\s+(--wait\s+)?(\w+)(\s+--wait)?\s+"([^"]*)"', cmd):
+        for m in re.finditer(r'send_message\s+(--wait\s+)?(\w+)(\s+--wait)?\s+"([^"]*)"', cmd):
             wait = bool(m.group(1) or m.group(3))
             matches.append((m.group(2), m.group(4), wait))
-        for m in _re.finditer(r"send_message\s+(--wait\s+)?(\w+)(\s+--wait)?\s+'([^']*)'", cmd):
+        for m in re.finditer(r"send_message\s+(--wait\s+)?(\w+)(\s+--wait)?\s+'([^']*)'", cmd):
             wait = bool(m.group(1) or m.group(3))
             matches.append((m.group(2), m.group(4), wait))
     return matches
@@ -365,16 +361,16 @@ def _parse_send_messages(cmd: str) -> list[tuple[str, str, bool]]:
 
 def _strip_send_message(cmd: str) -> str:
     """Remove send_message calls from a compound bash command."""
-    cmd = _re.sub(
+    cmd = re.sub(
         r"send_message\s+(--wait\s+)?\w+(\s+--wait)?\s+<<'?(\w+)'?\s*\n.*?\n\3",
         "",
         cmd,
-        flags=_re.DOTALL,
+        flags=re.DOTALL,
     )
-    cmd = _re.sub(r'send_message\s+(--wait\s+)?\w+(\s+--wait)?\s+"[^"]*"', "", cmd)
-    cmd = _re.sub(r"send_message\s+(--wait\s+)?\w+(\s+--wait)?\s+'[^']*'", "", cmd)
-    cmd = _re.sub(r"^\s*&&\s*", "", cmd)
-    cmd = _re.sub(r"\s*&&\s*$", "", cmd)
-    cmd = _re.sub(r"&&\s*&&", "&&", cmd)
-    cmd = _re.sub(r"\|\|\s*\|\|", "||", cmd)
+    cmd = re.sub(r'send_message\s+(--wait\s+)?\w+(\s+--wait)?\s+"[^"]*"', "", cmd)
+    cmd = re.sub(r"send_message\s+(--wait\s+)?\w+(\s+--wait)?\s+'[^']*'", "", cmd)
+    cmd = re.sub(r"^\s*&&\s*", "", cmd)
+    cmd = re.sub(r"\s*&&\s*$", "", cmd)
+    cmd = re.sub(r"&&\s*&&", "&&", cmd)
+    cmd = re.sub(r"\|\|\s*\|\|", "||", cmd)
     return cmd.strip()

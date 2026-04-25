@@ -8,8 +8,8 @@ import time
 
 import pytest
 
-from cooperbench.agents.mini_swe_agent.connectors import DockerGitServer, GitConnector
-from cooperbench.agents.mini_swe_agent.environments.docker import DockerEnvironment
+from cooperbench.agents.mini_swe_agent_v2.connectors import DockerGitServer, GitConnector
+from cooperbench.agents.mini_swe_agent_v2.environments.docker import DockerEnvironment
 
 # Mark all tests in this module as requiring Docker
 pytestmark = pytest.mark.docker

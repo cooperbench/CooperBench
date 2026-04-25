@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from cooperbench.agents.mini_swe_agent.connectors import GitConnector, ModalGitServer
+from cooperbench.agents.mini_swe_agent_v2.connectors import GitConnector, ModalGitServer
 
 # Mark all tests in this module as requiring Modal
 pytestmark = pytest.mark.modal

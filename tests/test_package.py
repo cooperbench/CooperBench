@@ -72,13 +72,13 @@ class TestPackageImports:
             # Agents
             "cooperbench.agents",
             "cooperbench.agents.registry",
-            "cooperbench.agents.mini_swe_agent",
-            "cooperbench.agents.mini_swe_agent.adapter",
-            "cooperbench.agents.mini_swe_agent.agents.default",
-            "cooperbench.agents.mini_swe_agent.environments.modal",
-            "cooperbench.agents.mini_swe_agent.models.litellm_model",
-            "cooperbench.agents.mini_swe_agent.connectors.messaging",
-            "cooperbench.agents.mini_swe_agent.connectors.git",
+            "cooperbench.agents.mini_swe_agent_v2",
+            "cooperbench.agents.mini_swe_agent_v2.adapter",
+            "cooperbench.agents.mini_swe_agent_v2.agents.default",
+            "cooperbench.agents.mini_swe_agent_v2.environments.modal",
+            "cooperbench.agents.mini_swe_agent_v2.models.litellm_model",
+            "cooperbench.agents.mini_swe_agent_v2.connectors.messaging",
+            "cooperbench.agents.mini_swe_agent_v2.connectors.git",
         ]
 
         for module_name in modules:

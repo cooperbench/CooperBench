@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from cooperbench.runner.tasks import DEFAULT_DATASET_DIR, DEFAULT_LOGS_DIR, load_subset
+from cooperbench.runner.tasks import DEFAULT_LOGS_DIR, load_subset
 
 
 def discover_runs(

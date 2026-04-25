@@ -20,12 +20,12 @@ from rich.progress import (
 from rich.table import Table
 
 from cooperbench.infra.redis import ensure_redis
-
-install_cleanup_handler = None
 from cooperbench.runner.coop import execute_coop
 from cooperbench.runner.solo import execute_solo
 from cooperbench.runner.tasks import discover_tasks
 from cooperbench.utils import console
+
+install_cleanup_handler = None
 
 load_dotenv()
 
@@ -82,8 +82,11 @@ def run(
         install_cleanup_handler()
 
     tasks = discover_tasks(
-        subset=subset, repo_filter=repo, task_filter=task_id,
-        features_filter=features, dataset_dir=dataset_dir,
+        subset=subset,
+        repo_filter=repo,
+        task_filter=task_id,
+        features_filter=features,
+        dataset_dir=dataset_dir,
     )
 
     if not tasks:
@@ -104,6 +107,7 @@ def run(
             ensure_redis(redis_url)
 
     from cooperbench.runner.tasks import DEFAULT_LOGS_DIR
+
     logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
     log_dir = logs_root / run_name
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -180,7 +184,17 @@ def run(
     else:
         # Multiple tasks - show progress
         completed, skipped, failed, total_cost, results_list, eval_stats = _run_with_progress(
-            tasks, execute_task, concurrency, auto_eval, eval_concurrency, setting, run_name, force, backend
+            tasks,
+            execute_task,
+            concurrency,
+            auto_eval,
+            eval_concurrency,
+            setting,
+            run_name,
+            force,
+            backend,
+            logs_dir=logs_dir,
+            dataset_dir=dataset_dir,
         )
 
     # Summary
@@ -267,6 +281,7 @@ def _build_run_info(
     if not log_dir:
         # Reconstruct log_dir for older results that don't have it
         from cooperbench.runner.tasks import DEFAULT_LOGS_DIR
+
         logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
         feature_str = "_".join(f"f{f}" for f in sorted(task_info["features"]))
         log_dir = str(logs_root / run_name / setting / task_info["repo"] / str(task_info["task_id"]) / feature_str)
@@ -353,6 +368,9 @@ def _run_with_progress(
     run_name: str,
     force: bool,
     backend: str = "docker",
+    *,
+    logs_dir: str | None = None,
+    dataset_dir: str | None = None,
 ) -> tuple:
     """Run multiple tasks with progress display and optional inline evaluation."""
     from cooperbench.eval.evaluate import _evaluate_single
@@ -426,7 +444,9 @@ def _run_with_progress(
                         if auto_eval and status in ("done", "skip") and eval_executor:
                             run_info = _build_run_info(result, task_info, setting, run_name, logs_dir=logs_dir)
                             if run_info:
-                                eval_future = eval_executor.submit(_evaluate_single, run_info, force, backend, dataset_dir)
+                                eval_future = eval_executor.submit(
+                                    _evaluate_single, run_info, force, backend, dataset_dir
+                                )
                                 eval_futures[eval_future] = (task_info, result, task_name, feat_str)
                             progress.console.print(f"{status_display} {task_name} [dim][{feat_str}][/dim]")
                         else:

@@ -15,7 +15,6 @@ from cooperbench.agents.mini_swe_agent_v2.config import get_config_path
 from cooperbench.agents.mini_swe_agent_v2.connectors import GitConnector
 from cooperbench.agents.mini_swe_agent_v2.connectors.messaging import MessagingConnector
 from cooperbench.agents.mini_swe_agent_v2.models.litellm_model import LitellmModel
-from cooperbench.agents.mini_swe_agent_v2.models.utils.actions_toolcall import SEND_MESSAGE_TOOL
 from cooperbench.agents.mini_swe_agent_v2.utils.serialize import recursive_merge
 from cooperbench.agents.registry import register
 
