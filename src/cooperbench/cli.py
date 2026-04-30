@@ -11,9 +11,13 @@ import argparse
 import os
 import sys
 
+import dotenv
+
+dotenv.load_dotenv()  # load ./.env from cwd before anything reads env vars
+
 os.environ["LITELLM_LOG"] = "ERROR"
 
-import litellm
+import litellm  # noqa: E402
 
 litellm.suppress_debug_info = True  # Suppress "Give Feedback / Get Help" print messages on errors
 
