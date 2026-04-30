@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.12] - 2026-04-30
+
+### Changed
+
+- **`mini_swe_agent_v2` patch is now the agent's `submission`** — the adapter no longer captures `base_commit` and runs `git diff <base>` at end-of-run. Instead the patch comes directly from `result['submission']`, which the env populates with everything the agent emits after `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`. Mirrors upstream mini-swe-agent's SWE-bench config. The `coop.yaml` / `solo.yaml` prompts now instruct the agent to curate via `git diff -- file1 file2 > patch.txt`, verify with `cat patch.txt`, and submit with `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt`. No working-tree-extraction fallback — if the agent didn't submit, there is no patch.
+- **`config/mini.yaml` split into `config/solo.yaml` + `config/coop.yaml`** — the previous single file conditioned everything on `{% if agent_id %}` blocks. The adapter now selects which file to load via `is_coop = len(agents) > 1`. While splitting, fixed a leak in the solo branch where the `CRITICAL REQUIREMENTS` section still mentioned `send_message to your colleague` for an agent with no colleague.
+- **Shared singleton git server for `--git` coop runs** — replaces the previous design that spun up a fresh `debian:bookworm-slim` container per run, ran `apt-get install git`, slept 3s, and returned (resulting in race conditions where agents' initial `git push` beat the daemon to startup). The new design auto-creates one image (`cooperbench-git-server:local`), one network (`cooperbench`), and one container (`cooperbench-git`) on first use; per-run isolation comes from path namespacing under `/git/<run_id>/repo.git`. Idempotent — first run pays a ~30s image-build cost, subsequent runs reuse the singleton in ~140ms. Mirrors the Redis-style "one daemon, many namespaces" pattern.
+
+### Fixed
+
+- **`mini_swe_agent_v2` adapter no longer crashes on `content=None`** — tool-calling assistant turns leave `content=None` (the body lives in `tool_calls`), and CooperBench's downstream `_extract_conversation` does `"send_message" in content`, which raises `TypeError` on None. The adapter now coerces to `""` before populating `AgentResult.messages`.
+- **`mini_swe_agent_v2` adapter wires up the `agent_config` flag** — previously listed in `MiniSweAgentV2Runner.run`'s signature but never read from. Now loads the YAML and deep-merges its `config:` block over the defaults. Forward-compatible: `**kwargs` accepted so unknown caller-side args don't crash `run()`.
+- **`mini_swe_agent_v2` adapter drops the dead `SEND_MESSAGE_TOOL` import** — only `BASH_TOOL` is registered with the model; `send_message` is intercepted from inside the bash command string. The leftover import was confusing.
+- **`DockerEnvironmentConfig.network`** — added a typed `network` field so the `--network <name>` flag reaches `docker run`. Previously the adapter passed `network=...` as a kwarg, but Pydantic silently dropped it (no such field), and agent containers ended up on the default bridge with no route to the per-run git server's IP. With the new shared-singleton git server design, agent containers must join the shared `cooperbench` network for DNS-by-name resolution to work.
+- **`DefaultAgent.serialize()` no longer mutates `_segments`** — `run()` calls `save()` in its finally clause every step, and once compaction had fired, each `serialize()` call appended another snapshot of the current live messages as a fresh solver segment (and reset the buffer, which the next `query()` repopulated). Net effect: one compaction produced N+1 overlapping post-compaction solver segments instead of 1. Fix: `serialize()` builds the snapshot list locally without touching `self._segments`.
+
+### Added
+
+- **`cooperbench` CLI auto-loads `./.env`** — `cli.py` now calls `dotenv.load_dotenv()` at module load, so project-local `OPENAI_API_KEY` etc. is picked up without users having to `set -a && source .env` ahead of every invocation. Matches the convention used elsewhere in the codebase.
+
 ## [0.0.11] - 2026-04-18
 
 ### Added
