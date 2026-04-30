@@ -320,8 +320,11 @@ class DefaultAgent:
             "trajectory_format": "mini-swe-agent-1.1",
         }
         if self._compaction_count > 0:
-            self._close_current_segment("solver")
-            agent_data["segments"] = self._segments
+            segments = list(self._segments)
+            current = self._current_segment_messages or self.messages
+            if current:
+                segments.append({"kind": "solver", "messages": list(current)})
+            agent_data["segments"] = segments
         return recursive_merge(agent_data, self.model.serialize(), self.env.serialize(), *extra_dicts)
 
     def save(self, path: Path | None, *extra_dicts) -> dict:
