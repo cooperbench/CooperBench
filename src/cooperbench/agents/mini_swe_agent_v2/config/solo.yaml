@@ -99,11 +99,24 @@ agent:
 
     ## Submission
 
-    Edit files in place.  Don't commit.  When done:
+    Edit files in place.  Don't commit.  When done, run each of these as a
+    SEPARATE bash tool call (do not chain them with `&&`):
+
+    Write the patch:
 
     ```bash
     git diff -- path/to/file1 path/to/file2 > patch.txt
+    ```
+
+    Verify it:
+
+    ```bash
     cat patch.txt
+    ```
+
+    Submit:
+
+    ```bash
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt
     ```
 
