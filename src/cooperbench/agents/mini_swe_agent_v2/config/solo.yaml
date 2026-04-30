@@ -107,8 +107,12 @@ agent:
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt
     ```
 
-    The patch must contain only source files you modified (no reproduction
-    scripts, helper tools, build/config files, or binaries).
+    The patch must contain only source files you modified.  Exclude:
+
+    - reproduction or scratch test scripts you wrote
+    - helper scripts or tools you created
+    - installation, build, packaging, or configuration files
+    - binaries or compiled files
 
     <CRITICAL>
     Do NOT run `rm -rf .git`, `git init`, `git rm -rf .`, or `git reset --hard`
