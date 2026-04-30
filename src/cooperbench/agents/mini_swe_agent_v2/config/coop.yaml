@@ -162,16 +162,17 @@ agent:
 
     ## Submission
 
-    Edit files in place.  Don't commit.  When done, run each of these as a
-    SEPARATE bash tool call (do not chain them with `&&`):
+    `patch.txt` is the artifact we evaluate — write whatever unified diff
+    you want to submit to that file, however it makes sense given how you
+    worked:
 
-    Write the patch:
+    Write the patch (one common way — `git diff` of your in-place edits):
 
     ```bash
     git diff -- path/to/file1 path/to/file2 > patch.txt
     ```
 
-    Verify it:
+    Verify it contains what you intend:
 
     ```bash
     cat patch.txt
@@ -183,7 +184,8 @@ agent:
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt
     ```
 
-    The patch must contain only source files you modified.  Exclude:
+    The patch must be a unified diff and contain only source files you
+    intentionally modified.  Exclude:
 
     - reproduction or scratch test scripts you wrote
     - helper scripts or tools you created
