@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.13] - 2026-04-30
+
+### Fixed
+
+- **`mini_swe_agent_v2` Submit step now uses upstream's prescriptive wording.**  In a real coop+git run with GPT-5.4 against the v0.0.12 prompts, ~50% of agents reverted to the bare `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` (without `&& cat patch.txt`), producing empty patches even when they had edited files.  Strong-prior models trained on upstream mini-swe-agent's older `swebench.yaml` recognise that pattern from training and override the prompt.  Restore upstream's exact framing — `Submit (EXACT command required) / You MUST use this EXACT command to submit:` — so the prompt reads as prescriptive rather than as one example among many.
+
 ## [0.0.12] - 2026-04-30
 
 ### Changed
