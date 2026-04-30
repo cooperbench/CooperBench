@@ -178,7 +178,8 @@ agent:
     cat patch.txt
     ```
 
-    Submit:
+    Submit (EXACT command required)
+    You MUST use this EXACT command to submit:
 
     ```bash
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt
