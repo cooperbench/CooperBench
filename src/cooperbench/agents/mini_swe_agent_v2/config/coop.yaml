@@ -162,40 +162,21 @@ agent:
 
     ## Submission
 
-    When your feature is complete, submit your patch as a git diff.  Follow these
-    steps **IN ORDER**, with **SEPARATE** commands:
-
-    **Step 1 — create the patch file.** Run, listing only the source files you modified:
+    Edit files in place.  Don't commit.  When done:
 
     ```bash
     git diff -- path/to/file1 path/to/file2 > patch.txt
-    ```
-
-    Do NOT commit your changes.  The patch must contain ONLY the source files you
-    modified to implement your feature.  Do NOT include:
-
-    - reproduction or scratch test scripts you wrote
-    - helper scripts or tools you created
-    - installation/build/packaging/configuration files
-    - binaries or compiled files
-
-    **Step 2 — verify the patch.** Inspect `patch.txt` to confirm it contains only
-    your intended changes and headers show `--- a/` and `+++ b/` paths:
-
-    ```bash
     cat patch.txt
-    ```
-
-    **Step 3 — submit.**  Use this **EXACT** command:
-
-    ```bash
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt
     ```
 
+    The patch must contain only source files you modified (no reproduction
+    scripts, helper tools, build/config files, or binaries).
+
     <CRITICAL>
-    - Creating/viewing the patch and submitting MUST be separate tool calls (not combined with `&&`).
-    - If `patch.txt` is missing or `cat` fails, the submission fails (non-zero exit) and you remain in the loop — fix and retry.
-    - After a successful submission you CANNOT continue working on this task.
+    Do NOT run `rm -rf .git`, `git init`, `git rm -rf .`, or `git reset --hard`
+    inside `/workspace/repo` — these corrupt `.git/` and your patch will be
+    unapplyable.
     </CRITICAL>
   step_limit: 100
   cost_limit: 3.
