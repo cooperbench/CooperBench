@@ -31,6 +31,10 @@ class DockerEnvironmentConfig(BaseModel):
     """Additional arguments to pass to the docker/container executable.
     Default is ["--rm"], which removes the container after it exits.
     """
+    network: str | None = None
+    """Docker network to attach the container to (passed as --network).
+    Required for coop+git so agent containers can reach the git server's
+    bridge network."""
     container_timeout: str = "2h"
     """Max duration to keep container running. Uses the same format as the sleep command."""
     pull_timeout: int = 120
@@ -84,6 +88,10 @@ class DockerEnvironment:
             self.config.cwd,
             "--entrypoint",
             "/bin/bash",
+        ]
+        if self.config.network:
+            cmd += ["--network", self.config.network]
+        cmd += [
             *self.config.run_args,
             self.config.image,
             "-c",

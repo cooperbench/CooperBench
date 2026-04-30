@@ -1,148 +1,173 @@
-"""Docker-based git server for code collaboration."""
+"""Docker-based git server for code collaboration.
+
+Architecture (mirrors how Redis is used elsewhere in CooperBench): a single
+long-lived ``cooperbench-git`` container runs ``git daemon`` and serves
+multiple isolated per-run repositories under ``/git/<run_id>/repo.git``.  All
+agent containers join the same ``cooperbench`` bridge network so they can
+resolve the server by container name.
+
+The infra (image, network, container) is auto-created on first use and reused
+thereafter.  No CLI setup step.
+"""
 
 from __future__ import annotations
 
+import io
 import logging
 import time
 
 import docker
 
+# Singleton infra (one set per host, reused across all coop runs)
+_IMAGE_TAG = "cooperbench-git-server:local"
+_CONTAINER_NAME = "cooperbench-git"
+_NETWORK_NAME = "cooperbench"
+_VOLUME_NAME = "cooperbench-git-data"
+_PORT = 9418
+
+_DOCKERFILE = b"""FROM debian:bookworm-slim
+RUN apt-get update -qq \\
+ && apt-get install -y -qq git \\
+ && rm -rf /var/lib/apt/lists/*
+RUN mkdir /git
+ENTRYPOINT ["git", "daemon", \\
+            "--reuseaddr", \\
+            "--export-all", \\
+            "--enable=receive-pack", \\
+            "--base-path=/git", \\
+            "--listen=0.0.0.0", \\
+            "/git"]
+"""
+
+
+def _wait_for_port(container, port: int, timeout: int = 30) -> None:
+    """Block until the daemon binds the given port inside the container.
+
+    Uses bash's built-in ``/dev/tcp`` (no extra packages required) so it works
+    against the stripped-down debian-slim base.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        probe = container.exec_run(["bash", "-c", f"exec 3<>/dev/tcp/127.0.0.1/{port}"])
+        if probe.exit_code == 0:
+            return
+        time.sleep(0.5)
+    raise RuntimeError(f"git daemon did not bind :{port} within {timeout}s")
+
+
+def _ensure_shared_infra(client: docker.DockerClient, logger: logging.Logger):
+    """Idempotently bring up image, network, and shared git server container."""
+    # Image
+    try:
+        client.images.get(_IMAGE_TAG)
+    except docker.errors.ImageNotFound:
+        logger.info(f"Building {_IMAGE_TAG} (one-time, ~30s)...")
+        client.images.build(fileobj=io.BytesIO(_DOCKERFILE), tag=_IMAGE_TAG, rm=True)
+        logger.info(f"Built {_IMAGE_TAG}")
+
+    # Network
+    try:
+        client.networks.get(_NETWORK_NAME)
+    except docker.errors.NotFound:
+        logger.debug(f"Creating shared network {_NETWORK_NAME}")
+        try:
+            client.networks.create(_NETWORK_NAME, driver="bridge")
+        except docker.errors.APIError:
+            # race: another concurrent run created it; re-fetch
+            client.networks.get(_NETWORK_NAME)
+
+    # Volume (so /git survives container restarts; also lets us inspect history)
+    try:
+        client.volumes.get(_VOLUME_NAME)
+    except docker.errors.NotFound:
+        client.volumes.create(name=_VOLUME_NAME)
+
+    # Container
+    try:
+        container = client.containers.get(_CONTAINER_NAME)
+    except docker.errors.NotFound:
+        logger.info(f"Starting shared git server container {_CONTAINER_NAME}")
+        try:
+            container = client.containers.run(
+                _IMAGE_TAG,
+                name=_CONTAINER_NAME,
+                detach=True,
+                network=_NETWORK_NAME,
+                volumes={_VOLUME_NAME: {"bind": "/git", "mode": "rw"}},
+                restart_policy={"Name": "unless-stopped"},
+            )
+        except docker.errors.APIError:
+            # race: another concurrent run created it; re-fetch
+            container = client.containers.get(_CONTAINER_NAME)
+
+    container.reload()
+    if container.status != "running":
+        container.start()
+        container.reload()
+
+    _wait_for_port(container, _PORT, timeout=30)
+    return container
+
 
 class DockerGitServer:
-    """Shared git server container for code collaboration using Docker.
+    """Per-run handle on the shared git server.
 
-    Creates a Docker container running git-daemon that agents can push/pull to.
+    The shared container is a singleton; what's per-run is just a directory
+    under ``/git/<run_id>/repo.git`` that this class creates and tears down.
     """
 
-    def __init__(self, container, hostname: str, port: int, network_name: str):
-        """Initialize with an existing container.
-
-        Use DockerGitServer.create() to create a new server.
-        """
-        self._container = container
+    def __init__(self, *, run_id: str, hostname: str, port: int, network_name: str):
+        self._run_id = run_id
         self._hostname = hostname
         self._port = port
         self._network_name = network_name
         self._logger = logging.getLogger("cooperbench.agents.mini_swe_agent_v2.git_server.docker")
 
     @classmethod
-    def create(
-        cls,
-        run_id: str,
-        timeout: int = 3600,
-    ) -> DockerGitServer:
-        """Create and start a git server container.
+    def create(cls, run_id: str, timeout: int = 3600) -> DockerGitServer:
+        """Ensure shared infra is up, then init a per-run bare repo on it.
 
         Args:
-            run_id: Unique run identifier (for container naming)
-            timeout: Container timeout in seconds (not enforced, for compatibility)
+            run_id: Unique run identifier — becomes the path prefix under /git
+            timeout: Unused; kept for protocol compatibility with other backends
 
         Returns:
-            DockerGitServer instance ready to accept connections
+            DockerGitServer pointing at git://<container>:9418/<run_id>/repo.git
         """
+        del timeout
         logger = logging.getLogger("cooperbench.agents.mini_swe_agent_v2.git_server.docker")
-        logger.debug(f"Creating docker git server for run {run_id}")
-
         client = docker.from_env()
 
-        # Use a simple Debian-based image with git
-        image = "debian:bookworm-slim"
+        container = _ensure_shared_infra(client, logger)
 
-        # Pull image if not present
-        try:
-            client.images.get(image)
-        except docker.errors.ImageNotFound:
-            logger.debug(f"Pulling image {image}")
-            client.images.pull(image)
-
-        # Create or get shared network for git server and agents
-        network_name = f"cooperbench-git-{run_id}"
-        try:
-            client.networks.get(network_name)
-        except docker.errors.NotFound:
-            client.networks.create(network_name, driver="bridge")
-
-        # Container name based on run_id
-        container_name = f"cooperbench-git-{run_id}"
-
-        # Remove existing container if it exists
-        try:
-            old_container = client.containers.get(container_name)
-            old_container.remove(force=True)
-        except docker.errors.NotFound:
-            pass
-
-        # Create and start container with initialization script
-        # The script initializes the repo, then starts git daemon in foreground to keep container alive
-        init_script = """#!/bin/bash
-set -e
-apt-get update -qq
-apt-get install -y -qq git > /dev/null 2>&1
-mkdir -p /git/repo.git
-cd /git/repo.git
-git init --bare
-git config receive.denyCurrentBranch ignore
-touch git-daemon-export-ok
-exec git daemon --reuseaddr --export-all --enable=receive-pack --base-path=/git --listen=0.0.0.0 /git
-"""
-
-        container = client.containers.run(
-            image=image,
-            command=["bash", "-c", init_script],
-            name=container_name,
-            detach=True,
-            network=network_name,
-            ports={"9418/tcp": None},  # Auto-assign port for host access
-            remove=False,
+        # Per-run repo init — fast (~50ms) inside the already-running container
+        init_cmd = (
+            f"set -e && "
+            f"mkdir -p /git/{run_id}/repo.git && "
+            f"cd /git/{run_id}/repo.git && "
+            f"git init --bare && "
+            f"git config receive.denyCurrentBranch ignore && "
+            f"touch git-daemon-export-ok"
         )
+        result = container.exec_run(["bash", "-c", init_cmd])
+        if result.exit_code != 0:
+            raise RuntimeError(
+                f"Failed to init repo /git/{run_id}/repo.git: {result.output.decode('utf-8', errors='replace')}"
+            )
 
-        # Wait for container to start and git daemon to initialize
-        time.sleep(3)
+        logger.debug(f"Per-run repo ready at git://{_CONTAINER_NAME}:{_PORT}/{run_id}/repo.git")
 
-        # Verify container is running
-        container.reload()
-        if container.status != "running":
-            logs = container.logs().decode("utf-8", errors="replace")
-            container.remove(force=True)
-            raise RuntimeError(f"Git server container failed to start. Logs: {logs}")
-
-        # Reload container to get port mapping
-        container.reload()
-
-        # Get the host port
-        port_bindings = container.attrs.get("NetworkSettings", {}).get("Ports", {})
-        if "9418/tcp" not in port_bindings or not port_bindings["9418/tcp"]:
-            container.stop()
-            container.remove(force=True)
-            raise RuntimeError("Failed to get port mapping for git daemon")
-
-        # Get container's IP on the network for inter-container communication
-        container.reload()
-        network_settings = container.attrs.get("NetworkSettings", {})
-        networks = network_settings.get("Networks", {})
-        if network_name in networks:
-            container_ip = networks[network_name].get("IPAddress")
-            if container_ip:
-                hostname = container_ip
-            else:
-                # Fallback to container name (DNS resolution on same network)
-                hostname = container_name
-        else:
-            # Fallback to container name
-            hostname = container_name
-
-        logger.debug(f"Git server ready at git://{hostname}:9418 (network: {network_name})")
-
-        return cls(container=container, hostname=hostname, port=9418, network_name=network_name)
+        return cls(
+            run_id=run_id,
+            hostname=_CONTAINER_NAME,
+            port=_PORT,
+            network_name=_NETWORK_NAME,
+        )
 
     @property
     def url(self) -> str:
-        """Git URL for agents to use as remote.
-
-        Returns:
-            Git URL for the repository (git://hostname:port/repo.git)
-        """
-        return f"git://{self._hostname}:{self._port}/repo.git"
+        """Git URL for agents to use as remote."""
+        return f"git://{self._hostname}:{self._port}/{self._run_id}/repo.git"
 
     @property
     def network_name(self) -> str:
@@ -150,26 +175,11 @@ exec git daemon --reuseaddr --export-all --enable=receive-pack --base-path=/git 
         return self._network_name
 
     def cleanup(self) -> None:
-        """Stop and remove the git server container and network."""
-        if self._container:
-            try:
-                self._container.stop(timeout=5)
-            except Exception:
-                pass
-            try:
-                self._container.remove(force=True)
-            except Exception:
-                pass
-            self._container = None
-
-        # Clean up network
-        if hasattr(self, "_network_name") and self._network_name:
-            try:
-                client = docker.from_env()
-                try:
-                    network = client.networks.get(self._network_name)
-                    network.remove()
-                except docker.errors.NotFound:
-                    pass
-            except Exception:
-                pass
+        """Remove this run's repo dir.  Leave the shared container/network/image alone."""
+        try:
+            client = docker.from_env()
+            container = client.containers.get(_CONTAINER_NAME)
+            container.exec_run(["rm", "-rf", f"/git/{self._run_id}"])
+        except Exception:
+            # Best-effort: we don't want cleanup failure to mask the real run result.
+            pass

@@ -162,10 +162,22 @@ def test_merged(
         if not base_sha:
             return _merged_error_result("Failed to get base commit SHA")
 
+        apply_status = setup_result.get("apply_status", {"agent1": "unknown", "agent2": "unknown"})
+        any_apply_failed = "failed" in apply_status.values()
+
         # Step 2: Try naive merge
         naive_result = _merge_naive(sb, base_sha)
 
-        merge_status = "clean" if not naive_result["conflict"] else "conflicts"
+        # If any agent's patch failed to apply, the resulting "merge" is just
+        # a merge of base + the surviving agent's work into the other branch
+        # (which is also at base).  Don't pretend that's a clean merge of the
+        # agents' joint output — surface the apply failure as the merge status.
+        if any_apply_failed:
+            merge_status = "missing_input"
+        elif naive_result["conflict"]:
+            merge_status = "conflicts"
+        else:
+            merge_status = "clean"
         strategy_used = "naive"
         merged_diff = naive_result["diff"]
 
@@ -200,17 +212,26 @@ def test_merged(
         test2_result = _run_tests(sb, "tests2.patch", "merged.patch", base_sha)
 
         return {
+            "apply_status": apply_status,
             "merge": {
                 "status": merge_status,
                 "strategy": strategy_used,
                 "diff": merged_diff[:5000] if merged_diff else "",  # Truncate for storage
             },
             "feature1": {
+                "feature_id": feature1_id,
                 "passed": test1_result["passed"],
+                "exit_code": test1_result.get("exit_code"),
+                "tests_passed": test1_result.get("tests_passed", 0),
+                "tests_failed": test1_result.get("tests_failed", 0),
                 "test_output": test1_result["output"],
             },
             "feature2": {
+                "feature_id": feature2_id,
                 "passed": test2_result["passed"],
+                "exit_code": test2_result.get("exit_code"),
+                "tests_passed": test2_result.get("tests_passed", 0),
+                "tests_failed": test2_result.get("tests_failed", 0),
                 "test_output": test2_result["output"],
             },
             "both_passed": test1_result["passed"] and test2_result["passed"],
@@ -357,7 +378,14 @@ def _write_patch(sb: Sandbox, filename: str, content: str) -> None:
 
 
 def _setup_branches(sb: Sandbox) -> dict:
-    """Set up git branches for merge testing."""
+    """Set up git branches for merge testing.
+
+    Returns ``apply_status`` per agent: ``"applied"`` / ``"skipped"`` (empty
+    patch) / ``"failed"`` (git apply rejected the patch).  Callers must check
+    this — a "clean" merge between two branches where one branch's patch
+    silently failed to apply is not actually a clean merge of the agents'
+    work, just a clean merge of nothing into the other.
+    """
     commands = """
 cd /workspace/repo
 git config user.email "eval@cooperbench.local"
@@ -367,20 +395,31 @@ git config user.name "CooperBench Eval"
 BASE_SHA=$(git rev-parse HEAD)
 echo "BASE_SHA=$BASE_SHA"
 
+apply_patch() {
+    local n=$1
+    if [ -s /patches/patch${n}.patch ]; then
+        if git apply /patches/patch${n}.patch 2>&1; then
+            echo "PATCH${n}_APPLIED"
+        elif git apply --3way /patches/patch${n}.patch 2>&1; then
+            echo "PATCH${n}_APPLIED"
+        else
+            echo "PATCH${n}_FAILED"
+        fi
+    else
+        echo "PATCH${n}_SKIPPED"
+    fi
+}
+
 # Create agent1 branch and apply patch1
 git checkout -b agent1 2>&1
-if [ -s /patches/patch1.patch ]; then
-    git apply /patches/patch1.patch 2>&1 || git apply --3way /patches/patch1.patch 2>&1 || echo "PATCH1_FAILED"
-fi
+apply_patch 1
 git add -A
 git commit -m "Agent 1 changes" --allow-empty 2>&1
 
 # Create agent2 branch from base and apply patch2
 git checkout $BASE_SHA 2>&1
 git checkout -b agent2 2>&1
-if [ -s /patches/patch2.patch ]; then
-    git apply /patches/patch2.patch 2>&1 || git apply --3way /patches/patch2.patch 2>&1 || echo "PATCH2_FAILED"
-fi
+apply_patch 2
 git add -A
 git commit -m "Agent 2 changes" --allow-empty 2>&1
 
@@ -399,7 +438,19 @@ echo "SETUP_COMPLETE"
             base_sha = line.split("=")[1].strip()
             break
 
-    return {"output": output, "error": None, "base_sha": base_sha}
+    def _status(n: int) -> str:
+        if f"PATCH{n}_APPLIED" in output:
+            return "applied"
+        if f"PATCH{n}_SKIPPED" in output:
+            return "skipped"
+        return "failed"
+
+    return {
+        "output": output,
+        "error": None,
+        "base_sha": base_sha,
+        "apply_status": {"agent1": _status(1), "agent2": _status(2)},
+    }
 
 
 def _merge_naive(sb: Sandbox, base_sha: str) -> dict:
@@ -499,6 +550,7 @@ bash /usr/local/bin/runner.sh {tests_patch} {feature_patch}
     return {
         "passed": exit_code == 0 and parsed["passed"] > 0,
         "output": output,
+        "exit_code": exit_code,
         "tests_passed": parsed["passed"],
         "tests_failed": parsed["failed"],
     }
@@ -631,9 +683,24 @@ def _error_result(error: str) -> dict:
 
 def _merged_error_result(error: str) -> dict:
     return {
+        "apply_status": {"agent1": "unknown", "agent2": "unknown"},
         "merge": {"status": "error", "strategy": None, "diff": ""},
-        "feature1": {"passed": False, "test_output": ""},
-        "feature2": {"passed": False, "test_output": ""},
+        "feature1": {
+            "feature_id": None,
+            "passed": False,
+            "exit_code": None,
+            "tests_passed": 0,
+            "tests_failed": 0,
+            "test_output": "",
+        },
+        "feature2": {
+            "feature_id": None,
+            "passed": False,
+            "exit_code": None,
+            "tests_passed": 0,
+            "tests_failed": 0,
+            "test_output": "",
+        },
         "both_passed": False,
         "error": error,
     }
