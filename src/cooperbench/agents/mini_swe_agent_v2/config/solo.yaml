@@ -101,8 +101,7 @@ agent:
 
     `patch.txt` is the artifact we evaluate — write whatever unified diff
     you want to submit to that file, however it makes sense given how you
-    worked.  Run each of these as a SEPARATE bash tool call (do not chain
-    them with `&&`):
+    worked:
 
     Write the patch (one common way — `git diff` of your in-place edits):
 
