@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.14] - 2026-04-30
+
+### Changed
+
+- **`mini_swe_agent_v2` patch is now read directly from `patch.txt` in the agent's container.**  Previously the adapter parsed the patch out of the agent's stdout (whatever followed the `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` sentinel).  In a real coop+git run with GPT-5.4 against the v0.0.13 prompts, ~50% of agents still emitted the bare sentinel without `&& cat patch.txt` — but **all 18/18 agents still wrote a `patch.txt` file** in their working directory.  Reading the file directly via `docker exec cat patch.txt` after `agent.run()` returns is deterministic regardless of which submit-command variant the agent picked.  Submit step in `coop.yaml` / `solo.yaml` simplified to the bare `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` (still framed as `EXACT command required` so models follow it consistently).  No fallback to stdout submission text — `patch.txt` is the only source of truth.
+
 ## [0.0.13] - 2026-04-30
 
 ### Fixed

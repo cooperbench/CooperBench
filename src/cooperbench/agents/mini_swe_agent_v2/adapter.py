@@ -142,12 +142,13 @@ class MiniSweAgentV2Runner:
             status = "Error"
             error_msg = str(e)
 
-        # The agent submits its patch via ``echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
-        # && cat patch.txt`` (see coop.yaml/solo.yaml).  Whatever follows the
-        # sentinel is captured into result["submission"] by the env.  No
-        # working-tree extraction fallback — if the agent didn't submit a
-        # patch, there is no patch.
-        patch = result.get("submission", "").strip()
+        patch = ""
+        try:
+            r = env.execute({"command": "cat patch.txt 2>/dev/null"})
+            if r.get("returncode") == 0:
+                patch = (r.get("output") or "").strip()
+        except Exception:
+            pass
 
         # Save full trajectory (includes segments when compaction occurred)
         if log_dir and agent._compaction_count > 0:
