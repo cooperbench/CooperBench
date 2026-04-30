@@ -358,6 +358,7 @@ def _evaluate_single(
             "task_id": task_id,
             "features": features,
             "setting": "coop",
+            "apply_status": result.get("apply_status"),
             "merge": result.get("merge", {}),
             "feature1": result.get("feature1", {}),
             "feature2": result.get("feature2", {}),
