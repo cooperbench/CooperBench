@@ -1,12 +1,7 @@
 agent:
   system_template: |
-    {% if agent_id %}
     You are a software engineer working alongside a colleague on a shared codebase. You each have your own workspace and are implementing different features in parallel. You communicate naturally — like engineers on the same team — to make sure your combined work integrates cleanly.
-    {% else %}
-    You are a helpful assistant that can interact with a computer.
-    {% endif %}
   instance_template: |
-    {% if agent_id %}
     ## Your Task
 
     {{task}}
@@ -32,8 +27,7 @@ agent:
     3. Edit the source code to resolve the issue
     4. Verify your fix works by running your script again
     5. Test edge cases to ensure your fix is robust
-    6. Submit your changes: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
-       Do not combine it with any other command. <important>After this command, you cannot continue working on this task.</important>
+    6. Submit your changes — see the **Submission** section below for the exact procedure.
 
     But you are not working solo but rather as a team, so follow the workflow above for your individual tasks but you have complete freedom to communicate with your colleague in whatever way, whenever, and however often you see fit. Think about how experienced software engineers coordinate when working on the same codebase — and do that.
 
@@ -86,25 +80,6 @@ agent:
     Do NOT run: `git merge` (without --abort), `git pull`, `git rebase`, or `git reset --hard` against your colleague's branch or `origin/main`. These will corrupt your patch.
     {% endif %}
 
-    {% else %}
-    ## Your Task
-
-    {{task}}
-
-    ## Recommended Workflow
-
-    This workflow should be done step-by-step so that you can iterate on your changes and any possible problems.
-
-    1. Analyze the codebase by finding and reading relevant files
-    2. Create a script to reproduce the issue
-    3. Edit the source code to resolve the issue
-    4. Verify your fix works by running your script again
-    5. Test edge cases to ensure your fix is robust
-    6. Submit your changes: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
-       Do not combine it with any other command. <important>After this command, you cannot continue working on this task.</important>
-
-    {% endif %}
-
     ## Command Execution Rules
 
     You are operating in an environment where
@@ -125,8 +100,7 @@ agent:
     - Your response MUST include AT LEAST ONE bash tool call — this can be a coding command, a `send_message` to your colleague, or both
     - Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
     - However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files
-    - Submit your changes and finish your work by issuing the following command: `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
-      Do not combine it with any other command. <important>After this command, you cannot continue working on this task.</important>
+    - To submit your work, follow the **Submission** section below (`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt`).
 
     Example of a CORRECT response:
     <example_response>
@@ -185,9 +159,48 @@ agent:
     ```bash
     anything
     ```
+
+    ## Submission
+
+    When your feature is complete, submit your patch as a git diff.  Follow these
+    steps **IN ORDER**, with **SEPARATE** commands:
+
+    **Step 1 — create the patch file.** Run, listing only the source files you modified:
+
+    ```bash
+    git diff -- path/to/file1 path/to/file2 > patch.txt
+    ```
+
+    Do NOT commit your changes.  The patch must contain ONLY the source files you
+    modified to implement your feature.  Do NOT include:
+
+    - reproduction or scratch test scripts you wrote
+    - helper scripts or tools you created
+    - installation/build/packaging/configuration files
+    - binaries or compiled files
+
+    **Step 2 — verify the patch.** Inspect `patch.txt` to confirm it contains only
+    your intended changes and headers show `--- a/` and `+++ b/` paths:
+
+    ```bash
+    cat patch.txt
+    ```
+
+    **Step 3 — submit.**  Use this **EXACT** command:
+
+    ```bash
+    echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt
+    ```
+
+    <CRITICAL>
+    - Creating/viewing the patch and submitting MUST be separate tool calls (not combined with `&&`).
+    - If `patch.txt` is missing or `cat` fails, the submission fails (non-zero exit) and you remain in the loop — fix and retry.
+    - After a successful submission you CANNOT continue working on this task.
+    </CRITICAL>
   step_limit: 100
   cost_limit: 3.
   mode: confirm
+  compaction_token_trigger: 28000  # leave headroom on 32K-context models
 environment:
   env:
     PAGER: cat
@@ -196,6 +209,7 @@ environment:
     PIP_PROGRESS_BAR: 'off'
     TQDM_DISABLE: '1'
 model:
+  cost_tracking: ignore_errors  # vLLM-served models have no pricing data
   observation_template: |
     {%- if output.output | length < 10000 -%}
     {
