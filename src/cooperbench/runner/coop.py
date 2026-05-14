@@ -17,6 +17,27 @@ from cooperbench.runner.tasks import DEFAULT_DATASET_DIR, DEFAULT_LOGS_DIR
 from cooperbench.utils import console, get_image_name
 
 
+def _message_timestamp_key(msg: dict) -> float:
+    """Return a sortable float for a conversation message.
+
+    Timestamps in ``_extract_conversation`` output come from multiple agent
+    adapters: mini_swe_agent emits floats (``time.time()``), the OpenHands
+    SDK adapter can emit ISO strings, and some events have no timestamp at
+    all. Coerce to float on a best-effort basis so the sort doesn't blow up
+    with ``TypeError: '<' not supported between instances of 'int' and 'str'``
+    mid-rollout — which used to crash :func:`execute_coop` before
+    ``agent{fid}_traj.json`` was written, leaving callers with no structured
+    output to evaluate.
+    """
+    ts = msg.get("timestamp")
+    if ts is None:
+        return 0.0
+    try:
+        return float(ts)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def execute_coop(
     repo_name: str,
     task_id: int,
@@ -151,9 +172,10 @@ def execute_coop(
     # Extract conversation (inter-agent messages)
     conversation = _extract_conversation(results, agents)
 
-    # Sort by timestamp and dedupe (keep only sent messages, not received)
+    # Sort by timestamp and dedupe (keep only sent messages, not received).
+    # See ``_message_timestamp_key`` for why coercion is needed.
     sent_msgs = [m for m in conversation if not m.get("received")]
-    sent_msgs.sort(key=lambda x: x.get("timestamp") or 0)
+    sent_msgs.sort(key=_message_timestamp_key)
 
     # Save conversation
     with open(log_dir / "conversation.json", "w") as f:
