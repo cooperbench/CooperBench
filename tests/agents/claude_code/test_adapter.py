@@ -15,13 +15,13 @@ from unittest.mock import patch as mock_patch
 import pytest
 
 from cooperbench.agents import AgentResult, get_runner, list_agents
-from cooperbench.agents.claude_code.adapter import (
+from cooperbench.agents._coop import (
     build_git_setup_command,
+    build_instruction,
     parse_sent_messages_log,
     rewrite_comm_url_for_container,
-    resolve_credentials,
 )
-from cooperbench.agents.claude_code.prompt import build_instruction
+from cooperbench.agents.claude_code.adapter import resolve_credentials
 
 
 class _FakeEnv:
@@ -107,10 +107,7 @@ class TestRewriteCommUrl:
         )
 
     def test_127001_replaced(self):
-        assert (
-            rewrite_comm_url_for_container("redis://127.0.0.1:6379")
-            == "redis://host.docker.internal:6379"
-        )
+        assert rewrite_comm_url_for_container("redis://127.0.0.1:6379") == "redis://host.docker.internal:6379"
 
     def test_external_host_preserved(self):
         url = "redis://my-redis.example.com:6379#run:abc"
@@ -252,23 +249,21 @@ class TestBuildGitSetupCommand:
 
 class TestAdapterGitWiring:
     """When git is enabled, the adapter must:
-       (a) join the shared docker network,
-       (b) run git setup in the container before invoking claude,
-       (c) include the git section in the prompt.
+    (a) join the shared docker network,
+    (b) run git setup in the container before invoking claude,
+    (c) include the git section in the prompt.
     """
 
     def _responses(self, stream_json, session_jsonl, patch_text):
         return {
-            "claude-setup.sh": {"output": "+ installed\n", "returncode": 0},
+            "cb-setup.sh": {"output": "+ installed\n", "returncode": 0},
             "claude --verbose": {"output": "", "returncode": 0},
             "claude-stream.jsonl": {"output": stream_json, "returncode": 0},
             "find /tmp/claude-cfg/projects": {"output": session_jsonl, "returncode": 0},
             "patch.txt": {"output": patch_text, "returncode": 0},
         }
 
-    def test_git_setup_runs_when_git_enabled(
-        self, fake_env_factory, stream_json_success, session_jsonl_one_turn
-    ):
+    def test_git_setup_runs_when_git_enabled(self, fake_env_factory, stream_json_success, session_jsonl_one_turn):
         env = fake_env_factory(self._responses(stream_json_success, session_jsonl_one_turn, ""))
         captured: dict[str, object] = {}
 
@@ -302,9 +297,7 @@ class TestAdapterGitWiring:
         assert "git remote add team git://cooperbench-git:9418/abc/repo.git" in joined
         assert "git checkout -b agent1" in joined
 
-    def test_git_setup_skipped_when_git_disabled(
-        self, fake_env_factory, stream_json_success, session_jsonl_one_turn
-    ):
+    def test_git_setup_skipped_when_git_disabled(self, fake_env_factory, stream_json_success, session_jsonl_one_turn):
         env = fake_env_factory(self._responses(stream_json_success, session_jsonl_one_turn, ""))
 
         with mock_patch(
@@ -351,11 +344,7 @@ class TestResolveCredentials:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
         path = tmp_path / "creds.json"
-        path.write_text(
-            json.dumps(
-                {"claudeAiOauth": {"accessToken": "oat-from-file", "expiresAt": 9999999999000}}
-            )
-        )
+        path.write_text(json.dumps({"claudeAiOauth": {"accessToken": "oat-from-file", "expiresAt": 9999999999000}}))
         creds = resolve_credentials(credentials_path=path)
         assert creds == {"CLAUDE_CODE_OAUTH_TOKEN": "oat-from-file"}
 
@@ -389,7 +378,7 @@ class TestAdapterRun:
 
     def _responses(self, stream_json, session_jsonl, patch_text, *, install_rc=0):
         return {
-            "claude-setup.sh": {"output": "+ claude installed\n", "returncode": install_rc},
+            "cb-setup.sh": {"output": "+ claude installed\n", "returncode": install_rc},
             "claude --verbose": {"output": "", "returncode": 0},
             "claude-stream.jsonl": {"output": stream_json, "returncode": 0},
             "find /tmp/claude-cfg/projects": {"output": session_jsonl, "returncode": 0},
@@ -429,9 +418,7 @@ class TestAdapterRun:
         assert env.cleaned is True
 
     def test_invocation_includes_required_flags(self, fake_env_factory, stream_json_success, session_jsonl_one_turn):
-        env = fake_env_factory(
-            self._responses(stream_json_success, session_jsonl_one_turn, "")
-        )
+        env = fake_env_factory(self._responses(stream_json_success, session_jsonl_one_turn, ""))
 
         with mock_patch(
             "cooperbench.agents.claude_code.adapter._build_environment",
@@ -457,14 +444,12 @@ class TestAdapterRun:
         # instruction landed in one of the heredoc-write commands.
         assert any("implement feature X" in c for c in env.executed)
         # And that the claude command reads the instruction from that file.
-        assert "claude-instruction.txt" in claude_cmd
+        assert "cb-instruction.txt" in claude_cmd
 
     def test_model_name_propagated_via_env_in_invocation(
         self, fake_env_factory, stream_json_success, session_jsonl_one_turn
     ):
-        env = fake_env_factory(
-            self._responses(stream_json_success, session_jsonl_one_turn, "")
-        )
+        env = fake_env_factory(self._responses(stream_json_success, session_jsonl_one_turn, ""))
 
         with mock_patch(
             "cooperbench.agents.claude_code.adapter._build_environment",
@@ -485,9 +470,7 @@ class TestAdapterRun:
         assert "anthropic/claude-sonnet-4-6" not in claude_cmd
 
     def test_error_status_when_install_fails(self, fake_env_factory):
-        env = fake_env_factory(
-            {"claude-setup.sh": {"output": "npm: command not found", "returncode": 127}}
-        )
+        env = fake_env_factory({"cb-setup.sh": {"output": "npm: command not found", "returncode": 127}})
 
         with mock_patch(
             "cooperbench.agents.claude_code.adapter._build_environment",
@@ -505,12 +488,8 @@ class TestAdapterRun:
         assert result.patch == ""
         assert env.cleaned is True
 
-    def test_empty_patch_when_agent_writes_no_file(
-        self, fake_env_factory, stream_json_success, session_jsonl_one_turn
-    ):
-        env = fake_env_factory(
-            self._responses(stream_json_success, session_jsonl_one_turn, "")
-        )
+    def test_empty_patch_when_agent_writes_no_file(self, fake_env_factory, stream_json_success, session_jsonl_one_turn):
+        env = fake_env_factory(self._responses(stream_json_success, session_jsonl_one_turn, ""))
 
         with mock_patch(
             "cooperbench.agents.claude_code.adapter._build_environment",

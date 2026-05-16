@@ -10,14 +10,8 @@ but reuses CooperBench's existing ``DockerEnvironment`` from
 ``mini_swe_agent_v2`` so the container lifecycle, image pulling, and
 ``execute()`` semantics are consistent with the other adapters.
 
-Coop support: when ``agents`` has 2+ entries and ``comm_url`` is set,
-the adapter copies ``coop_msg.py`` into the container and exposes
-``coop-send``/``coop-recv``/``coop-broadcast``/``coop-peek``/``coop-agents``
-as shell commands.  Claude Code learns about them from the coop variant
-of the prompt template.  Inter-agent messages are still routed through
-the host Redis instance — we rewrite ``localhost`` to
-``host.docker.internal`` (and pass ``--add-host=host.docker.internal:host-gateway``)
-so the container can reach the host daemon on Linux.
+Coop + git support: see ``cooperbench.agents._coop`` for the shared
+helpers (messaging, prompt blocks, git remote setup).
 """
 
 from __future__ import annotations
@@ -27,11 +21,28 @@ import logging
 import os
 import shlex
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from cooperbench.agents import AgentResult
+from cooperbench.agents._coop import (
+    build_git_setup_command,
+    build_instruction,
+    parse_sent_messages_log,
+    rewrite_comm_url_for_container,
+)
+from cooperbench.agents._coop.runtime import (
+    CONTAINER_COOP_MSG_PATH,
+    CONTAINER_COOP_SEND_LOG,
+    CONTAINER_INSTRUCTION_PATH,
+    CONTAINER_REPO_PATH,
+    CONTAINER_SETUP_PATH,
+    ContainerEnv,
+    build_environment,
+    normalize_patch,
+    read_file_from_container,
+    write_file_in_container,
+)
 from cooperbench.agents.claude_code.parsers import parse_session_jsonl, parse_stream_json
-from cooperbench.agents.claude_code.prompt import build_instruction
 from cooperbench.agents.registry import register
 
 logger = logging.getLogger(__name__)
@@ -39,17 +50,13 @@ logger = logging.getLogger(__name__)
 
 _PACKAGE_DIR = Path(__file__).parent
 SETUP_SCRIPT_PATH = _PACKAGE_DIR / "setup.sh"
-COOP_MSG_SCRIPT_PATH = _PACKAGE_DIR / "coop_msg.py"
+COOP_MSG_SCRIPT_PATH = _PACKAGE_DIR.parent / "_coop" / "coop_msg.py"
+COOP_INSTALL_SNIPPET_PATH = _PACKAGE_DIR.parent / "_coop" / "install_snippet.sh"
 
 # Inside the container, we redirect Claude Code's per-session state under
 # /tmp so we always know where to find the JSONL trajectory after the run.
 CONTAINER_CLAUDE_CONFIG_DIR = "/tmp/claude-cfg"
 CONTAINER_STREAM_LOG = "/tmp/claude-stream.jsonl"
-CONTAINER_SETUP_PATH = "/tmp/claude-setup.sh"
-CONTAINER_INSTRUCTION_PATH = "/tmp/claude-instruction.txt"
-CONTAINER_COOP_MSG_PATH = "/tmp/claude-coop-msg.py"
-CONTAINER_COOP_SEND_LOG = "/tmp/claude-coop-sent.jsonl"
-CONTAINER_REPO_PATH = "/workspace/repo"
 
 DEFAULT_CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
 
@@ -85,104 +92,6 @@ def resolve_credentials(*, credentials_path: Path | None = None) -> dict[str, st
     if isinstance(token, str) and token.strip():
         return {"CLAUDE_CODE_OAUTH_TOKEN": token.strip()}
     return {}
-
-
-def rewrite_comm_url_for_container(url: str | None) -> str | None:
-    """Make a host-side Redis URL reachable from inside the agent container.
-
-    ``localhost`` and ``127.0.0.1`` point at the container itself, not
-    the host where the coop runner started Redis.  Substitute
-    ``host.docker.internal``, which resolves to the host gateway when
-    the container is started with ``--add-host=host.docker.internal:host-gateway``
-    (Linux) or natively on Docker Desktop (macOS/Windows).
-    """
-    if not url:
-        return url
-    # Use string substitution rather than urlparse to preserve the
-    # ``#run:<id>`` fragment that the MessagingConnector relies on.
-    for needle in ("//localhost", "//127.0.0.1"):
-        if needle in url:
-            return url.replace(needle, "//host.docker.internal", 1)
-    return url
-
-
-def build_git_setup_command(*, agent_id: str, server_url: str) -> str:
-    """Shell snippet that configures the in-container repo as a participant
-    in the shared git remote.
-
-    Mirrors mini_swe_agent_v2's ``GitConnector.setup`` but emitted as a
-    single ``bash -lc``-friendly string so it can be exec'd through the
-    same ``env.execute`` channel as everything else.  Idempotent: re-running
-    is safe (set-url replaces remote if it already exists; branch checkout
-    falls back to checkout if it already exists).
-    """
-    server = shlex.quote(server_url)
-    aid = shlex.quote(agent_id)
-    branch = shlex.quote(agent_id)
-    return (
-        f"cd {shlex.quote(CONTAINER_REPO_PATH)} && "
-        f"git config user.email 'agent@cooperbench.local' && "
-        f"git config user.name {aid} && "
-        f"(git remote add team {server} 2>/dev/null || git remote set-url team {server}) && "
-        f"(git checkout -b {branch} 2>/dev/null || git checkout {branch}) && "
-        f"git push -u team {branch} --force && "
-        "git push team HEAD:refs/heads/main --force 2>/dev/null || true"
-    )
-
-
-def parse_sent_messages_log(text: str) -> list[dict[str, Any]]:
-    """Parse the in-container coop send-log into a list of message dicts."""
-    out: list[dict[str, Any]] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or not line.startswith("{"):
-            continue
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return out
-
-
-class _Env(Protocol):
-    """Minimal interface we need from the environment.
-
-    Defined as a Protocol (not imported from mini_swe_agent_v2) so unit
-    tests can stub in a tiny fake without instantiating Docker.
-    """
-
-    def execute(self, action: dict, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]: ...
-    def cleanup(self) -> None: ...
-
-
-def _build_environment(
-    image: str,
-    *,
-    network: str | None = None,
-    extra_run_args: list[str] | None = None,
-    timeout: int = 7200,
-) -> _Env:
-    """Spin up a long-lived Docker container for the run.
-
-    Factored out so tests can monkey-patch this to inject a fake env.
-    ``extra_run_args`` are appended to ``docker run`` (e.g. host-gateway
-    mapping for coop).
-    """
-    from cooperbench.agents.mini_swe_agent_v2.environments.docker import DockerEnvironment
-
-    run_args = ["--rm"]
-    if extra_run_args:
-        run_args.extend(extra_run_args)
-
-    kwargs: dict[str, Any] = {
-        "image": image,
-        "cwd": CONTAINER_REPO_PATH,
-        "timeout": timeout,
-        "run_args": run_args,
-    }
-    if network:
-        kwargs["network"] = network
-    return DockerEnvironment(**kwargs)
 
 
 def _strip_provider_prefix(model_name: str) -> str:
@@ -238,25 +147,7 @@ def _build_claude_command(
     )
 
 
-def _write_file_in_container(env: _Env, path: str, content: str) -> dict[str, Any]:
-    """Write a file inside the container via a heredoc.
-
-    Using a sentinel that's unlikely to appear in either instruction text
-    or shell scripts.
-    """
-    sentinel = "COOPERBENCH_HEREDOC_EOF_5e7b"
-    cmd = f"cat > {shlex.quote(path)} <<'{sentinel}'\n{content}\n{sentinel}\n"
-    return env.execute({"command": cmd})
-
-
-def _read_file_from_container(env: _Env, path: str) -> str:
-    result = env.execute({"command": f"cat {shlex.quote(path)} 2>/dev/null"})
-    if result.get("returncode") == 0:
-        return result.get("output") or ""
-    return ""
-
-
-def _find_session_jsonl(env: _Env) -> str:
+def _find_session_jsonl(env: ContainerEnv) -> str:
     """Concatenate every session ``*.jsonl`` produced under CLAUDE_CONFIG_DIR.
 
     Claude Code writes one file per session; there will normally be
@@ -269,14 +160,18 @@ def _find_session_jsonl(env: _Env) -> str:
     return ""
 
 
+# Test-time shims: the existing test suite monkey-patches
+# ``cooperbench.agents.claude_code.adapter._build_environment``, so keep a
+# module-level alias that forwards to the shared helper.
+_build_environment = build_environment
+
+
 @register("claude_code")
 class ClaudeCodeRunner:
     """Adapter for the official Claude Code CLI.
 
-    Supports solo and coop runs.  Git collaboration (push/pull/merge via
-    a shared remote) is not yet wired — the adapter joins the shared
-    docker network if ``git_network`` is set in ``config`` so a follow-up
-    can layer on top.
+    Supports solo, coop (Redis messaging), and coop + git (shared
+    ``team`` remote against the ``cooperbench-git`` server).
     """
 
     def run(
@@ -346,13 +241,15 @@ class ClaudeCodeRunner:
         sent_log_text = ""
 
         try:
-            # 1. Drop the coop helper (if needed) BEFORE running setup.sh
-            #    so setup can symlink the coop-* wrappers under /usr/local/bin.
+            # 1. Drop the coop helper + install snippet (if coop) BEFORE
+            #    running setup.sh so setup can create the coop-* wrappers
+            #    under /usr/local/bin.
             if coop_msg_source is not None:
-                _write_file_in_container(env, CONTAINER_COOP_MSG_PATH, coop_msg_source)
+                write_file_in_container(env, CONTAINER_COOP_MSG_PATH, coop_msg_source)
+                write_file_in_container(env, "/tmp/cb-coop-install.sh", COOP_INSTALL_SNIPPET_PATH.read_text())
 
             # 2. Install claude-code in the container.
-            _write_file_in_container(env, CONTAINER_SETUP_PATH, setup_script)
+            write_file_in_container(env, CONTAINER_SETUP_PATH, setup_script)
             install = env.execute(
                 {"command": f"bash {shlex.quote(CONTAINER_SETUP_PATH)}"},
                 timeout=600,
@@ -375,7 +272,7 @@ class ClaudeCodeRunner:
                     )
 
             # 3. Write the instruction to a file and invoke claude.
-            _write_file_in_container(env, CONTAINER_INSTRUCTION_PATH, instruction)
+            write_file_in_container(env, CONTAINER_INSTRUCTION_PATH, instruction)
             cred_exports = "".join(f"export {k}={shlex.quote(v)}; " for k, v in credentials.items())
             invoke_cmd = cred_exports + _build_claude_command(
                 CONTAINER_INSTRUCTION_PATH,
@@ -387,11 +284,11 @@ class ClaudeCodeRunner:
             env.execute({"command": invoke_cmd}, timeout=7200)
 
             # 4. Collect outputs.
-            stream_text = _read_file_from_container(env, CONTAINER_STREAM_LOG)
+            stream_text = read_file_from_container(env, CONTAINER_STREAM_LOG)
             session_text = _find_session_jsonl(env)
-            patch_text = _read_file_from_container(env, f"{CONTAINER_REPO_PATH}/patch.txt").strip()
+            patch_text = normalize_patch(read_file_from_container(env, f"{CONTAINER_REPO_PATH}/patch.txt"))
             if is_coop:
-                sent_log_text = _read_file_from_container(env, CONTAINER_COOP_SEND_LOG)
+                sent_log_text = read_file_from_container(env, CONTAINER_COOP_SEND_LOG)
         except Exception as e:
             error_msg = str(e)
             logger.exception("Claude Code adapter run failed")

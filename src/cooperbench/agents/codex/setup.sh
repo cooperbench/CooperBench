@@ -1,8 +1,6 @@
 #!/bin/bash
-# Installs Claude Code into the task container.
-# The shared coop helper install runs inline below (we ship the snippet
-# in /tmp/cb-coop-install.sh from the adapter so we don't need network
-# access to fetch it).
+# Installs the @openai/codex CLI into the task container.
+# Same shape as the Claude Code setup script — apt + nvm/node + npm.
 set -e
 
 if command -v apt-get >/dev/null 2>&1; then
@@ -19,11 +17,11 @@ if ! command -v npm >/dev/null 2>&1; then
     apt-get install -y --no-install-recommends nodejs >/dev/null
 fi
 
-VERSION="${CLAUDE_CODE_VERSION:-latest}"
-npm install -g --silent "@anthropic-ai/claude-code@${VERSION}"
-claude --version
+VERSION="${CODEX_VERSION:-latest}"
+npm install -g --silent "@openai/codex@${VERSION}"
+codex --version
 
-# Coop helper install (no-op when /tmp/cb-coop-msg.py is absent, i.e. solo).
+# Shared coop install (no-op when /tmp/cb-coop-msg.py is absent, i.e. solo).
 if [ -f /tmp/cb-coop-install.sh ]; then
     bash /tmp/cb-coop-install.sh
 fi
