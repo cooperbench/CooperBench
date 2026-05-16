@@ -106,6 +106,7 @@ AGENT_SHORTHANDS = {
     "mini_swe_agent_v2": "msa_v2",
     "swe_agent": "sw",
     "openhands_sdk": "oh",
+    "claude_code": "cc",
 }
 
 
