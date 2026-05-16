@@ -23,6 +23,7 @@ from cooperbench.infra.redis import ensure_redis
 from cooperbench.runner.coop import execute_coop
 from cooperbench.runner.solo import execute_solo
 from cooperbench.runner.tasks import discover_tasks
+from cooperbench.runner.team import execute_team
 from cooperbench.utils import console
 
 install_cleanup_handler = None
@@ -96,6 +97,7 @@ def run(
     bench_start_time = time.time()
     is_single = len(tasks) == 1
     is_solo = setting == "solo"
+    is_team = setting == "team"
 
     _print_header(
         run_name, setting, tasks, agent, model_name, concurrency, is_single, is_solo, git_enabled, messaging_enabled
@@ -131,6 +133,24 @@ def run(
                 model_name=model_name,
                 force=force,
                 quiet=not is_single,
+                backend=backend,
+                agent_config=agent_config,
+                dataset_dir=dataset_dir,
+                logs_dir=logs_dir,
+            )
+        elif is_team:
+            return execute_team(
+                repo_name=task_info["repo"],
+                task_id=task_info["task_id"],
+                features=task_info["features"],
+                run_name=run_name,
+                agent_name=agent,
+                model_name=model_name,
+                redis_url=redis_url,
+                force=force,
+                quiet=not is_single,
+                git_enabled=git_enabled,
+                messaging_enabled=messaging_enabled,
                 backend=backend,
                 agent_config=agent_config,
                 dataset_dir=dataset_dir,

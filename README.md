@@ -84,11 +84,14 @@ cooperbench prepare
 Run agents on a task:
 
 ```bash
-# Run cooperative agents (2 agents, shared communication)
+# Run cooperative agents (N peers, shared Redis messaging)
 cooperbench run -n my-experiment -r llama_index_task -m gpt-4o
 
 # Run solo agent (1 agent handling both features)
 cooperbench run -n my-experiment -r llama_index_task -m gpt-4o --setting solo
+
+# Run team mode (lead + members, shared task list + scratchpad)
+cooperbench run -n my-experiment -r llama_index_task -m gpt-4o --setting team
 
 # Evaluate results
 cooperbench eval -n my-experiment
@@ -104,12 +107,40 @@ run(
     run_name="my-experiment",
     repo="llama_index_task",
     model_name="gpt-4o",
-    setting="coop",  # or "solo"
+    setting="coop",  # or "solo", "team"
 )
 
 # Evaluate patches
 evaluate(run_name="my-experiment")
 ```
+
+## Settings: solo / coop / team
+
+CooperBench supports three settings, selected via `--setting`:
+
+- **`solo`** — one agent implements every feature in the task.  The
+  agent works alone in a single container; no Redis, no git server.
+- **`coop`** — N peer agents, each assigned one feature.  Containers
+  talk via Redis (`coop-send` / `coop-recv` shell commands inside the
+  container, auto-injected as user messages in the Python-loop
+  adapters).  Optional `--git` enables a shared `team` git remote so
+  agents can fetch/merge each other's branches.
+- **`team`** — N agents organized as one **lead** + N-1 **members**,
+  with a Redis-backed shared **task list** (atomic claim via
+  `coop-task-claim`), a shared **scratchpad** volume mounted at
+  `/workspace/shared` in every container, and role-specific system
+  prompts.  The lead's prompt directs them to organize work via
+  `coop-task-create` / `coop-task-list` before coding; members claim
+  open tasks and report progress via `coop-task-update`.
+
+Team-mode result.json includes a `metrics` block with coordination
+indicators computed from the task-list audit log: `tasks_total`,
+`tasks_done`, `unowned_at_end`, `time_to_first_claim_seconds`,
+`claims_per_agent`, `updates_per_agent`.
+
+All three settings are evaluated the same way (`cooperbench eval`):
+per-feature tests against either the single agent's patch (solo) or
+each agent's individual patch (coop / team).
 
 ## Running with Harbor
 

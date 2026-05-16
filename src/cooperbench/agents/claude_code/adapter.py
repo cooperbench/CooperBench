@@ -42,6 +42,7 @@ from cooperbench.agents._coop.runtime import (
     read_file_from_container,
     write_file_in_container,
 )
+from cooperbench.agents._team import build_team_env, build_team_instruction, scratchpad_mount_args
 from cooperbench.agents.claude_code.parsers import parse_session_jsonl, parse_stream_json
 from cooperbench.agents.registry import register
 
@@ -52,6 +53,10 @@ _PACKAGE_DIR = Path(__file__).parent
 SETUP_SCRIPT_PATH = _PACKAGE_DIR / "setup.sh"
 COOP_MSG_SCRIPT_PATH = _PACKAGE_DIR.parent / "_coop" / "coop_msg.py"
 COOP_INSTALL_SNIPPET_PATH = _PACKAGE_DIR.parent / "_coop" / "install_snippet.sh"
+TEAM_TASK_SCRIPT_PATH = _PACKAGE_DIR.parent / "_team" / "coop_task.py"
+TEAM_INSTALL_SNIPPET_PATH = _PACKAGE_DIR.parent / "_team" / "install_snippet.sh"
+CONTAINER_TEAM_TASK_PATH = "/tmp/cb-coop-task.py"
+CONTAINER_TEAM_INSTALL_PATH = "/tmp/cb-team-install.sh"
 
 # Inside the container, we redirect Claude Code's per-session state under
 # /tmp so we always know where to find the JSONL trajectory after the run.
@@ -189,6 +194,9 @@ class ClaudeCodeRunner:
         config: dict | None = None,
         agent_config: str | None = None,
         log_dir: str | None = None,
+        team_role: str | None = None,
+        team_id: str | None = None,
+        task_list_url: str | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         del agent_config, kwargs  # external-agent-config not yet wired
@@ -204,14 +212,26 @@ class ClaudeCodeRunner:
 
         is_coop = bool(messaging_enabled and comm_url and agents and len(agents) > 1)
         use_git = bool(git_enabled and git_server_url and agents and len(agents) > 1)
-        instruction = build_instruction(
-            task,
-            agents=agents if is_coop else None,
-            agent_id=agent_id if is_coop else None,
-            git_enabled=use_git,
-        )
+        is_team = bool(team_role and team_id and task_list_url and agents and len(agents) > 1)
+
+        if is_team:
+            instruction = build_team_instruction(
+                task,
+                agents=agents,
+                agent_id=agent_id,
+                team_role=team_role,
+                git_enabled=use_git,
+            )
+        else:
+            instruction = build_instruction(
+                task,
+                agents=agents if is_coop else None,
+                agent_id=agent_id if is_coop else None,
+                git_enabled=use_git,
+            )
         setup_script = SETUP_SCRIPT_PATH.read_text()
         coop_msg_source = COOP_MSG_SCRIPT_PATH.read_text() if is_coop else None
+        team_task_source = TEAM_TASK_SCRIPT_PATH.read_text() if is_team else None
 
         coop_env: dict[str, str] = {}
         extra_run_args: list[str] = []
@@ -224,6 +244,21 @@ class ClaudeCodeRunner:
                 "COOP_LOG_PATH": CONTAINER_COOP_SEND_LOG,
             }
             extra_run_args.append("--add-host=host.docker.internal:host-gateway")
+        if is_team:
+            team_container_url = rewrite_comm_url_for_container(task_list_url) or ""
+            coop_env.update(
+                build_team_env(
+                    redis_url=team_container_url,
+                    run_id=team_id or "",
+                    agent_id=agent_id,
+                    agents=agents or [],
+                    team_role=team_role,
+                )
+            )
+            team_volume = (config or {}).get("team_volume") if isinstance(config, dict) else None
+            extra_run_args.extend(scratchpad_mount_args(team_volume))
+            if "--add-host=host.docker.internal:host-gateway" not in extra_run_args:
+                extra_run_args.append("--add-host=host.docker.internal:host-gateway")
 
         max_turns = config.get("max_turns")
         extra_flags = ""
@@ -243,10 +278,14 @@ class ClaudeCodeRunner:
         try:
             # 1. Drop the coop helper + install snippet (if coop) BEFORE
             #    running setup.sh so setup can create the coop-* wrappers
-            #    under /usr/local/bin.
+            #    under /usr/local/bin.  Drop the team helper too if in
+            #    team mode; the install snippets are independent.
             if coop_msg_source is not None:
                 write_file_in_container(env, CONTAINER_COOP_MSG_PATH, coop_msg_source)
                 write_file_in_container(env, "/tmp/cb-coop-install.sh", COOP_INSTALL_SNIPPET_PATH.read_text())
+            if team_task_source is not None:
+                write_file_in_container(env, CONTAINER_TEAM_TASK_PATH, team_task_source)
+                write_file_in_container(env, CONTAINER_TEAM_INSTALL_PATH, TEAM_INSTALL_SNIPPET_PATH.read_text())
 
             # 2. Install claude-code in the container.
             write_file_in_container(env, CONTAINER_SETUP_PATH, setup_script)

@@ -40,9 +40,21 @@ class MiniSweAgentV2Runner:
         config: dict | None = None,
         agent_config: str | None = None,
         log_dir: str | None = None,
+        team_role: str | None = None,
+        team_id: str | None = None,
+        task_list_url: str | None = None,
         **kwargs,
     ) -> AgentResult:
-        """Run mini-swe-agent v2 on a task."""
+        """Run mini-swe-agent v2 on a task.
+
+        Team-mode kwargs (``team_role``, ``team_id``, ``task_list_url``)
+        are accepted so the adapter is API-compatible with the team
+        runner, but their effect today is limited: the prompt switches
+        to the team-mode block via ``build_team_instruction`` so the
+        agent learns about the ``coop-task-*`` CLI, but the in-loop
+        auto-refresh hook lands in a follow-up PR.
+        """
+        del team_role, team_id, task_list_url  # see docstring
         # Load coop config when multiple agents, otherwise solo config.
         is_coop = bool(agents) and len(agents) > 1
         config_name = "coop" if is_coop else "solo"
