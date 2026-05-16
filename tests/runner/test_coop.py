@@ -23,9 +23,7 @@ class TestExtractConversation:
             "agent1": {
                 "feature_id": 1,
                 "messages": [
-                    _msg("assistant",
-                         'send_message agent2 "lets coordinate"',
-                         ts=1.0),
+                    _msg("assistant", 'send_message agent2 "lets coordinate"', ts=1.0),
                 ],
             },
         }
@@ -43,9 +41,7 @@ class TestExtractConversation:
             "agent2": {
                 "feature_id": 2,
                 "messages": [
-                    _msg("user",
-                         "[Message from agent1]: hi from agent1",
-                         ts=2.0),
+                    _msg("user", "[Message from agent1]: hi from agent1", ts=2.0),
                 ],
             },
         }
@@ -76,8 +72,7 @@ class TestSortDoesNotCrashOnMixedTimestampTypes:
     def test_mixed_int_float_string_timestamps_sort_cleanly(self):
         conversation = [
             {"from": "agent1", "to": "agent2", "message": "a", "timestamp": 1.5},
-            {"from": "agent2", "to": "agent1", "message": "b",
-             "timestamp": "2026-05-13T22:47:00Z"},
+            {"from": "agent2", "to": "agent1", "message": "b", "timestamp": "2026-05-13T22:47:00Z"},
             {"from": "agent1", "to": "agent2", "message": "c", "timestamp": 3},
             {"from": "agent2", "to": "agent1", "message": "d", "timestamp": None},
             {"from": "agent1", "to": "agent2", "message": "e"},  # no ts at all
@@ -87,11 +82,7 @@ class TestSortDoesNotCrashOnMixedTimestampTypes:
         assert len(sorted_msgs) == 5
         # Numeric timestamps sort in order; unparseable strings + None +
         # missing all coerce to 0.0 and end up at the front (stable order).
-        floats = [
-            float(m["timestamp"])
-            for m in sorted_msgs
-            if isinstance(m.get("timestamp"), (int, float))
-        ]
+        floats = [float(m["timestamp"]) for m in sorted_msgs if isinstance(m.get("timestamp"), (int, float))]
         assert floats == sorted(floats)
 
     def test_received_messages_excluded_before_sort(self):
@@ -100,8 +91,7 @@ class TestSortDoesNotCrashOnMixedTimestampTypes:
         same crash on adversarial inputs."""
         conversation = [
             {"from": "agent1", "to": "agent2", "message": "out", "timestamp": 1.0},
-            {"from": "agent2", "to": "agent1", "message": "in",
-             "timestamp": "garbage", "received": True},
+            {"from": "agent2", "to": "agent1", "message": "in", "timestamp": "garbage", "received": True},
         ]
         sorted_msgs = self._sort_like_production(conversation)
         assert len(sorted_msgs) == 1

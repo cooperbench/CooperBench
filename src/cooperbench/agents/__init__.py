@@ -107,6 +107,7 @@ AGENT_SHORTHANDS = {
     "swe_agent": "sw",
     "openhands_sdk": "oh",
     "claude_code": "cc",
+    "codex": "cx",
 }
 
 
