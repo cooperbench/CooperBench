@@ -131,17 +131,20 @@ class TestOpenHandsImageLayering:
             sandbox_create.return_value.tunnels.return_value = {8000: MagicMock(url="https://stub")}
             ctx.__enter__()
 
-        # add_local_file is called twice in team mode: once for the
-        # coop-task-* CLI helper, once for the CoopTaskTracker tool
-        # definition that gets injected into the sandbox's openhands
-        # install so RemoteConversation can resolve the tool name.
-        assert base_image.add_local_file.call_count == 2
+        # add_local_file is called THREE times in team mode:
+        #   1. coop-task-* CLI helper
+        #   2. CoopTaskTracker definition (drops into openhands install)
+        #   3. Replacement __init__.py for the task_tracker package
+        #      (forces the coop_definition import at openhands startup)
+        assert base_image.add_local_file.call_count == 3
         sources = [call.args[0] for call in base_image.add_local_file.call_args_list]
         destinations = [call.args[1] for call in base_image.add_local_file.call_args_list]
         assert any("coop_task.py" in s for s in sources)
         assert any("coop_definition.py" in s for s in sources)
+        assert any("_team_init_override.py" in s for s in sources)
         assert "/usr/local/bin/cb-coop-task.py" in destinations
         assert "/tmp/cb-coop-tracker.py" in destinations
+        assert "/tmp/cb-task-tracker-init.py" in destinations
         # pip_install once for redis.
         base_image.pip_install.assert_called_once_with("redis")
         # Two run_commands layers in the team-mode branch: tool-file
@@ -152,8 +155,11 @@ class TestOpenHandsImageLayering:
         assert "coop-task-$sub" in all_cmds
         assert "cb-coop-task.py" in all_cmds
         assert "coop_definition.py" in all_cmds
-        # Side-effect import must be appended to the package __init__.
-        assert "from . import coop_definition" in all_cmds
+        # The replacement __init__.py is copied into place to override
+        # the upstream registration with our coop_definition import.
+        assert "cb-task-tracker-init.py" in all_cmds
+        # pyc caches must be wiped so the new __init__ takes effect.
+        assert "*.pyc" in all_cmds
 
     def test_no_layering_when_team_inactive(self):
         """Solo / coop runs must NOT pay the image-build cost."""

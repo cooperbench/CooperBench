@@ -96,6 +96,26 @@ def execute_team(  # noqa: PLR0915  (long but linear; refactor lands in a follow
         if not agents_had_error:
             return {"skipped": True, **prev_result}
 
+    # openhands_sdk runs the agent-server in a Modal sandbox that's
+    # network-isolated from our host.  When team mode targets it, we
+    # spin up a Modal-hosted Redis (a separate sandbox with redis-
+    # server on an unencrypted port tunnel) and route BOTH the host
+    # TaskListClient and every agent at the same public TCP endpoint.
+    # Other adapters keep using the local Redis.
+    modal_redis = None
+    if agent_name == "openhands_sdk":
+        if not quiet:
+            console.print("  [dim]redis[/dim] starting Modal-hosted instance...")
+        modal_app = modal.App.lookup("cooperbench", create_if_missing=True)
+        from cooperbench.agents.openhands_agent_sdk.connectors.redis_server import (
+            ModalRedisServer,
+        )
+
+        modal_redis = ModalRedisServer.create(app=modal_app, run_id=run_id, agents=agents)
+        redis_url = modal_redis.url  # host + agents both use this
+        if not quiet:
+            console.print(f"  [dim]redis[/dim] [green]ready[/green] {redis_url}")
+
     namespaced_redis = f"{redis_url}#run:{run_id}"
     team_volume = f"{TEAM_VOLUME_PREFIX}-{run_id}"
 
@@ -200,6 +220,8 @@ def execute_team(  # noqa: PLR0915  (long but linear; refactor lands in a follow
     finally:
         if git_server:
             git_server.cleanup()
+        if modal_redis is not None:
+            modal_redis.cleanup()
 
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
@@ -239,12 +261,17 @@ def execute_team(  # noqa: PLR0915  (long but linear; refactor lands in a follow
                 default=str,
             )
 
-    # Harvest task list audit + metrics.
+    # Harvest task list audit + metrics.  Re-open the Redis connection
+    # because the original one may have dropped during the agent run
+    # (especially Modal-hosted Redis, where TCP keepalive across the
+    # tunnel isn't always reliable over a 10-minute idle).
     metrics: dict | None = None
     if task_list is not None:
         try:
-            events = task_list.log_events()
-            final_tasks = task_list.list()
+            fresh = _redis_client(redis_url)
+            harvest_list = TaskListClient(redis_client=fresh, run_id=run_id)
+            events = harvest_list.log_events()
+            final_tasks = harvest_list.list()
             metrics = compute_metrics(events, final_tasks=final_tasks)
             with open(log_dir / "task_log.json", "w") as f:
                 json.dump(events, f, indent=2, default=str)

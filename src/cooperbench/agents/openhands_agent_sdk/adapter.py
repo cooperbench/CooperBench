@@ -749,6 +749,9 @@ class ModalSandboxContext:
                 _Path(__file__).resolve().parent / "openhands-tools" / "openhands" / "tools"
             )
             coop_tracker_path = _oh_tools_dir / "task_tracker" / "coop_definition.py"
+            # Replacement __init__.py imports coop_definition so the
+            # registration overrides the upstream local TaskTracker.
+            init_override_path = _oh_tools_dir / "task_tracker" / "_team_init_override.py"
             image = (
                 image.add_local_file(
                     str(coop_task_path),
@@ -758,6 +761,11 @@ class ModalSandboxContext:
                 .add_local_file(
                     str(coop_tracker_path),
                     "/tmp/cb-coop-tracker.py",
+                    copy=True,
+                )
+                .add_local_file(
+                    str(init_override_path),
+                    "/tmp/cb-task-tracker-init.py",
                     copy=True,
                 )
                 .pip_install("redis")
@@ -771,10 +779,21 @@ class ModalSandboxContext:
                 # injection plumbing here keeps the code path ready
                 # for the Redis-reachability follow-up.
                 .run_commands(
+                    # 1. Drop the tool file into the openhands install.
+                    # 2. Replace the package __init__.py with the
+                    #    pre-rendered override that imports
+                    #    coop_definition (overriding the local
+                    #    TaskTracker registration).  Using a pre-rendered
+                    #    file via add_local_file (not a shell heredoc)
+                    #    avoids quoting fragility.
+                    # 3. Delete any cached .pyc files so Python
+                    #    recompiles the new __init__ on next import.
                     'OH_DIR="$(python3 -c \'import openhands.tools.task_tracker as t, os; print(os.path.dirname(t.__file__))\')"; '
                     'cp /tmp/cb-coop-tracker.py "$OH_DIR/coop_definition.py" && '
-                    'grep -q coop_definition "$OH_DIR/__init__.py" || '
-                    'echo "from . import coop_definition  # noqa: F401" >> "$OH_DIR/__init__.py"'
+                    'cp /tmp/cb-task-tracker-init.py "$OH_DIR/__init__.py" && '
+                    'find "$OH_DIR" -name "*.pyc" -delete; '
+                    'find "$OH_DIR" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true; '
+                    "echo INIT_PATCHED"
                 )
                 .run_commands(
                     # Create one wrapper per coop-task-* subcommand.
