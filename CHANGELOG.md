@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`team` setting** alongside `solo` and `coop`.  N agents organized
+  as one lead + N-1 members, with a Redis-backed shared task list
+  (atomic claim via `coop-task-claim`), a shared scratchpad volume
+  mounted at `/workspace/shared`, and role-specific prompt blocks.
+  All five existing adapters (`mini_swe_agent_v2`, `swe_agent`,
+  `openhands_sdk`, `claude_code`, `codex`) accept the new `team_role`
+  / `team_id` / `task_list_url` kwargs; CLI adapters install
+  `coop-task-*` shell wrappers next to the existing `coop-*` messaging
+  tools.  Post-run, the task-list audit log is used to compute
+  coordination metrics (`time_to_first_claim_seconds`,
+  `claims_per_agent`, etc.) saved in `result.json`.
+
 ## [0.0.14] - 2026-04-30
 
 ### Changed

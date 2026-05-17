@@ -25,3 +25,7 @@ codex --version
 if [ -f /tmp/cb-coop-install.sh ]; then
     bash /tmp/cb-coop-install.sh
 fi
+# Team task-list install (no-op outside team mode).
+if [ -f /tmp/cb-team-install.sh ]; then
+    bash /tmp/cb-team-install.sh
+fi

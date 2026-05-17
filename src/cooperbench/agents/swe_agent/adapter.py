@@ -38,8 +38,17 @@ class SweAgentRunner:
         config: dict | None = None,
         agent_config: str | None = None,
         log_dir: str | None = None,
+        team_role: str | None = None,
+        team_id: str | None = None,
+        task_list_url: str | None = None,
+        **kwargs,
     ) -> AgentResult:
         """Run SWE-agent on a task.
+
+        Team-mode kwargs (``team_role``, ``team_id``, ``task_list_url``)
+        are accepted for API compatibility; their effect today is limited
+        to swapping in the team-mode prompt block.  The in-loop
+        auto-refresh hook lands in a follow-up PR.
 
         Args:
             task: The task description
@@ -56,6 +65,7 @@ class SweAgentRunner:
         Returns:
             AgentResult with status, patch, cost, steps, messages
         """
+        del team_role, team_id, task_list_url, kwargs  # see docstring
         import litellm
         import modal
         import swerex.deployment.modal as swerex_modal

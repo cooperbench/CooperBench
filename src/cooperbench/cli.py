@@ -157,9 +157,11 @@ def main():
     )
     run_parser.add_argument(
         "--setting",
-        choices=["coop", "solo"],
+        choices=["coop", "solo", "team"],
         default="coop",
-        help="Benchmark setting: coop (2 agents) or solo (1 agent) (default: coop)",
+        help="Benchmark setting: coop (N peers), solo (1 agent), or team "
+        "(N agents with shared task list, lead/member roles, shared "
+        "scratchpad) (default: coop)",
     )
     run_parser.add_argument(
         "--redis",

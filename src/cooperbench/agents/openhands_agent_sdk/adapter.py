@@ -322,8 +322,17 @@ class OpenHandsSDKRunner:
         config: dict[str, Any] | None = None,
         agent_config: str | None = None,
         log_dir: str | None = None,
+        team_role: str | None = None,
+        team_id: str | None = None,
+        task_list_url: str | None = None,
+        **kwargs: Any,
     ) -> AgentResult:
         """Run the OpenHands agent on a task.
+
+        Team-mode kwargs (``team_role``, ``team_id``, ``task_list_url``)
+        are accepted so the OpenHands adapter is API-compatible with the
+        team runner.  In-loop integration with the shared task list
+        lands in a follow-up PR.
         
         Args:
             task: The task description (feature spec)
@@ -341,6 +350,7 @@ class OpenHandsSDKRunner:
         Returns:
             AgentResult with status, patch, cost, steps, messages
         """
+        del team_role, team_id, task_list_url, kwargs  # see docstring
         # Convert to agent-server image if needed
         oh_image = self._get_oh_image(image)
 

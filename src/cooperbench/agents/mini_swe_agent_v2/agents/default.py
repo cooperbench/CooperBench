@@ -133,7 +133,8 @@ class DefaultAgent:
         return self.messages[-1].get("extra", {})
 
     def step(self) -> list[dict]:
-        """Query the LM, execute actions. Polls for inter-agent messages before querying."""
+        """Query the LM, execute actions. Polls for inter-agent messages
+        and (in team mode) the shared task list before querying."""
         # Check for inter-agent messages before querying LLM
         if self.comm:
             messages = self.comm.receive()
@@ -146,6 +147,15 @@ class DefaultAgent:
                         content=f"[Message from {msg['from']}]: {msg['content']}",
                     )
                 )
+        # In team mode, also refresh the shared task list so the LLM
+        # sees the live state of who's working on what before its next
+        # response.  ``team_poller`` is set by the adapter when team
+        # kwargs are present; absent for solo/coop.
+        poller = getattr(self, "team_poller", None)
+        if poller is not None:
+            summary = poller.poll()
+            if summary:
+                self.add_messages(self.model.format_message(role="user", content=summary))
         return self.execute_actions(self.query())
 
     def _get_prompt_tokens(self, message: dict) -> int:
