@@ -36,11 +36,17 @@ def register_default_tools(enable_browser: bool = True) -> None:
 
 def get_default_tools(
     enable_browser: bool = True,
+    team_mode: bool = False,  # noqa: ARG001 — kept for API stability + tests
 ) -> list[Tool]:
     """Get the default set of tool specifications for the standard experience.
 
     Args:
         enable_browser: Whether to include browser tools.
+        team_mode: Accepted but currently unused.  Team-mode swap of the
+            TaskTracker tool happens *server-side* via the .pth-driven
+            import of ``coop_definition.py`` in the Modal sandbox, which
+            re-registers ``TaskTrackerTool`` to point at the Redis-backed
+            executor.  Keeping this kwarg for tests + future use.
     """
     register_default_tools(enable_browser=enable_browser)
 
@@ -132,9 +138,15 @@ def get_default_agent(
             - messaging_enabled: Whether messaging is available
             - git_enabled: Whether git sharing is available
     """
+    # Team mode swaps the local TaskTracker for the Redis-backed one
+    # (CoopTaskTrackerTool).  The tool definition is baked into the
+    # Modal sandbox via add_local_file + a .pth file at image-build
+    # time — see ``ModalSandboxContext.__enter__`` for the injection.
+    team_mode = bool(coop_info and coop_info.get("team_env"))
     tools = get_default_tools(
         # Disable browser tools in CLI mode
         enable_browser=not cli_mode,
+        team_mode=team_mode,
     )
     
     # Build system prompt kwargs
@@ -148,8 +160,39 @@ def get_default_agent(
         teammates = [a for a in agents if a != agent_id]
         messaging_enabled = coop_info.get("messaging_enabled", True)
         git_enabled = coop_info.get("git_enabled", False)
-        
+
         collab_section = get_coop_system_prompt(agent_id, teammates, messaging_enabled, git_enabled)
+
+        # Team mode: the host adapter pre-renders a ``team_section`` string
+        # describing the coop-task-* CLI + lead/member role.  Append it to
+        # the collaboration block so it ends up in the SYSTEM prompt
+        # (where it competes on equal footing with the coop_section above)
+        # rather than getting buried in the user message — that was the
+        # ``oh_team_v2`` failure mode.  In team mode we ALSO swap the
+        # local TaskTracker tool for a Redis-backed CoopTaskTracker
+        # (see ``get_default_tools(team_mode=True)``), so when the LLM
+        # reaches for its TaskTracker tool it's writing to the shared
+        # list automatically — no shell calls required.  The section
+        # documents the equivalent CLI for agents that prefer shell.
+        team_section = coop_info.get("team_section")
+        if team_section:
+            collab_section += (
+                "\n\n## Team-mode shared task list\n"
+                "Your TaskTracker tool in this run is wired to a SHARED\n"
+                "Redis-backed list that every teammate reads from and writes\n"
+                "to.  Use TaskTracker normally — your `plan` calls update\n"
+                "the shared list with you as the owner of those items,\n"
+                "and `view` shows every team member's tasks (peers'\n"
+                "items are prefixed with `[<their_agent_id>]`).\n\n"
+                "The shell commands `coop-task-create` / `coop-task-claim`\n"
+                "/ `coop-task-update` / `coop-task-list` are also\n"
+                "available and hit the same backend; use whichever fits\n"
+                "your current action better, but pick one per task to\n"
+                "avoid duplicates.\n\n"
+                + team_section
+                + "\n"
+            )
+
         system_prompt_kwargs["collaboration"] = collab_section
     
     agent = Agent(

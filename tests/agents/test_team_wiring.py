@@ -131,18 +131,29 @@ class TestOpenHandsImageLayering:
             sandbox_create.return_value.tunnels.return_value = {8000: MagicMock(url="https://stub")}
             ctx.__enter__()
 
-        base_image.add_local_file.assert_called_once()
-        # The local file added must be coop_task.py and land at the
-        # canonical container path.
-        args, kwargs = base_image.add_local_file.call_args
-        assert "coop_task.py" in args[0]
-        assert args[1] == "/usr/local/bin/cb-coop-task.py"
-        # And we should pip_install redis + run the wrapper-creation loop.
+        # add_local_file is called twice in team mode: once for the
+        # coop-task-* CLI helper, once for the CoopTaskTracker tool
+        # definition that gets injected into the sandbox's openhands
+        # install so RemoteConversation can resolve the tool name.
+        assert base_image.add_local_file.call_count == 2
+        sources = [call.args[0] for call in base_image.add_local_file.call_args_list]
+        destinations = [call.args[1] for call in base_image.add_local_file.call_args_list]
+        assert any("coop_task.py" in s for s in sources)
+        assert any("coop_definition.py" in s for s in sources)
+        assert "/usr/local/bin/cb-coop-task.py" in destinations
+        assert "/tmp/cb-coop-tracker.py" in destinations
+        # pip_install once for redis.
         base_image.pip_install.assert_called_once_with("redis")
-        base_image.run_commands.assert_called_once()
-        cmd = base_image.run_commands.call_args.args[0]
-        assert "coop-task-$sub" in cmd
-        assert "cb-coop-task.py" in cmd
+        # Two run_commands layers in the team-mode branch: tool-file
+        # install + side-effect __init__ append, and the coop-task-*
+        # wrappers.  Splitting them keeps build failures localized.
+        assert base_image.run_commands.call_count == 2
+        all_cmds = " ".join(call.args[0] for call in base_image.run_commands.call_args_list)
+        assert "coop-task-$sub" in all_cmds
+        assert "cb-coop-task.py" in all_cmds
+        assert "coop_definition.py" in all_cmds
+        # Side-effect import must be appended to the package __init__.
+        assert "from . import coop_definition" in all_cmds
 
     def test_no_layering_when_team_inactive(self):
         """Solo / coop runs must NOT pay the image-build cost."""
@@ -164,6 +175,71 @@ class TestOpenHandsImageLayering:
         base_image.add_local_file.assert_not_called()
         base_image.pip_install.assert_not_called()
         base_image.run_commands.assert_not_called()
+
+
+class TestOpenHandsTaskTrackerSwap:
+    """The Redis-backed CoopTaskTrackerTool overrides the local
+    TaskTrackerTool registration when ``coop_definition`` is imported
+    (which happens server-side via the .pth file the openhands adapter
+    installs in the Modal sandbox).  Host-side tool lists keep using
+    the ``TaskTrackerTool`` name; the registry resolution does the
+    swap transparently."""
+
+    def test_importing_coop_definition_overrides_local_registration(self):
+        # ``register_tool`` is idempotent and overwrites by name, so
+        # importing coop_definition should rebind TaskTrackerTool.name
+        # to the Redis-backed class.  We probe the internal registry
+        # dict directly because ``resolve_tool`` requires a
+        # ConversationState we don't have in unit tests.
+        from openhands.sdk.tool import registry as _registry
+        from openhands.tools.task_tracker import coop_definition  # noqa: F401 — registers
+        from openhands.tools.task_tracker.definition import TaskTrackerTool
+
+        # After the import above, the resolver under TaskTrackerTool.name
+        # should be the one bound for CoopTaskTrackerTool.  The simplest
+        # test that doesn't depend on the resolver internals is just
+        # that we see "Coop" in the registered resolver's qualname.
+        qualname = _registry._MODULE_QUALNAMES.get(TaskTrackerTool.name, "")
+        assert "coop" in qualname.lower(), (
+            f"expected TaskTrackerTool registration to come from coop_definition; got module qualname {qualname!r}"
+        )
+
+    def test_coop_tracker_round_trip_through_redis(self, monkeypatch):
+        """Plan + view round-trip via fakeredis, writing to the same
+        ``cb:<run_id>:`` namespace as ``TaskListClient``."""
+        import fakeredis
+        from openhands.tools.task_tracker.coop_definition import CoopTaskTrackerExecutor
+        from openhands.tools.task_tracker.definition import TaskItem, TaskTrackerAction
+
+        monkeypatch.setenv("CB_TEAM_REDIS_URL", "redis://stub")
+        monkeypatch.setenv("CB_TEAM_RUN_ID", "t")
+        monkeypatch.setenv("CB_TEAM_AGENT_ID", "agent1")
+
+        fake = fakeredis.FakeRedis()
+        ex = CoopTaskTrackerExecutor()
+        with mock_patch(
+            "openhands.tools.task_tracker.coop_definition._redis_client_from_env",
+            return_value=fake,
+        ):
+            plan = TaskTrackerAction(
+                command="plan",
+                task_list=[
+                    TaskItem(title="implement feature X", status="todo"),
+                    TaskItem(title="add tests", status="in_progress"),
+                ],
+            )
+            obs = ex(plan)
+            assert obs.command == "plan"
+            assert len(obs.task_list) == 2
+
+            view = TaskTrackerAction(command="view")
+            obs = ex(view)
+            titles = [t.title for t in obs.task_list]
+            assert any("implement feature X" in t for t in titles)
+
+        # Confirm Redis was written in the shared namespace TaskListClient uses.
+        ids = list(fake.smembers("cb:t:tasks:all"))
+        assert len(ids) == 2
 
 
 class TestSweAgentTeamWiring:
