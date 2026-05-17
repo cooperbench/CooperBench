@@ -24,10 +24,14 @@ This module exports the host-side helpers; the in-container
 ``coop-task-*`` shell tools are wired up by ``install_snippet.sh``.
 """
 
+from cooperbench.agents._team.fs_mirror import mirror_to_directory
+from cooperbench.agents._team.loop_refresh import TeamPoller, format_task_summary, poll_team_state
 from cooperbench.agents._team.metrics import compute_metrics
 from cooperbench.agents._team.prompt import build_team_instruction
+from cooperbench.agents._team.protocol import ProtocolClient
 from cooperbench.agents._team.runtime import (
     CONTAINER_SCRATCHPAD_DIR,
+    CONTAINER_TASKS_MIRROR_DIR,
     build_team_env,
     scratchpad_mount_args,
 )
@@ -35,9 +39,15 @@ from cooperbench.agents._team.task_list import TaskListClient
 
 __all__ = [
     "CONTAINER_SCRATCHPAD_DIR",
+    "CONTAINER_TASKS_MIRROR_DIR",
+    "ProtocolClient",
     "TaskListClient",
+    "TeamPoller",
     "build_team_env",
     "build_team_instruction",
     "compute_metrics",
+    "format_task_summary",
+    "mirror_to_directory",
+    "poll_team_state",
     "scratchpad_mount_args",
 ]

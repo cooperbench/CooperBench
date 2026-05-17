@@ -10,6 +10,9 @@ from __future__ import annotations
 CONTAINER_SCRATCHPAD_DIR = "/workspace/shared"
 """Where the team scratchpad volume is mounted inside every container."""
 
+CONTAINER_TASKS_MIRROR_DIR = f"{CONTAINER_SCRATCHPAD_DIR}/tasks"
+"""Filesystem mirror of the task list, populated by ``coop-task-list``."""
+
 
 def build_team_env(
     *,
@@ -29,6 +32,7 @@ def build_team_env(
         "CB_TEAM_RUN_ID": run_id,
         "CB_TEAM_AGENT_ID": agent_id,
         "CB_TEAM_AGENTS": ",".join(agents),
+        "CB_TEAM_TASKS_DIR": CONTAINER_TASKS_MIRROR_DIR,
     }
     if team_role:
         env["CB_TEAM_ROLE"] = team_role

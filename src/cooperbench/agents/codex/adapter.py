@@ -54,8 +54,10 @@ COOP_MSG_SCRIPT_PATH = _PACKAGE_DIR.parent / "_coop" / "coop_msg.py"
 COOP_INSTALL_SNIPPET_PATH = _PACKAGE_DIR.parent / "_coop" / "install_snippet.sh"
 TEAM_TASK_SCRIPT_PATH = _PACKAGE_DIR.parent / "_team" / "coop_task.py"
 TEAM_INSTALL_SNIPPET_PATH = _PACKAGE_DIR.parent / "_team" / "install_snippet.sh"
+TEAM_MCP_SCRIPT_PATH = _PACKAGE_DIR.parent / "_team" / "mcp_server.py"
 CONTAINER_TEAM_TASK_PATH = "/tmp/cb-coop-task.py"
 CONTAINER_TEAM_INSTALL_PATH = "/tmp/cb-team-install.sh"
+CONTAINER_TEAM_MCP_PATH = "/tmp/cb-mcp-server.py"
 
 CONTAINER_CODEX_HOME = "/tmp/codex-home"
 CONTAINER_AUTH_PATH = f"{CONTAINER_CODEX_HOME}/auth.json"
@@ -243,6 +245,20 @@ class CodexRunner:
             if team_task_source is not None:
                 write_file_in_container(env, CONTAINER_TEAM_TASK_PATH, team_task_source)
                 write_file_in_container(env, CONTAINER_TEAM_INSTALL_PATH, TEAM_INSTALL_SNIPPET_PATH.read_text())
+                # MCP long-poll server: copy + register in Codex's TOML config.
+                write_file_in_container(env, CONTAINER_TEAM_MCP_PATH, TEAM_MCP_SCRIPT_PATH.read_text())
+                env.execute(
+                    {"command": f"mkdir -p {shlex.quote(CONTAINER_CODEX_HOME)}"},
+                    timeout=30,
+                )
+                # Codex's MCP config lives in config.toml.  We keep it
+                # tiny (one server entry) since the file may not exist
+                # yet — Codex tolerates a fresh config that *only*
+                # contains mcpServers.
+                toml_body = (
+                    f'[mcp_servers.cooperbench-team]\ncommand = "python3"\nargs = ["{CONTAINER_TEAM_MCP_PATH}"]\n'
+                )
+                write_file_in_container(env, f"{CONTAINER_CODEX_HOME}/config.toml", toml_body)
 
             # 2. Install codex in the container.
             write_file_in_container(env, CONTAINER_SETUP_PATH, setup_script)

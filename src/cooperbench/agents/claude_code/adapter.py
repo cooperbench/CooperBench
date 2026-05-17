@@ -55,8 +55,10 @@ COOP_MSG_SCRIPT_PATH = _PACKAGE_DIR.parent / "_coop" / "coop_msg.py"
 COOP_INSTALL_SNIPPET_PATH = _PACKAGE_DIR.parent / "_coop" / "install_snippet.sh"
 TEAM_TASK_SCRIPT_PATH = _PACKAGE_DIR.parent / "_team" / "coop_task.py"
 TEAM_INSTALL_SNIPPET_PATH = _PACKAGE_DIR.parent / "_team" / "install_snippet.sh"
+TEAM_MCP_SCRIPT_PATH = _PACKAGE_DIR.parent / "_team" / "mcp_server.py"
 CONTAINER_TEAM_TASK_PATH = "/tmp/cb-coop-task.py"
 CONTAINER_TEAM_INSTALL_PATH = "/tmp/cb-team-install.sh"
+CONTAINER_TEAM_MCP_PATH = "/tmp/cb-mcp-server.py"
 
 # Inside the container, we redirect Claude Code's per-session state under
 # /tmp so we always know where to find the JSONL trajectory after the run.
@@ -286,6 +288,27 @@ class ClaudeCodeRunner:
             if team_task_source is not None:
                 write_file_in_container(env, CONTAINER_TEAM_TASK_PATH, team_task_source)
                 write_file_in_container(env, CONTAINER_TEAM_INSTALL_PATH, TEAM_INSTALL_SNIPPET_PATH.read_text())
+                # MCP long-poll server: copy the script + register it in
+                # ~/.claude.json so the CLI knows about wait_for_message.
+                write_file_in_container(env, CONTAINER_TEAM_MCP_PATH, TEAM_MCP_SCRIPT_PATH.read_text())
+                mcp_config = {
+                    "mcpServers": {
+                        "cooperbench-team": {
+                            "type": "stdio",
+                            "command": "python3",
+                            "args": [CONTAINER_TEAM_MCP_PATH],
+                        }
+                    }
+                }
+                env.execute(
+                    {"command": f"mkdir -p {shlex.quote(CONTAINER_CLAUDE_CONFIG_DIR)}"},
+                    timeout=30,
+                )
+                write_file_in_container(
+                    env,
+                    f"{CONTAINER_CLAUDE_CONFIG_DIR}/.claude.json",
+                    json.dumps(mcp_config, indent=2),
+                )
 
             # 2. Install claude-code in the container.
             write_file_in_container(env, CONTAINER_SETUP_PATH, setup_script)

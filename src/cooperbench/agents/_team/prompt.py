@@ -50,16 +50,33 @@ writing code**.  Concretely, at the start of the session:
 2. Create them with `coop-task-create` and assign one per member with
    `coop-task-create --assign <agent> "..."`.
 3. While members work, run `coop-task-list` periodically to watch
-   progress.  If a task is `blocked`, read the `last_note` and either
-   reassign it or unblock it by sending a `coop-send` message.
+   progress.  Files mirror to `/workspace/shared/tasks/` so
+   `ls /workspace/shared/tasks/` and `cat /workspace/shared/tasks/<id>.json`
+   also work without the CLI.  If a task is `blocked`, read the
+   `last_note` and either reassign it or unblock it by sending a
+   `coop-send` message.
 4. When all tasks are `done`, integrate them: read each member's
-   patch under `/workspace/shared/` (members are encouraged to write
-   their diff and notes there), verify the merged tree compiles, and
-   write your final `patch.txt`.
+   patch under `/workspace/shared/<agent>.patch`, merge their work
+   into your working tree, verify the merged tree compiles, and
+   finally **write `/workspace/repo/patch.txt`**.
 
 You **may also pick up tasks yourself** if it would unblock the team
 faster than waiting.  But your default mode is to assign, not
 implement.
+
+### Final submission — REQUIRED
+
+The bench only evaluates `/workspace/repo/patch.txt`.  Files under
+`/workspace/shared/` are coordination artifacts; they are NOT
+evaluated.  Before exiting you MUST run:
+
+```bash
+cd /workspace/repo && git diff > patch.txt && cat patch.txt | head -1
+```
+
+and confirm `patch.txt` is non-empty and contains the merged work of
+the whole team.  If you skip this step, the team's pass rate is 0
+regardless of how well-coordinated the work was.
 
 {_TEAM_LIST_USAGE}
 
@@ -78,15 +95,30 @@ Recommended workflow:
 
 1. Run `coop-task-list --open` to see what needs doing.  If your
    `agent_id` appears as a pre-assigned `owner` on a task, that's the
-   one the lead expects you to take.
+   one the lead expects you to take.  You can also `ls
+   /workspace/shared/tasks/` to browse without the CLI.
 2. `coop-task-claim <task_id>` it.  If you lose the race (exit code 2),
    the task is taken — pick another.
 3. Implement.  When you hit a blocker, run
    `coop-task-update <task_id> blocked -n "<what you need>"` and
    `coop-send {lead} "blocked on task <id>: ..."`.
-4. When done, write your contribution to `/workspace/shared/<your-id>.patch`
-   AND your local `patch.txt`, then
-   `coop-task-update <task_id> done -n "patch at /workspace/shared/<your-id>.patch"`.
+4. When done, copy your diff to `/workspace/shared/<your-id>.patch`
+   (so the lead can find it) AND run the final-submission step below,
+   then `coop-task-update <task_id> done -n "patch at /workspace/shared/<your-id>.patch"`.
+
+### Final submission — REQUIRED
+
+The bench only evaluates `/workspace/repo/patch.txt`.  Files under
+`/workspace/shared/` are coordination artifacts; they are NOT
+evaluated.  Before exiting you MUST run:
+
+```bash
+cd /workspace/repo && git diff > patch.txt && cat patch.txt | head -1
+```
+
+and confirm `patch.txt` is non-empty.  Even if the lead is doing the
+final integration, every member should still write their own
+`patch.txt` — the bench scores per-agent.
 
 {_TEAM_LIST_USAGE}
 

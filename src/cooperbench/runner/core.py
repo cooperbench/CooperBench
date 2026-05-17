@@ -364,13 +364,20 @@ def _print_single_result(result: dict, task: dict, is_solo: bool) -> None:
         for agent_id, r in result.get("results", {}).items():
             status = r.get("status", "Error")
             status_style = "green" if status == "Submitted" else "red"
+            # Team-mode per-agent dicts store ``patch_lines`` (an int);
+            # coop's store the full ``patch`` (a string).  Accept either
+            # so this display works for both.
+            if "patch_lines" in r:
+                lines_str = str(r["patch_lines"])
+            else:
+                lines_str = str(len(r.get("patch", "").splitlines()))
             table.add_row(
                 agent_id,
                 str(r.get("feature_id", "?")),
                 f"[{status_style}]{status}[/{status_style}]",
                 f"${r.get('cost', 0):.2f}",
                 str(r.get("steps", 0)),
-                str(len(r.get("patch", "").splitlines())),
+                lines_str,
             )
 
     console.print(table)
