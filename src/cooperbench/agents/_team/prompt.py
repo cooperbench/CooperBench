@@ -127,6 +127,31 @@ it for anything your peers might need to see — partial diffs,
 interface sketches, error logs from your reproduction script."""
 
 
+def team_task_section(
+    *,
+    agents: list[str] | None,
+    agent_id: str | None,
+    team_role: str | None,
+) -> str:
+    """Return JUST the team-task-list section for an adapter to append.
+
+    Used by Python-loop adapters that already have their own coop
+    prompts covering messaging / git / submission, but need to teach
+    the LLM about the new ``coop-task-*`` CLI + role split without
+    re-explaining everything else.  CLI adapters use the bigger
+    ``build_team_instruction`` instead.
+
+    Empty string when team mode isn't active (no role, <2 agents).
+    """
+    if not team_role or not agents or not agent_id or len(agents) < 2:
+        return ""
+    members = [a for a in agents if a != agent_id]
+    if team_role == "lead":
+        return _lead_block(agent_id, members)
+    lead = members[0] if members else "team-lead"
+    return _member_block(agent_id, lead)
+
+
 def build_team_instruction(
     task: str,
     *,
