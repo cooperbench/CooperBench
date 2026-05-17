@@ -9,7 +9,8 @@ so a future refactor doesn't silently regress one adapter.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+from unittest.mock import patch as mock_patch
 
 import pytest
 
@@ -87,6 +88,84 @@ class TestOpenHandsTeamWiring:
         # All required keys present.
         for k in ("CB_TEAM_REDIS_URL", "CB_TEAM_RUN_ID", "CB_TEAM_AGENT_ID", "CB_TEAM_AGENTS", "CB_TEAM_ROLE"):
             assert team_env[k]
+
+
+class TestOpenHandsImageLayering:
+    """When team mode is active, the openhands sandbox image gets
+    layered with the coop-task-* install at runtime (no upstream
+    image rebuild needed)."""
+
+    def test_team_env_triggers_image_layering(self):
+        """We can't actually build a Modal image in a unit test, but
+        we can verify the code path: when ``coop_info["team_env"]``
+        is set, the ``__enter__`` method should call ``add_local_file``,
+        ``pip_install``, and ``run_commands`` on the base image."""
+        from unittest.mock import MagicMock
+
+        from cooperbench.agents.openhands_agent_sdk.adapter import ModalSandboxContext
+
+        # Build a fake modal.Image whose chain methods all return self
+        # so we can introspect what got called.
+        base_image = MagicMock()
+        for attr in ("add_local_file", "pip_install", "run_commands"):
+            getattr(base_image, attr).return_value = base_image
+
+        ctx = ModalSandboxContext(
+            image_name="example/oh:tag",
+            timeout=60,
+            coop_info={
+                "agent_id": "agent1",
+                "agents": ["agent1", "agent2"],
+                "team_env": {"CB_TEAM_REDIS_URL": "redis://x", "CB_TEAM_RUN_ID": "r"},
+            },
+        )
+
+        # Stub the entry-point so we only exercise the image-layering
+        # branch — no real Modal Sandbox creation.
+        with (
+            mock_patch("modal.Image.from_registry", return_value=base_image),
+            mock_patch("modal.App.lookup"),
+            mock_patch("modal.Secret.from_dict"),
+            mock_patch("modal.Sandbox.create") as sandbox_create,
+            mock_patch.object(ctx, "_wait_for_server"),
+        ):
+            sandbox_create.return_value.tunnels.return_value = {8000: MagicMock(url="https://stub")}
+            ctx.__enter__()
+
+        base_image.add_local_file.assert_called_once()
+        # The local file added must be coop_task.py and land at the
+        # canonical container path.
+        args, kwargs = base_image.add_local_file.call_args
+        assert "coop_task.py" in args[0]
+        assert args[1] == "/usr/local/bin/cb-coop-task.py"
+        # And we should pip_install redis + run the wrapper-creation loop.
+        base_image.pip_install.assert_called_once_with("redis")
+        base_image.run_commands.assert_called_once()
+        cmd = base_image.run_commands.call_args.args[0]
+        assert "coop-task-$sub" in cmd
+        assert "cb-coop-task.py" in cmd
+
+    def test_no_layering_when_team_inactive(self):
+        """Solo / coop runs must NOT pay the image-build cost."""
+        from unittest.mock import MagicMock
+
+        from cooperbench.agents.openhands_agent_sdk.adapter import ModalSandboxContext
+
+        base_image = MagicMock()
+        ctx = ModalSandboxContext(image_name="example/oh:tag", timeout=60, coop_info=None)
+
+        with (
+            mock_patch("modal.Image.from_registry", return_value=base_image),
+            mock_patch("modal.App.lookup"),
+            mock_patch("modal.Sandbox.create") as sandbox_create,
+            mock_patch.object(ctx, "_wait_for_server"),
+        ):
+            sandbox_create.return_value.tunnels.return_value = {8000: MagicMock(url="https://stub")}
+            ctx.__enter__()
+
+        base_image.add_local_file.assert_not_called()
+        base_image.pip_install.assert_not_called()
+        base_image.run_commands.assert_not_called()
 
 
 class TestSweAgentTeamWiring:

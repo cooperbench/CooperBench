@@ -714,10 +714,40 @@ class ModalSandboxContext:
 
     def __enter__(self) -> str:
         """Start sandbox, run agent-server, and return the tunnel URL."""
-        
+
         # Preserve image ENTRYPOINT.
         # The `-oh` images set ENTRYPOINT to launch `openhands.agent_server`.
         image = modal.Image.from_registry(self.image_name)
+
+        # Layer the team CLI onto the image when team mode is active so
+        # the agent-server's bash tool can call coop-task-* without us
+        # needing to rebuild the upstream `-oh` image.  Modal caches the
+        # resulting layered image; first team run pays a ~10s build,
+        # subsequent runs are instant.  Detected via the team_env dict
+        # that the adapter folds into coop_info.
+        team_env = (self.coop_info or {}).get("team_env") if self.coop_info else None
+        if team_env:
+            from pathlib import Path as _Path
+
+            _team_pkg = _Path(__file__).resolve().parent.parent / "_team"
+            coop_task_path = _team_pkg / "coop_task.py"
+            image = (
+                image.add_local_file(
+                    str(coop_task_path),
+                    "/usr/local/bin/cb-coop-task.py",
+                    copy=True,
+                )
+                .pip_install("redis")
+                .run_commands(
+                    # Create one wrapper per subcommand at /usr/local/bin/coop-task-*.
+                    # printf is portable across the slim debian/alpine bases
+                    # OpenHands' -oh images use.
+                    "for sub in create claim update list request respond pending; do "
+                    "  printf '#!/bin/bash\\nexec python3 /usr/local/bin/cb-coop-task.py %s \"$@\"\\n' \"$sub\" "
+                    "  > /usr/local/bin/coop-task-$sub && chmod +x /usr/local/bin/coop-task-$sub; "
+                    "done"
+                )
+            )
         
         # Get or create app
         app = modal.App.lookup("cooperbench", create_if_missing=True)
