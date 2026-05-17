@@ -21,6 +21,41 @@ from cooperbench.agents.registry import register
 logger = logging.getLogger(__name__)
 
 
+_TEAM_PACKAGE_DIR = Path(__file__).parent.parent / "_team"
+
+
+def _install_team_cli_in_container(env) -> None:
+    """Drop the team CLI scripts into the v2 agent's container and
+    create the ``coop-task-*`` shell wrappers.
+
+    Mirrors what the Claude Code adapter does at setup time, but
+    inlined here because v2 doesn't have a templated setup.sh — it
+    just `sleep 2h`s an arbitrary image.  Best-effort: any step that
+    fails just logs a warning, so a broken team-CLI install doesn't
+    block the run.  Env vars (``CB_TEAM_*``) are pushed onto the
+    DockerEnvironment's container env at start-time, so this helper
+    only needs to install the binaries — not configure the shell.
+    """
+    from cooperbench.agents._coop.runtime import write_file_in_container
+
+    try:
+        write_file_in_container(env, "/tmp/cb-coop-task.py", (_TEAM_PACKAGE_DIR / "coop_task.py").read_text())
+        write_file_in_container(env, "/tmp/cb-team-install.sh", (_TEAM_PACKAGE_DIR / "install_snippet.sh").read_text())
+        env.execute(
+            {
+                "command": (
+                    "pip install --quiet --disable-pip-version-check redis >/dev/null 2>&1 "
+                    "|| pip3 install --quiet --disable-pip-version-check redis >/dev/null 2>&1 "
+                    "|| true; "
+                    "bash /tmp/cb-team-install.sh"
+                )
+            },
+            timeout=120,
+        )
+    except Exception as e:  # noqa: BLE001 -- best-effort
+        logger.warning("team CLI install in v2 container failed: %s", e)
+
+
 @register("mini_swe_agent_v2")
 class MiniSweAgentV2Runner:
     """Adapter for mini-swe-agent v2 framework (tool-calling)."""
@@ -54,14 +89,23 @@ class MiniSweAgentV2Runner:
         the same shape as the existing inbox-poll hook.
         """
         team_poller = None
-        if team_role and team_id and task_list_url and agents and len(agents) > 1:
-            from cooperbench.agents._team import TeamPoller
+        is_team = bool(team_role and team_id and task_list_url and agents and len(agents) > 1)
+        if is_team:
+            from cooperbench.agents._team import TeamPoller, team_task_section
 
             team_poller = TeamPoller(
                 redis_url=task_list_url,
                 run_id=team_id,
                 agent_id=agent_id,
             )
+            # Append the team-specific task-list section to the task
+            # so the LLM sees the coop-task-* CLI + role-specific
+            # workflow in its first user turn.  v2's existing coop
+            # template already covers messaging / git / submission;
+            # we add ONLY the task-list piece.
+            section = team_task_section(agents=agents, agent_id=agent_id, team_role=team_role)
+            if section:
+                task = task + "\n\n---\n\n" + section
         # Load coop config when multiple agents, otherwise solo config.
         is_coop = bool(agents) and len(agents) > 1
         config_name = "coop" if is_coop else "solo"
@@ -98,14 +142,44 @@ class MiniSweAgentV2Runner:
             "cwd": "/workspace/repo",
             "timeout": 3600,
         }
-        if env_cfg.get("env"):
-            env_kwargs["env"] = env_cfg["env"]
+        container_env = dict(env_cfg.get("env") or {})
+        # In team mode, propagate the CB_TEAM_* env vars into every
+        # docker-exec the agent does so ``coop-task-*`` works without
+        # needing the agent to remember to set them.
+        if is_team:
+            from cooperbench.agents._coop.runtime import rewrite_comm_url_for_container
+            from cooperbench.agents._team import build_team_env
+
+            container_env.update(
+                build_team_env(
+                    redis_url=rewrite_comm_url_for_container(task_list_url) or "",
+                    run_id=team_id or "",
+                    agent_id=agent_id,
+                    agents=agents or [],
+                    team_role=team_role,
+                )
+            )
+        if container_env:
+            env_kwargs["env"] = container_env
 
         if backend == "docker":
             from cooperbench.agents.mini_swe_agent_v2.environments.docker import DockerEnvironment
 
             if config and config.get("git_network"):
                 env_kwargs["network"] = config["git_network"]
+            # Need host.docker.internal mapping so the in-container
+            # coop-task-* CLI can reach Redis on the host (same as
+            # claude_code / codex adapters).  Also mount the shared
+            # team scratchpad if a volume name was passed.
+            if is_team:
+                from cooperbench.agents._team import scratchpad_mount_args
+
+                run_args = list(env_kwargs.get("run_args") or ["--rm"])
+                if "--add-host=host.docker.internal:host-gateway" not in run_args:
+                    run_args.append("--add-host=host.docker.internal:host-gateway")
+                team_volume = (config or {}).get("team_volume")
+                run_args.extend(scratchpad_mount_args(team_volume))
+                env_kwargs["run_args"] = run_args
             env = DockerEnvironment(**env_kwargs)
         else:
             from cooperbench.agents.mini_swe_agent_v2.environments.modal import ModalEnvironment
@@ -133,6 +207,12 @@ class MiniSweAgentV2Runner:
                 server_url=git_server_url,
             )
             git_connector.setup(env)
+
+        # Setup team CLI in the container if team mode is active.  The
+        # in-container agent can then call coop-task-create/claim/etc.
+        # via bash, in addition to the host-side TeamPoller injection.
+        if is_team:
+            _install_team_cli_in_container(env)
 
         # Create agent with template variables for collaboration
         extra_vars = {

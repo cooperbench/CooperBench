@@ -37,43 +37,64 @@ You are free to read files, run shell commands, and run tests as needed."""
 def _git_block(agent_id: str, partners: list[str]) -> str:
     partner_branches = ", ".join(f"`team/{p}`" for p in partners)
     first_partner = partners[0]
-    return f"""## Git collaboration
+    partner_merge_lines = "\n".join(
+        f"  git fetch team && git merge --no-edit team/{p} || true   # pull in {p}'s work"
+        for p in partners
+    )
+    return f"""## Git collaboration — MERGE IS REQUIRED BEFORE SUBMITTING
 
 A shared git remote named `team` is already configured in this repo.
-Use it to share code with your peers — messages alone aren't enough
-when you both touch the same files.
-
 - Your branch: `{agent_id}` (already created and pushed)
 - Partner branches: {partner_branches}
 - Base reference: `team/main` (pristine starting state)
 
-Recommended workflow:
+### The submission rule the bench actually enforces
+
+The bench evaluates each agent's `patch.txt` against EVERY feature's
+test suite.  If your `patch.txt` only contains your own work, the
+peer feature's tests will fail with `ImportError` because the
+symbols they introduced aren't in your tree.  **You MUST pull in
+your peers' branches before generating your final `patch.txt`** — or
+your submission will be incomplete by construction.
+
+### Required final sequence — run this verbatim before exiting
 
 ```bash
-# See what your peers have published:
-git fetch team
-git branch -r
-git log team/{first_partner} --oneline -10
-
-# Inspect a peer's change without merging:
-git show team/{first_partner} -- path/to/file
-
-# Pull a peer's work into your tree.  Resolve any merge conflicts in
-# the working tree, then commit.  If the merge is clean, --no-edit
-# takes the default commit message and you're done.
-git fetch team && git merge --no-edit team/{first_partner}
-
-# Publish your own progress (after committing locally):
+# 1. Commit your own work so it's on your branch tip.
+cd /workspace/repo
 git add -A
-git commit -m 'wip: <one-line summary>'
-git push team {agent_id}
+git commit -m 'wip: my work' || true   # ok if nothing to commit
+
+# 2. Push so peers can fetch you (optional but recommended).
+git push team {agent_id} --force || true
+
+# 3. Pull in every peer's branch.  Use --no-edit to take the default
+#    merge commit message.  || true so a clean-no-op doesn't abort.
+{partner_merge_lines}
+
+# 4. Rebuild patch.txt from the MERGED tree.  This is the artifact the
+#    bench evaluates — it must contain both your work and your peers'.
+git diff team/main..HEAD > patch.txt
+
+# 5. Sanity-check: the diff should mention symbols you didn't write
+#    yourself (your peers' contributions).
+wc -l patch.txt
+head -30 patch.txt
 ```
 
-Concretely: before submitting, run `git fetch team` and look at every
-peer branch.  If one of them edited a file you also edited, merge
-their branch into yours and rebuild `patch.txt` from the merged tree
-(`git diff team/main..HEAD > patch.txt`) so your submission contains
-both your work and theirs."""
+### During the run
+
+```bash
+git fetch team                                   # see what peers published
+git branch -r                                    # list every team branch
+git log team/{first_partner} --oneline -10       # inspect a peer's history
+git show team/{first_partner} -- path/to/file    # inspect a peer's change
+```
+
+If you skip the merge step, you will lose points the bench would
+otherwise have awarded.  The team-mode metric `tasks_done` only
+measures coordination, not correctness — correctness comes from
+`patch.txt` containing the union of the team's work."""
 
 
 def _coop_block(agent_id: str, partners: list[str]) -> str:

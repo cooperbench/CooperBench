@@ -350,7 +350,18 @@ class OpenHandsSDKRunner:
         Returns:
             AgentResult with status, patch, cost, steps, messages
         """
-        del team_role, team_id, task_list_url, kwargs  # see docstring
+        del kwargs  # unused
+        # Append the team-mode task-list section to the task so the
+        # agent learns about the coop-task-* CLI on its first turn.
+        # OpenHands has its own messaging shape, so we add ONLY the
+        # team-specific section (not the full build_team_instruction).
+        is_team = bool(team_role and team_id and task_list_url and agents and len(agents) > 1)
+        if is_team:
+            from cooperbench.agents._team import team_task_section
+
+            section = team_task_section(agents=agents, agent_id=agent_id, team_role=team_role)
+            if section:
+                task = task + "\n\n---\n\n" + section
         # Convert to agent-server image if needed
         oh_image = self._get_oh_image(image)
 
@@ -416,6 +427,28 @@ class OpenHandsSDKRunner:
                 "messaging_enabled": redis_url is not None,
                 "git_enabled": git_enabled and git_url is not None,
             } if is_coop else None
+            # In team mode, fold team-mode env vars into coop_info so
+            # _build_credentials_dict (which already understands
+            # coop_info) propagates them to the sandbox.
+            if is_team and coop_info is None:
+                coop_info = {
+                    "agent_id": agent_id,
+                    "agents": agents or [],
+                    "messaging_enabled": False,
+                    "git_enabled": False,
+                }
+            if is_team and coop_info is not None:
+                from cooperbench.agents._coop.runtime import rewrite_comm_url_for_container
+                from cooperbench.agents._team.runtime import CONTAINER_TASKS_MIRROR_DIR
+
+                coop_info["team_env"] = {
+                    "CB_TEAM_REDIS_URL": rewrite_comm_url_for_container(task_list_url) or "",
+                    "CB_TEAM_RUN_ID": team_id or "",
+                    "CB_TEAM_AGENT_ID": agent_id,
+                    "CB_TEAM_AGENTS": ",".join(agents or []),
+                    "CB_TEAM_TASKS_DIR": CONTAINER_TASKS_MIRROR_DIR,
+                    "CB_TEAM_ROLE": team_role or "",
+                }
             
             with ModalSandboxContext(oh_image, self.timeout, coop_info=coop_info) as sandbox_url:
 
@@ -670,15 +703,51 @@ class ModalSandboxContext:
                 creds["AGENT_ID"] = self.coop_info["agent_id"]
             if self.coop_info.get("agents"):
                 creds["AGENTS"] = ",".join(self.coop_info["agents"])
+            # Team-mode env vars consumed by the in-container
+            # coop-task-* CLI.
+            team_env = self.coop_info.get("team_env") or {}
+            for k, v in team_env.items():
+                if v:
+                    creds[k] = v
         
         return creds
 
     def __enter__(self) -> str:
         """Start sandbox, run agent-server, and return the tunnel URL."""
-        
+
         # Preserve image ENTRYPOINT.
         # The `-oh` images set ENTRYPOINT to launch `openhands.agent_server`.
         image = modal.Image.from_registry(self.image_name)
+
+        # Layer the team CLI onto the image when team mode is active so
+        # the agent-server's bash tool can call coop-task-* without us
+        # needing to rebuild the upstream `-oh` image.  Modal caches the
+        # resulting layered image; first team run pays a ~10s build,
+        # subsequent runs are instant.  Detected via the team_env dict
+        # that the adapter folds into coop_info.
+        team_env = (self.coop_info or {}).get("team_env") if self.coop_info else None
+        if team_env:
+            from pathlib import Path as _Path
+
+            _team_pkg = _Path(__file__).resolve().parent.parent / "_team"
+            coop_task_path = _team_pkg / "coop_task.py"
+            image = (
+                image.add_local_file(
+                    str(coop_task_path),
+                    "/usr/local/bin/cb-coop-task.py",
+                    copy=True,
+                )
+                .pip_install("redis")
+                .run_commands(
+                    # Create one wrapper per subcommand at /usr/local/bin/coop-task-*.
+                    # printf is portable across the slim debian/alpine bases
+                    # OpenHands' -oh images use.
+                    "for sub in create claim update list request respond pending; do "
+                    "  printf '#!/bin/bash\\nexec python3 /usr/local/bin/cb-coop-task.py %s \"$@\"\\n' \"$sub\" "
+                    "  > /usr/local/bin/coop-task-$sub && chmod +x /usr/local/bin/coop-task-$sub; "
+                    "done"
+                )
+            )
         
         # Get or create app
         app = modal.App.lookup("cooperbench", create_if_missing=True)

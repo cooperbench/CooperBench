@@ -27,7 +27,7 @@ This module exports the host-side helpers; the in-container
 from cooperbench.agents._team.fs_mirror import mirror_to_directory
 from cooperbench.agents._team.loop_refresh import TeamPoller, format_task_summary, poll_team_state
 from cooperbench.agents._team.metrics import compute_metrics
-from cooperbench.agents._team.prompt import build_team_instruction
+from cooperbench.agents._team.prompt import build_team_instruction, team_task_section
 from cooperbench.agents._team.protocol import ProtocolClient
 from cooperbench.agents._team.runtime import (
     CONTAINER_SCRATCHPAD_DIR,
@@ -50,4 +50,5 @@ __all__ = [
     "mirror_to_directory",
     "poll_team_state",
     "scratchpad_mount_args",
+    "team_task_section",
 ]

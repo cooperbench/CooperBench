@@ -12,7 +12,7 @@ Both branches must be agent-agnostic (no mention of Claude / Codex /
 specific tools beyond the coop-* CLI).
 """
 
-from cooperbench.agents._team.prompt import build_team_instruction
+from cooperbench.agents._team.prompt import build_team_instruction, team_task_section
 
 
 def _both(text: str) -> None:
@@ -172,6 +172,24 @@ class TestFinalSubmissionExplicit:
             # coordination, not submission.
             assert "/workspace/shared" in text
             assert "NOT" in text or "not evaluated" in text.lower()
+
+
+class TestTeamTaskSection:
+    """Bare team block for adapters that already have their own coop prompts."""
+
+    def test_returns_lead_block_for_lead(self):
+        text = team_task_section(agents=["a1", "a2"], agent_id="a1", team_role="lead")
+        assert "team-lead" in text
+        assert "coop-task-create" in text
+
+    def test_returns_member_block_for_member(self):
+        text = team_task_section(agents=["a1", "a2"], agent_id="a2", team_role="member")
+        assert "team member" in text.lower() or "you are **a2**" in text.lower()
+        assert "coop-task-claim" in text
+
+    def test_returns_empty_when_no_team(self):
+        assert team_task_section(agents=None, agent_id=None, team_role=None) == ""
+        assert team_task_section(agents=["a1"], agent_id="a1", team_role="lead") == ""
 
 
 class TestGitInteraction:

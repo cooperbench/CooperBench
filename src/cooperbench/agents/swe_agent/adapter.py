@@ -65,7 +65,14 @@ class SweAgentRunner:
         Returns:
             AgentResult with status, patch, cost, steps, messages
         """
-        del team_role, team_id, task_list_url, kwargs  # see docstring
+        del kwargs  # unused
+        is_team = bool(team_role and team_id and task_list_url and agents and len(agents) > 1)
+        if is_team:
+            from cooperbench.agents._team import team_task_section
+
+            section = team_task_section(agents=agents, agent_id=agent_id, team_role=team_role)
+            if section:
+                task = task + "\n\n---\n\n" + section
         import litellm
         import modal
         import swerex.deployment.modal as swerex_modal
