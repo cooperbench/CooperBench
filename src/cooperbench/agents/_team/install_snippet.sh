@@ -17,3 +17,12 @@ exec python3 /tmp/cb-coop-task.py $sub "\$@"
 EOF
     chmod +x "/usr/local/bin/coop-task-$sub"
 done
+
+# Typed coop-request / coop-respond / coop-pending: same helper, different verb.
+for verb in request respond pending; do
+    cat >"/usr/local/bin/coop-$verb" <<EOF
+#!/bin/bash
+exec python3 /tmp/cb-coop-task.py $verb "\$@"
+EOF
+    chmod +x "/usr/local/bin/coop-$verb"
+done

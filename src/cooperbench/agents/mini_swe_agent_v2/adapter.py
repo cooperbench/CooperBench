@@ -47,14 +47,21 @@ class MiniSweAgentV2Runner:
     ) -> AgentResult:
         """Run mini-swe-agent v2 on a task.
 
-        Team-mode kwargs (``team_role``, ``team_id``, ``task_list_url``)
-        are accepted so the adapter is API-compatible with the team
-        runner, but their effect today is limited: the prompt switches
-        to the team-mode block via ``build_team_instruction`` so the
-        agent learns about the ``coop-task-*`` CLI, but the in-loop
-        auto-refresh hook lands in a follow-up PR.
+        When team-mode kwargs (``team_role``, ``team_id``,
+        ``task_list_url``) are set, the adapter attaches a
+        ``TeamPoller`` to the agent so each ``step()`` injects a fresh
+        team-task-list summary as a user message before the LLM call —
+        the same shape as the existing inbox-poll hook.
         """
-        del team_role, team_id, task_list_url  # see docstring
+        team_poller = None
+        if team_role and team_id and task_list_url and agents and len(agents) > 1:
+            from cooperbench.agents._team import TeamPoller
+
+            team_poller = TeamPoller(
+                redis_url=task_list_url,
+                run_id=team_id,
+                agent_id=agent_id,
+            )
         # Load coop config when multiple agents, otherwise solo config.
         is_coop = bool(agents) and len(agents) > 1
         config_name = "coop" if is_coop else "solo"
@@ -143,6 +150,10 @@ class MiniSweAgentV2Runner:
             **agent_cfg,
         )
         agent.extra_template_vars.update(extra_vars)
+        # Auto-refresh of the shared task list between LLM calls when
+        # team mode is active.  step() picks this up as ``agent.team_poller``.
+        if team_poller is not None:
+            agent.team_poller = team_poller
 
         # Run agent
         error_msg = None

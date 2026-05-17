@@ -132,6 +132,48 @@ class TestSoloFallback:
         assert "coop-task" not in text
 
 
+class TestFinalSubmissionExplicit:
+    """Regression test for the e2e finding where members wrote diffs
+    only to the scratchpad and never to ``patch.txt``."""
+
+    def test_lead_prompt_demands_patch_txt(self):
+        text = build_team_instruction(
+            task="t",
+            agents=["agent1", "agent2"],
+            agent_id="agent1",
+            team_role="lead",
+            git_enabled=False,
+        )
+        assert "patch.txt" in text
+        assert "REQUIRED" in text or "MUST" in text
+        assert "/workspace/repo/patch.txt" in text
+
+    def test_member_prompt_demands_patch_txt(self):
+        text = build_team_instruction(
+            task="t",
+            agents=["agent1", "agent2"],
+            agent_id="agent2",
+            team_role="member",
+            git_enabled=False,
+        )
+        assert "/workspace/repo/patch.txt" in text
+        assert "git diff > patch.txt" in text
+
+    def test_both_prompts_call_out_shared_not_evaluated(self):
+        for role in ("lead", "member"):
+            text = build_team_instruction(
+                task="t",
+                agents=["agent1", "agent2"],
+                agent_id="agent1" if role == "lead" else "agent2",
+                team_role=role,
+                git_enabled=False,
+            )
+            # The whole point of the fix: tell the agent shared/ is
+            # coordination, not submission.
+            assert "/workspace/shared" in text
+            assert "NOT" in text or "not evaluated" in text.lower()
+
+
 class TestGitInteraction:
     def test_git_block_appended_when_enabled(self):
         text = build_team_instruction(

@@ -7,6 +7,7 @@ arg list (scratchpad mount).
 
 from cooperbench.agents._team.runtime import (
     CONTAINER_SCRATCHPAD_DIR,
+    CONTAINER_TASKS_MIRROR_DIR,
     build_team_env,
     scratchpad_mount_args,
 )
@@ -26,6 +27,8 @@ class TestBuildTeamEnv:
         assert env["CB_TEAM_AGENT_ID"] == "agent1"
         assert env["CB_TEAM_AGENTS"] == "agent1,agent2"
         assert env["CB_TEAM_ROLE"] == "lead"
+        # Tasks mirror dir auto-set so coop-task-list can snapshot to disk.
+        assert env["CB_TEAM_TASKS_DIR"] == CONTAINER_TASKS_MIRROR_DIR
 
     def test_missing_role_omitted_not_empty(self):
         """Empty values would cause the CLI to think it has a role."""
