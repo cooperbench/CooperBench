@@ -165,6 +165,58 @@ def test_merged(
         apply_status = setup_result.get("apply_status", {"agent1": "unknown", "agent2": "unknown"})
         any_apply_failed = "failed" in apply_status.values()
 
+        # Short-circuit: if both agents submitted byte-identical patches
+        # (e.g. team mode where they fully merged each other's work and
+        # ended up with the exact same tree), there's nothing to merge.
+        # Skip the naive/union dance, which would try to apply patch B on
+        # top of patch A's hunks and reject them as already-applied — that
+        # produces an empty merged.patch and a downstream "No valid patches
+        # in input" failure even though both submissions are identical and
+        # individually fine.
+        #
+        # We also normalize the patch here: agents (notably codex) can emit
+        # unified diffs whose last hunk header has the wrong line count
+        # ("corrupt patch at line N").  ``git apply --recount`` ignores
+        # the header and rebuilds from content; we then re-emit the diff
+        # so runner.sh's plain ``git apply`` accepts it.
+        if patch1_content and patch2_content and patch1_content == patch2_content:
+            normalize = """
+cd /workspace/repo
+git checkout $BASE_SHA 2>&1 >/dev/null
+git checkout -b identical-merge 2>&1 >/dev/null
+if git apply /patches/patch1.patch 2>/dev/null \\
+   || git apply --recount /patches/patch1.patch 2>/dev/null; then
+    git add -A
+    git commit -m 'merged' --allow-empty >/dev/null 2>&1
+    git diff $BASE_SHA HEAD > /patches/merged.patch
+    echo "NORMALIZED"
+else
+    # fall back to raw patch if normalization itself fails
+    cp /patches/patch1.patch /patches/merged.patch
+    echo "RAW"
+fi
+"""
+            sb.exec("bash", "-c", f"export BASE_SHA={base_sha}\n{normalize}")
+            test1_result = _run_tests(sb, "tests1.patch", "merged.patch", base_sha)
+            test2_result = _run_tests(sb, "tests2.patch", "merged.patch", base_sha)
+            return {
+                "repo": repo_name,
+                "task_id": task_id,
+                "features": [feature1_id, feature2_id],
+                "setting": "coop",
+                "apply_status": {"agent1": "applied", "agent2": "applied"},
+                "merge": {
+                    "status": "identical",
+                    "strategy": "skip-merge-identical",
+                    "diff": patch1_content[:5000],
+                },
+                "feature1": test1_result,
+                "feature2": test2_result,
+                "both_passed": test1_result.get("passed", False) and test2_result.get("passed", False),
+                "error": None,
+                "evaluated_at": __import__("datetime").datetime.now().isoformat(),
+            }
+
         # Step 2: Try naive merge
         naive_result = _merge_naive(sb, base_sha)
 

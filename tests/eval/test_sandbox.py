@@ -4,9 +4,11 @@ These are pure function tests that don't require Modal.
 For integration tests, see tests/integration/eval/test_sandbox.py
 """
 
+import inspect
 import tempfile
 from pathlib import Path
 
+from cooperbench.eval import sandbox as _sandbox_module
 from cooperbench.eval.sandbox import (
     _error_result,
     _filter_test_files,
@@ -16,6 +18,33 @@ from cooperbench.eval.sandbox import (
     _sanitize_patch,
     _solo_error_result,
 )
+
+
+class TestIdenticalPatchesShortCircuit:
+    """Regression: in team mode, both agents can fully merge each other's
+    work and end up with byte-identical patches.  The eval's naive merge
+    would then try to apply patch B's hunks on top of a tree that
+    already has them, fail with "patch already applied", and produce an
+    empty merged.patch downstream — even though the submission is
+    perfectly valid.
+
+    Fix: before running ``_setup_branches`` / ``_merge_naive``, compare
+    the two patch strings.  If they match, copy patch1 to merged.patch
+    directly and skip the merge logic.  Verified via source inspection
+    that the short-circuit branch exists in ``test_merged``.
+    """
+
+    def test_test_merged_shortcircuits_on_identical_patches(self):
+        src = inspect.getsource(_sandbox_module.test_merged)
+        # The function must compare patch contents and short-circuit
+        # before invoking _merge_naive when they match.
+        assert "patch1_content == patch2_content" in src, (
+            "test_merged must short-circuit when both agents submit identical patches"
+        )
+        # The fast-path response uses a distinct merge status so the
+        # caller can tell "we used identical-patches handling" from a
+        # real merge.
+        assert "identical" in src
 
 
 class TestParseResults:

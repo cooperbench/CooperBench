@@ -292,7 +292,7 @@ class TestGCPBatchE2E:
 
         # Task 0: Should FAIL (no code patch)
         result0 = results[0]
-        print(f"\nTask 0 (NO patch):")
+        print("\nTask 0 (NO patch):")
         print(f"  feature1_passed: {result0.feature1_passed}")
         print(f"  error: {result0.error}")
         assert result0.error is None, f"Task 0 unexpected error: {result0.error}"
@@ -300,7 +300,7 @@ class TestGCPBatchE2E:
 
         # Task 1: Should PASS (with gold patch)
         result1 = results[1]
-        print(f"\nTask 1 (GOLD patch):")
+        print("\nTask 1 (GOLD patch):")
         print(f"  feature1_passed: {result1.feature1_passed}")
         print(f"  error: {result1.error}")
         assert result1.error is None, f"Task 1 unexpected error: {result1.error}"

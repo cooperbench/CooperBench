@@ -100,7 +100,6 @@ class TestOpenHandsImageLayering:
         we can verify the code path: when ``coop_info["team_env"]``
         is set, the ``__enter__`` method should call ``add_local_file``,
         ``pip_install``, and ``run_commands`` on the base image."""
-        from unittest.mock import MagicMock
 
         from cooperbench.agents.openhands_agent_sdk.adapter import ModalSandboxContext
 
@@ -147,7 +146,6 @@ class TestOpenHandsImageLayering:
 
     def test_no_layering_when_team_inactive(self):
         """Solo / coop runs must NOT pay the image-build cost."""
-        from unittest.mock import MagicMock
 
         from cooperbench.agents.openhands_agent_sdk.adapter import ModalSandboxContext
 

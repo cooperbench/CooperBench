@@ -1,6 +1,5 @@
 """Unit tests for cooperbench.runner.tasks module."""
 
-import json
 import os
 
 import pytest

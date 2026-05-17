@@ -38,8 +38,7 @@ def _git_block(agent_id: str, partners: list[str]) -> str:
     partner_branches = ", ".join(f"`team/{p}`" for p in partners)
     first_partner = partners[0]
     partner_merge_lines = "\n".join(
-        f"  git fetch team && git merge --no-edit team/{p} || true   # pull in {p}'s work"
-        for p in partners
+        f"  git fetch team && git merge --no-edit team/{p} || true   # pull in {p}'s work" for p in partners
     )
     return f"""## Git collaboration — MERGE IS REQUIRED BEFORE SUBMITTING
 
