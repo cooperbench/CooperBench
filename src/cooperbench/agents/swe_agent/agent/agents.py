@@ -19,7 +19,7 @@ from swerex.exceptions import BashIncorrectSyntaxError, CommandTimeoutError, Swe
 from tenacity import RetryError
 from unidiff import UnidiffParseError
 
-from cooperbench.agents.mini_swe_agent.connectors.messaging import MessagingConnector
+from cooperbench.agents.mini_swe_agent_v2.connectors.messaging import MessagingConnector
 from cooperbench.agents.swe_agent import __version__, get_agent_commit_hash, get_rex_commit_hash, get_rex_version
 from cooperbench.agents.swe_agent.agent.action_sampler import AbstractActionSampler, ActionSamplerConfig
 from cooperbench.agents.swe_agent.agent.history_processors import DefaultHistoryProcessor, HistoryProcessor

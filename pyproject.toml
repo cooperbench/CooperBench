@@ -85,6 +85,13 @@ swe-agent = [
     "simple-parsing>=0.1",
     "gitpython>=3.0",
     "unidiff>=0.7",
+    # swe_agent's vendored framework imports numpy + boto3 + docker
+    # at module-load time, even when the docker / S3 / model paths
+    # are dormant.  Without these the adapter fails to import and
+    # the runner returns Error before invoking any LLM.
+    "numpy>=1.24",
+    "boto3>=1.34",
+    "docker>=7.0",
 ]
 gcp = [
     "cooperbench",
