@@ -7,10 +7,18 @@ paired with its natural model (`claude_code` → `claude-sonnet-4-5`;
 is Docker (concurrency=3) except `openhands_sdk`, which runs its
 agent-server in a Modal sandbox.
 
+**Eval policy**: `identical → naive merge → lead's patch alone`.
+Identical short-circuits when both agents produce byte-identical
+`patch.txt`; otherwise a naive 3-way merge is attempted, and if it
+conflicts the eval falls back to testing the team-lead's patch alone
+against both feature suites.  Union merge and member-only fallback
+were intentionally dropped — they reward lucky non-overlap or partial
+coordination rather than genuine team integration.
+
 | Agent framework | Pass | Cost (USD) | Wall time | Run name |
 |---|---|---|---|---|
 | `mini_swe_agent_v2` | **6 / 10** | $13.37 | 24m | `msa_team_core_v4` |
-| `openhands_sdk` | **5 / 10** | $31.90 | 16m | `oh_team_core` |
+| `openhands_sdk` | **4 / 10** | $31.90 | 16m | `oh_team_core` |
 | `claude_code` | **5 / 10** | ~$8.5 | 21m | `cc_team_core_v4` |
 | `codex` | **5 / 10** | $0* | 21m | `cx_team_core_v4` |
 
@@ -19,27 +27,29 @@ agent-server in a Modal sandbox.
 
 ## Per-task pass/fail
 
-Read top-to-bottom by repo, columns are agent frameworks.  `S` =
-passed via the solo-agent eval fallback (one agent's patch alone
-passed both features); `M` = passed via the merged-tree (naive or
-union); `·` = failed.
+Read top-to-bottom by repo, columns are agent frameworks.  `N` =
+passed via naive merge (or identical short-circuit); `L` = passed
+via the lead-alone fallback (naive conflicted, but the lead's
+`patch.txt` passed both feature suites by itself); `·` = failed.
 
 | Task | `msa` | `oh` | `cc` | `cx` |
 |---|---|---|---|---|
-| `dottxt_ai_outlines/1655` [1,3] | M | M | M | M |
+| `dottxt_ai_outlines/1655` [1,3] | N | L | N | N |
 | `dspy/8563` [1,4]               | · | · | · | · |
 | `go_chi/27` [3,4]               | · | · | · | · |
-| `llama_index/17244` [5,6]       | M | M | · | M |
-| `openai_tiktoken/0` [4,8]       | M | M | S | S |
-| `pallets_click/2800` [1,4]      | M | · | · | · |
-| `pallets_jinja/1559` [5,8]      | · | · | M | · |
-| `pallets_jinja/1621` [6,10]     | M | M | S | S |
+| `llama_index/17244` [5,6]       | N | L | · | N |
+| `openai_tiktoken/0` [4,8]       | N | L | L | L |
+| `pallets_click/2800` [1,4]      | N | · | · | · |
+| `pallets_jinja/1559` [5,8]      | · | · | N | · |
+| `pallets_jinja/1621` [6,10]     | N | · | L | L |
 | `react_hook_form/153` [2,6]     | · | · | · | · |
-| `typst/6554` [2,6]              | S | M | S | S |
+| `typst/6554` [2,6]              | L | L | L | L |
+| **TOTAL**                       | **6** | **4** | **5** | **5** |
 
 Three tasks (`dspy/8563`, `go_chi/27`, `react_hook_form/153`) failed
 for every framework — agents on those produced overlapping patches
-where neither solo nor the merged tree passed both feature suites.
+where neither lead-alone nor the naive merge passed both feature
+suites.
 
 ## What the runs cost to get here
 
@@ -69,7 +79,7 @@ Five reruns plus four re-evals were needed to land at these numbers
    to avoid the docker-run timeout; failures were all merge-conflict
    union-strategy artifacts.
 8. **`cx_team_core_v4` (Docker, c=3, beefed lead prompt)** — 2/10
-   from the run, **5/10 after re-eval** with the solo-agent fallback.
+   from the run, **5/10 after re-eval** with the lead-alone fallback.
 9. **`cc_team_core` (Docker, c=10)** — 2/10.  Same docker-startup
    issue as codex (2 tasks died at container creation), but milder
    because cc only spawns one container per agent.
@@ -78,13 +88,14 @@ Five reruns plus four re-evals were needed to land at these numbers
 11. **`cc_team_core_v3` (Docker, c=3, normalize_patch fix)** — 2/10.
     Confirmed `normalize_patch` fix isn't enough on its own.
 12. **`cc_team_core_v4` (Docker, c=3, beefed lead prompt)** — 2/10
-    from the run, **5/10 after re-eval** with solo-agent fallback.
+    from the run, **5/10 after re-eval** with lead-alone fallback.
 
 ## Where the numbers ended up
 
-`oh` was the only framework that already passed ≥ 5 / 10 against the
-original eval.  All three of the others required the solo-agent
-fallback to surface integration work that the agents had genuinely
-done but that union-merge had wiped out — see the `S` cells in the
-per-task table.  Bug fixes that drove the move are catalogued in
-`CHANGELOG.md` under the unreleased entry.
+Three of the four frameworks hit ≥ 5 / 10 on the final policy.  `oh`
+sits at 4 / 10 — their agents reliably produce complementary patches
+that *union*-merged cleanly under the older permissive eval (5 / 10),
+but their lead does not actually integrate the member's work, so the
+stricter `identical → naive → lead` policy correctly catches that.
+Bug fixes that drove the move are catalogued in `CHANGELOG.md` under
+the unreleased entry.
