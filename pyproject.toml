@@ -98,6 +98,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "mypy>=1.10",
     "ruff>=0.4",
+    "fakeredis>=2.0",
 ]
 all = ["cooperbench[swe-agent,gcp,dev]"]
 
