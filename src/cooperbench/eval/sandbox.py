@@ -233,21 +233,28 @@ fi
         strategy_used = "naive"
         merged_diff = naive_result["diff"]
 
-        # Step 3: If conflicts, try union merge
+        # Step 3: If conflicts, try union merge.  If even union conflicts, we
+        # don't have a merged tree to test — but we don't bail out: the solo
+        # fallback below can still credit a team whose lead alone integrated
+        # both features.  We just record that no merge strategy worked and let
+        # the merged-tree tests come back as failure.
+        merge_unreconciled = False
         if naive_result["conflict"]:
             union_result = _merge_union(sb, base_sha)
             if not union_result.get("error"):
                 strategy_used = "union"
                 merged_diff = union_result["diff"]
             else:
-                # Both naive and union failed - cannot proceed
-                return _merged_error_result(
-                    f"Both naive and union merge strategies failed. "
-                    f"Naive: conflicts. Union: {union_result.get('error')}"
-                )
+                merge_unreconciled = True
+                strategy_used = "union-conflicts"
+                merged_diff = ""
 
-        # Step 4: Copy the right diff file to merged.patch
-        if strategy_used == "naive":
+        # Step 4: Copy the right diff file to merged.patch (or write an empty
+        # patch if no merge strategy succeeded — the run_tests path will then
+        # apply nothing and fail naturally, freeing the solo fallback to run).
+        if merge_unreconciled:
+            sb.exec("bash", "-c", ": > /patches/merged.patch")
+        elif strategy_used == "naive":
             sb.exec("cp", "/patches/naive_diff.patch", "/patches/merged.patch")
         else:
             sb.exec("cp", "/patches/union_diff.patch", "/patches/merged.patch")
@@ -257,10 +264,10 @@ fi
         if verify.returncode != 0:
             return _merged_error_result(f"Failed to create merged.patch (strategy: {strategy_used})")
 
-        # Test feature 1
+        # Test feature 1 and feature 2 against the merged tree.  If
+        # merge_unreconciled, /patches/merged.patch is empty and these will
+        # apply nothing; the solo fallback below is the only path to pass.
         test1_result = _run_tests(sb, "tests1.patch", "merged.patch", base_sha)
-
-        # Test feature 2
         test2_result = _run_tests(sb, "tests2.patch", "merged.patch", base_sha)
 
         # Fallback: if the merged tree doesn't pass both features, try each
