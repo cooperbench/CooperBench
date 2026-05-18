@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`dataset/subsets/core.json`** — 10-pair core subset for quick agent comparisons.  Stratified sampling: largest-remainder proportional allocation by repo's full-dataset pair count, with a one-slot floor per primary language (Python / Go / Rust / TS).  Within each repo, pairs are sampled by spreading across tasks before any repeat.  Reproducible via `python scripts/generate_core_subset.py` (seed=42).  Pass-rate on `core` tracks the overall dataset's shape without per-task eval data.
+- **`docs/BENCHMARK_RESULTS.md`** — horizontal team-mode comparison of `claude_code` / `codex` / `mini_swe_agent_v2` / `openhands_sdk` on the `core` subset.  Per-task pass/fail matrix with merge strategy used, framework totals (`msa` 6/10, `oh` 5/10, `cc` 5/10, `cx` 5/10), and a narrative of the reruns that surfaced the bugs in the unreleased Fixed/Changed sections.
 - **`team` setting** alongside `solo` and `coop`.  N agents organized
   as one lead + N-1 members, with a Redis-backed shared task list
   (atomic claim via `coop-task-claim`), a shared scratchpad volume

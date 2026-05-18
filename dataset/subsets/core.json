@@ -1,0 +1,122 @@
+{
+  "name": "core",
+  "description": "10-pair core subset via stratified diversity sampling (proportional repo allocation with language floor, seed=42). Designed so the core's pass-rate roughly tracks the overall dataset's without per-task eval data.",
+  "stats": {
+    "tasks": 10,
+    "pairs": 10,
+    "repos": 9
+  },
+  "allocation": {
+    "dottxt_ai_outlines_task": 1,
+    "dspy_task": 1,
+    "go_chi_task": 1,
+    "llama_index_task": 1,
+    "openai_tiktoken_task": 1,
+    "pallets_click_task": 1,
+    "pallets_jinja_task": 2,
+    "react_hook_form_task": 1,
+    "typst_task": 1
+  },
+  "tasks": [
+    {
+      "repo": "dottxt_ai_outlines_task",
+      "task_id": 1655,
+      "pairs": [
+        [
+          1,
+          3
+        ]
+      ]
+    },
+    {
+      "repo": "dspy_task",
+      "task_id": 8563,
+      "pairs": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "repo": "go_chi_task",
+      "task_id": 27,
+      "pairs": [
+        [
+          3,
+          4
+        ]
+      ]
+    },
+    {
+      "repo": "llama_index_task",
+      "task_id": 17244,
+      "pairs": [
+        [
+          5,
+          6
+        ]
+      ]
+    },
+    {
+      "repo": "openai_tiktoken_task",
+      "task_id": 0,
+      "pairs": [
+        [
+          4,
+          8
+        ]
+      ]
+    },
+    {
+      "repo": "pallets_click_task",
+      "task_id": 2800,
+      "pairs": [
+        [
+          1,
+          4
+        ]
+      ]
+    },
+    {
+      "repo": "pallets_jinja_task",
+      "task_id": 1559,
+      "pairs": [
+        [
+          5,
+          8
+        ]
+      ]
+    },
+    {
+      "repo": "pallets_jinja_task",
+      "task_id": 1621,
+      "pairs": [
+        [
+          6,
+          10
+        ]
+      ]
+    },
+    {
+      "repo": "react_hook_form_task",
+      "task_id": 153,
+      "pairs": [
+        [
+          2,
+          6
+        ]
+      ]
+    },
+    {
+      "repo": "typst_task",
+      "task_id": 6554,
+      "pairs": [
+        [
+          2,
+          6
+        ]
+      ]
+    }
+  ]
+}
