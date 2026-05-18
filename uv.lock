@@ -571,6 +571,7 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "fakeredis" },
     { name = "ghapi" },
     { name = "gitpython" },
     { name = "google-cloud-batch" },
@@ -586,6 +587,7 @@ all = [
     { name = "unidiff" },
 ]
 dev = [
+    { name = "fakeredis" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -612,6 +614,8 @@ requires-dist = [
     { name = "cachetools" },
     { name = "deprecation", specifier = ">=2.1.0" },
     { name = "docker", specifier = ">=7.0" },
+    { name = "fakeredis", marker = "extra == 'all'", specifier = ">=2.0" },
+    { name = "fakeredis", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "fastmcp", specifier = ">=2.11.3" },
     { name = "filelock", specifier = ">=3.20.1" },
     { name = "func-timeout", specifier = ">=4.3.5" },
