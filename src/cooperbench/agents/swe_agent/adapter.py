@@ -78,7 +78,7 @@ class SweAgentRunner:
         import swerex.deployment.modal as swerex_modal
         import yaml
         from swerex.deployment import get_deployment
-        from swerex.deployment.config import ModalDeploymentConfig
+        from swerex.deployment.config import DockerDeploymentConfig, ModalDeploymentConfig
 
         # Tell litellm to drop unsupported params (e.g., top_p for some models)
         litellm.drop_params = True
@@ -101,6 +101,29 @@ class SweAgentRunner:
             return result.entrypoint([])  # Clear entrypoint
 
         swerex_modal._ImageBuilder.from_registry = _patched_from_registry
+
+        # Monkey-patch SWE-ReX's docker startup to use ``pipx run --spec``.
+        # The default command falls back to ``pipx run swe-rex ...`` when
+        # ``swerex-remote`` isn't on PATH, but pipx looks for an executable
+        # literally named ``swe-rex`` (which doesn't exist — the package
+        # provides ``swerex-remote``).  ``--spec`` separates package name
+        # from executable name and unblocks the fallback.  Without this,
+        # docker startup dies in seconds with "no executable named 'swe-rex'".
+        import swerex.deployment.docker as swerex_docker
+
+        _orig_docker_start_cmd = swerex_docker.DockerDeployment._get_swerex_start_cmd
+
+        def _patched_docker_start_cmd(self, token: str) -> list[str]:
+            cmds = _orig_docker_start_cmd(self, token)
+            return [
+                c.replace(
+                    f"pipx run {swerex_docker.PACKAGE_NAME}",
+                    f"pipx run --spec {swerex_docker.PACKAGE_NAME} {swerex_docker.REMOTE_EXECUTABLE_NAME}",
+                )
+                for c in cmds
+            ]
+
+        swerex_docker.DockerDeployment._get_swerex_start_cmd = _patched_docker_start_cmd
 
         # Determine if we're in collaboration mode
         is_coop = (messaging_enabled or git_enabled) and agents and len(agents) > 1
@@ -148,8 +171,7 @@ class SweAgentRunner:
         if "gemini" in model_name.lower():
             if "history_processors" in agent_yaml_config:
                 agent_yaml_config["history_processors"] = [
-                    hp for hp in agent_yaml_config["history_processors"]
-                    if hp.get("type") != "cache_control"
+                    hp for hp in agent_yaml_config["history_processors"] if hp.get("type") != "cache_control"
                 ]
 
         # Configure the model (SWE-agent uses litellm internally)
@@ -166,12 +188,29 @@ class SweAgentRunner:
         # Create agent config from YAML (includes templates, tools, etc.)
         agent_cfg = DefaultAgentConfig(**agent_yaml_config)
 
-        # Configure Modal deployment via SWE-ReX
-        deployment_config = ModalDeploymentConfig(
-            image=image,
-            deployment_timeout=agent_config.get("timeout", 3600),
-            runtime_timeout=agent_config.get("runtime_timeout", 300),
-        )
+        # Configure deployment via SWE-ReX.  Modal is the default; docker is
+        # supported for runs on hosts that don't have Modal credentials (or for
+        # local debugging).  GCP is not currently wired into swerex from here.
+        backend = (config or {}).get("backend", "modal")
+        if backend == "docker":
+            # CooperBench task images set ENTRYPOINT=/usr/local/bin/runner.sh,
+            # which means anything SWE-ReX passes as the container CMD becomes
+            # an argument to runner.sh (e.g. "sh -c '...'" → runner.sh treats
+            # "-c" as the feature patch path).  Clear the entrypoint so the
+            # CMD runs as PID 1, matching what the Modal path and eval's
+            # docker backend already do.
+            deployment_config = DockerDeploymentConfig(
+                image=image,
+                startup_timeout=agent_config.get("startup_timeout", 180.0),
+                pull="missing",
+                docker_args=["--entrypoint", ""],
+            )
+        else:
+            deployment_config = ModalDeploymentConfig(
+                image=image,
+                deployment_timeout=agent_config.get("timeout", 3600),
+                runtime_timeout=agent_config.get("runtime_timeout", 300),
+            )
         deployment = get_deployment(deployment_config)
 
         # Create the agent with full config (templates, tools, etc.)
@@ -218,9 +257,7 @@ class SweAgentRunner:
                 env.start()
 
                 # Capture base commit for patch generation (before any agent changes)
-                base_commit = env.communicate(
-                    f"cd {working_dir} && git rev-parse HEAD", timeout=10
-                ).strip()
+                base_commit = env.communicate(f"cd {working_dir} && git rev-parse HEAD", timeout=10).strip()
 
                 # Setup git collaboration if enabled
                 if git_connector:
@@ -259,9 +296,7 @@ class SweAgentRunner:
                     # First add any uncommitted changes to staging
                     env.communicate(f"cd {working_dir} && git add -A", timeout=10)
                     # Diff from base to HEAD (committed changes) + staged changes
-                    patch = env.communicate(
-                        f"cd {working_dir} && git diff {base_commit}", timeout=30
-                    ).strip()
+                    patch = env.communicate(f"cd {working_dir} && git diff {base_commit}", timeout=30).strip()
                 except Exception:
                     # Fall back to submission from SWE-agent if our method fails
                     if isinstance(info, dict):
