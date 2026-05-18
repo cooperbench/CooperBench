@@ -96,12 +96,25 @@ def build_environment(
     network: str | None = None,
     extra_run_args: list[str] | None = None,
     timeout: int = 7200,
+    backend: str = "docker",
 ) -> ContainerEnv:
-    """Spin up a long-lived Docker container for the run.
+    """Spin up a long-lived container for the run on the chosen backend.
 
-    Tests monkey-patch this to inject a fake env.  ``extra_run_args`` are
-    appended to ``docker run`` (e.g. host-gateway mapping for coop).
+    ``backend="docker"`` (default) preserves prior behavior. ``backend="modal"``
+    runs the container as a Modal sandbox. ``extra_run_args`` and ``network``
+    only apply to the Docker backend (Modal sandboxes can't take docker-run
+    flags); they're silently ignored on Modal. Tests monkey-patch this to
+    inject a fake env.
     """
+    if backend == "modal":
+        from cooperbench.agents.mini_swe_agent_v2.environments.modal import ModalEnvironment
+
+        return ModalEnvironment(
+            image=image,
+            cwd=CONTAINER_REPO_PATH,
+            timeout=timeout,
+        )
+
     from cooperbench.agents.mini_swe_agent_v2.environments.docker import DockerEnvironment
 
     run_args = ["--rm"]
@@ -138,11 +151,18 @@ def read_file_from_container(env: ContainerEnv, path: str) -> str:
 
 
 def normalize_patch(text: str) -> str:
-    """Strip surrounding whitespace but guarantee exactly one trailing newline.
+    """Trim leading/trailing blank lines and guarantee exactly one trailing newline.
 
     ``git apply`` rejects diffs without a terminal newline ("corrupt patch at
     line N").  Adapters that pull the patch out of the container should run it
     through this helper before returning it in ``AgentResult.patch``.
+
+    Importantly, do NOT use ``str.strip()`` — blank context lines inside a
+    unified diff are encoded as ``" \\n"`` (a single space + newline), and
+    ``strip()`` would eat a trailing one along with the terminator, leaving a
+    hunk whose header line counts no longer match its body and which ``git
+    apply`` rejects.
     """
-    body = text.strip()
-    return body + "\n" if body else ""
+    if not text or not text.strip():
+        return ""
+    return text.lstrip("\n").rstrip("\n") + "\n"

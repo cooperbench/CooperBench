@@ -249,7 +249,11 @@ class MiniSweAgentV2Runner:
         try:
             r = env.execute({"command": "cat patch.txt 2>/dev/null"})
             if r.get("returncode") == 0:
-                patch = (r.get("output") or "").strip()
+                # git apply rejects diffs without a terminal newline; normalize
+                # to one trailing newline (matches claude_code / codex adapters).
+                from cooperbench.agents._coop.runtime import normalize_patch
+
+                patch = normalize_patch(r.get("output") or "")
         except Exception:
             pass
 

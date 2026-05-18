@@ -118,7 +118,12 @@ class ModalEnvironment:
         """Create and start the Modal Sandbox (single attempt)."""
         self.logger.debug(f"Creating Modal Sandbox with image: {self.config.image}")
         image = self._build_image()
+        # Task images may have CMDs that exit immediately; clear the entrypoint
+        # (see _get_or_build_image) and run `sleep infinity` so the sandbox stays
+        # alive for exec calls. Mirrors the eval backend and the Docker env.
         self.sb = modal.Sandbox.create(
+            "sleep",
+            "infinity",
             image=image,
             timeout=self.config.timeout,
             workdir=self.config.cwd,

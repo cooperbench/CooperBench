@@ -263,13 +263,35 @@ fi
         # Test feature 2
         test2_result = _run_tests(sb, "tests2.patch", "merged.patch", base_sha)
 
+        # Fallback: if the merged tree doesn't pass both features, try each
+        # agent's patch alone.  This catches the case where one agent (typically
+        # the team lead) correctly integrated both features into a single
+        # working patch, but union-merging it with the other agent's partial
+        # patch corrupted it.  In team mode the team's "shipped artifact" is
+        # whichever agent did the integration correctly; we credit them.
+        winning_solo: str | None = None
+        if not (test1_result["passed"] and test2_result["passed"]):
+            for solo_label, solo_patch in (("agent1", "patch1.patch"), ("agent2", "patch2.patch")):
+                if apply_status.get(solo_label) != "applied":
+                    continue
+                solo_t1 = _run_tests(sb, "tests1.patch", solo_patch, base_sha)
+                if not solo_t1["passed"]:
+                    continue
+                solo_t2 = _run_tests(sb, "tests2.patch", solo_patch, base_sha)
+                if solo_t2["passed"]:
+                    test1_result, test2_result = solo_t1, solo_t2
+                    winning_solo = solo_label
+                    break
+
+        merge_payload = {
+            "status": merge_status,
+            "strategy": strategy_used if winning_solo is None else f"solo-{winning_solo}",
+            "diff": merged_diff[:5000] if merged_diff else "",  # Truncate for storage
+        }
+
         return {
             "apply_status": apply_status,
-            "merge": {
-                "status": merge_status,
-                "strategy": strategy_used,
-                "diff": merged_diff[:5000] if merged_diff else "",  # Truncate for storage
-            },
+            "merge": merge_payload,
             "feature1": {
                 "feature_id": feature1_id,
                 "passed": test1_result["passed"],

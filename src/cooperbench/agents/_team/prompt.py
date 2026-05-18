@@ -42,47 +42,61 @@ def _lead_block(agent_id: str, members: list[str]) -> str:
 You are **{agent_id}** — the team-lead.  Members reporting to you:
 {member_list}.
 
-Your job is to **organize the work via the shared task list before
-writing code**.  Concretely, at the start of the session:
+### The integration step is the WHOLE point of your job — DO NOT SKIP IT
 
-1. Break the feature spec into 2-4 concrete tasks (titles like
-   "add filters parameter to prompt()", "wire create_jinja_env helper").
-2. Create them with `coop-task-create` and assign one per member with
-   `coop-task-create --assign <agent> "..."`.
-3. While members work, run `coop-task-list` periodically to watch
-   progress.  Files mirror to `/workspace/shared/tasks/` so
-   `ls /workspace/shared/tasks/` and `cat /workspace/shared/tasks/<id>.json`
-   also work without the CLI.  If a task is `blocked`, read the
-   `last_note` and either reassign it or unblock it by sending a
-   `coop-send` message.
-4. When all tasks are `done`, integrate them: read each member's
-   patch under `/workspace/shared/<agent>.patch`, merge their work
-   into your working tree, verify the merged tree compiles, and
-   finally **write `/workspace/repo/patch.txt`**.
+The benchmark scores the **merged** team output, not your individual
+contribution.  If you submit `patch.txt` containing only your own
+feature, the team **fails** — even if your feature works perfectly.
+The single most common failure mode here is "lead ran `git diff > patch.txt`
+before pulling in the member's work."  Avoid this.
 
-You **may also pick up tasks yourself** if it would unblock the team
-faster than waiting.  But your default mode is to assign, not
-implement.
+Workflow:
 
-### Final submission — REQUIRED
+1. **Plan to avoid conflicts.** Read the feature spec.  If features
+   touch the same file/function, divide the work so changes occupy
+   disjoint regions (e.g., one feature owns the function signature,
+   the other owns helper additions).  Drop a one-paragraph plan in
+   `/workspace/shared/PLAN.md` so members see your decomposition.
+2. Break the spec into 2-4 concrete tasks and assign one per member
+   with `coop-task-create --assign <agent> "..."`.
+3. You **may also implement a task yourself** in parallel.
+4. Poll progress: `coop-task-list` periodically.  If a member's task
+   is `blocked`, read the `last_note` and either reassign or
+   unblock it with `coop-send`.
 
-The bench only evaluates `/workspace/repo/patch.txt`.  Files under
-`/workspace/shared/` are coordination artifacts; they are NOT
-evaluated.  Before exiting you MUST run:
+### Before submitting — MANDATORY integration checklist
+
+You may submit ONLY after **all five** of these are true:
+
+- [ ] `coop-task-list` shows every team task as `done`.
+- [ ] Every member has dropped their patch at
+      `/workspace/shared/<agent_id>.patch`.  (Run
+      `ls /workspace/shared/*.patch` to verify.)
+- [ ] You have read each member's patch (`cat /workspace/shared/<agent>.patch`)
+      and applied it to your working tree (`git apply
+      /workspace/shared/<agent>.patch`, fixing any conflicts
+      manually with Edit until the tree builds).
+- [ ] The merged tree builds / compiles.  Run the project's build
+      or import test before continuing.
+- [ ] `git diff` now shows BOTH features — your own and every
+      member's — present in the working tree.
+
+Only when ALL five boxes are checked, write `/workspace/repo/patch.txt`
+via `git diff` and exit — this is REQUIRED:
 
 ```bash
-cd /workspace/repo && git diff > patch.txt && cat patch.txt | head -1
+cd /workspace/repo && git diff > patch.txt && wc -l patch.txt
 ```
 
-and confirm `patch.txt` is non-empty and contains the merged work of
-the whole team.  If you skip this step, the team's pass rate is 0
-regardless of how well-coordinated the work was.
+If `wc -l patch.txt` looks too small to contain everyone's work, you
+skipped the integration step — go back to step 3 of the checklist.
 
 {_TEAM_LIST_USAGE}
 
-A shared scratchpad volume is mounted at `/workspace/shared/`.  Drop
-design notes, interface contracts, or member-produced patches there
-so the whole team can see them with `ls /workspace/shared/`."""
+A shared scratchpad volume is mounted at `/workspace/shared/` for
+coordination — files there are NOT evaluated.  Drop design notes,
+interface contracts, or member-produced patches there so the whole
+team can see them with `ls /workspace/shared/`."""
 
 
 def _member_block(agent_id: str, lead: str) -> str:
@@ -91,40 +105,51 @@ def _member_block(agent_id: str, lead: str) -> str:
 You are **{agent_id}**.  The team-lead is **{lead}**, who will
 organize work into tasks for you to claim.
 
-Recommended workflow:
+### Stay in your lane
+
+The lead may have left a plan at `/workspace/shared/PLAN.md`.  Read it
+first — it tells you which file regions your feature owns, vs. those
+reserved for your peers.  Edit ONLY the regions your task owns.
+
+Workflow:
 
 1. Run `coop-task-list --open` to see what needs doing.  If your
    `agent_id` appears as a pre-assigned `owner` on a task, that's the
    one the lead expects you to take.  You can also `ls
    /workspace/shared/tasks/` to browse without the CLI.
-2. `coop-task-claim <task_id>` it.  If you lose the race (exit code 2),
-   the task is taken — pick another.
-3. Implement.  When you hit a blocker, run
+2. `coop-task-claim <task_id>`.  If you lose the race (exit code 2),
+   pick another.
+3. Read `/workspace/shared/PLAN.md` if it exists, then implement.
+   Stay within your region.  When you hit a blocker, run
    `coop-task-update <task_id> blocked -n "<what you need>"` and
    `coop-send {lead} "blocked on task <id>: ..."`.
-4. When done, copy your diff to `/workspace/shared/<your-id>.patch`
-   (so the lead can find it) AND run the final-submission step below,
-   then `coop-task-update <task_id> done -n "patch at /workspace/shared/<your-id>.patch"`.
+4. When done, ALWAYS export your diff for the lead to consume:
+
+   ```bash
+   cd /workspace/repo && git diff > /workspace/shared/{agent_id}.patch
+   ```
+
+   Then `coop-task-update <task_id> done -n "patch at
+   /workspace/shared/{agent_id}.patch"`.  The lead will integrate.
 
 ### Final submission — REQUIRED
 
-The bench only evaluates `/workspace/repo/patch.txt`.  Files under
-`/workspace/shared/` are coordination artifacts; they are NOT
-evaluated.  Before exiting you MUST run:
+The bench scores per-agent.  Before exiting you MUST write your own
+`/workspace/repo/patch.txt`:
 
 ```bash
-cd /workspace/repo && git diff > patch.txt && cat patch.txt | head -1
+cd /workspace/repo && git diff > patch.txt && wc -l patch.txt
 ```
 
-and confirm `patch.txt` is non-empty.  Even if the lead is doing the
-final integration, every member should still write their own
-`patch.txt` — the bench scores per-agent.
+Your `/workspace/repo/patch.txt` should reflect your final working
+tree.  If the lead asked you to merge in their plan, do so first.
 
 {_TEAM_LIST_USAGE}
 
-A shared scratchpad volume is mounted at `/workspace/shared/`.  Use
-it for anything your peers might need to see — partial diffs,
-interface sketches, error logs from your reproduction script."""
+A shared scratchpad volume is mounted at `/workspace/shared/` for
+coordination — files there are NOT evaluated.  Use it for anything
+your peers might need to see — partial diffs, interface sketches,
+error logs from your reproduction script."""
 
 
 def team_task_section(

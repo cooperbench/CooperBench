@@ -268,7 +268,13 @@ class ClaudeCodeRunner:
             extra_flags = f"--max-turns {int(max_turns)} "
 
         network = config.get("git_network") if isinstance(config, dict) else None
-        env = _build_environment(image, network=network, extra_run_args=extra_run_args or None)
+        backend = config.get("backend", "docker") if isinstance(config, dict) else "docker"
+        env = _build_environment(
+            image,
+            network=network,
+            extra_run_args=extra_run_args or None,
+            backend=backend,
+        )
 
         status = "Error"
         error_msg: str | None = None

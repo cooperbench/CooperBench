@@ -267,9 +267,10 @@ class TestAdapterGitWiring:
         env = fake_env_factory(self._responses(stream_json_success, session_jsonl_one_turn, ""))
         captured: dict[str, object] = {}
 
-        def _capture_env(image, *, network=None, extra_run_args=None, timeout=7200):
+        def _capture_env(image, *, network=None, extra_run_args=None, timeout=7200, backend="docker"):
             captured["network"] = network
             captured["extra_run_args"] = extra_run_args or []
+            captured["backend"] = backend
             return env
 
         with mock_patch(
