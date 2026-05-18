@@ -10,7 +10,7 @@ from rich.table import Table
 
 from cooperbench.eval.runs import discover_runs
 from cooperbench.eval.sandbox import _sanitize_patch, test_merged, test_solo
-from cooperbench.runner.tasks import DEFAULT_DATASET_DIR
+from cooperbench.runner.tasks import DEFAULT_DATASET_DIR, DEFAULT_LOGS_DIR
 from cooperbench.utils import console
 
 
@@ -67,6 +67,28 @@ def evaluate(
 
     is_single = len(runs) == 1
 
+    # Guardrail: openhands_sdk produces patches that include a committed
+    # ``patch.txt`` in the working tree and relies on the same Modal/Redis
+    # tunnel the agent used; running eval through Docker (or any non-modal
+    # backend) silently changes the test environment.  Read the run's
+    # config.json once and bail with a clear warning so users don't burn
+    # an eval pass for no reason.
+    run_config_path = (Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR) / run_name / "config.json"
+    agent_framework: str | None = None
+    if run_config_path.exists():
+        try:
+            agent_framework = json.loads(run_config_path.read_text()).get("agent_framework")
+        except Exception:
+            agent_framework = None
+    if agent_framework == "openhands_sdk" and backend != "modal":
+        console.print(
+            f"[yellow]warning:[/yellow] run [bold]{run_name}[/bold] was produced by "
+            f"agent_framework=openhands_sdk, which requires --backend modal. "
+            f"Refusing to evaluate with --backend {backend}. "
+            f"Rerun with --backend modal."
+        )
+        return
+
     # Header
     console.print()
     console.print(f"[bold]cooperbench eval[/bold] [dim]{run_name}[/dim]")
@@ -115,8 +137,6 @@ def evaluate(
             passed, failed, errors, skipped, results = _run_with_progress(runs, eval_run, concurrency)
 
     # Save summary
-    from cooperbench.runner.tasks import DEFAULT_LOGS_DIR
-
     logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
     log_dir = logs_root / run_name
     _save_summary(log_dir, run_name, len(runs), passed, failed, errors, skipped, results)

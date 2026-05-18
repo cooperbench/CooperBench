@@ -110,6 +110,13 @@ def _build_codex_command(
     if model_name:
         model_flag = f"--model {shlex.quote(_strip_provider_prefix(model_name))} "
 
+    # IMPORTANT: redirect stdin from /dev/null.  Codex's `exec` mode otherwise
+    # prints "Reading additional input from stdin..." and blocks indefinitely
+    # if stdin is open but no EOF arrives.  Docker's `docker exec` (non-tty)
+    # gets that for free, but Modal sandbox `exec` keeps stdin open, which
+    # silently hangs codex for the full sandbox lifetime (~2h) producing zero
+    # output.  </dev/null gives codex an immediate EOF so it falls back to
+    # the positional prompt.
     return (
         'export PATH="$HOME/.local/bin:$PATH"; '
         f"export CODEX_HOME={shlex.quote(auth_dir)}; " + coop_exports + f"cd {shlex.quote(CONTAINER_REPO_PATH)} && "
@@ -119,7 +126,7 @@ def _build_codex_command(
         f"{model_flag}"
         "--json "
         f'-- "$(cat {shlex.quote(instruction_path)})" '
-        f"2>&1 | tee {shlex.quote(stream_log_path)}"
+        f"</dev/null 2>&1 | tee {shlex.quote(stream_log_path)}"
     )
 
 
