@@ -19,12 +19,12 @@ from __future__ import annotations
 import fakeredis
 import pytest
 
-from cooperbench.agents._team.loop_refresh import (
+from cooperbench.team_harness.loop_refresh import (
     TeamPoller,
     format_task_summary,
     poll_team_state,
 )
-from cooperbench.agents._team.task_list import TaskListClient
+from cooperbench.team_harness.task_list import TaskListClient
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ class TestPollTeamState:
         # Patch the redis client factory so we use fakeredis.
         from unittest.mock import patch as mp
 
-        with mp("cooperbench.agents._team.loop_refresh._client_from_env", return_value=fake):
+        with mp("cooperbench.team_harness.loop_refresh._client_from_env", return_value=fake):
             summary = poll_team_state()
 
         assert summary is not None

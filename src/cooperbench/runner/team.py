@@ -35,11 +35,11 @@ import redis
 import yaml
 
 from cooperbench.agents import get_runner
-from cooperbench.agents._team import TaskListClient, compute_metrics
 from cooperbench.agents.mini_swe_agent_v2.connectors import create_git_server
 from cooperbench.config import ConfigManager
 from cooperbench.runner.coop import _extract_conversation, _message_timestamp_key
 from cooperbench.runner.tasks import DEFAULT_DATASET_DIR, DEFAULT_LOGS_DIR
+from cooperbench.team_harness import TaskListClient, TeamHarnessConfig, TeamSession
 from cooperbench.utils import console, get_image_name
 
 TEAM_VOLUME_PREFIX = "cb-team"
@@ -70,6 +70,7 @@ def execute_team(  # noqa: PLR0915  (long but linear; refactor lands in a follow
     agent_config: str | None = None,
     dataset_dir: Path | str | None = None,
     logs_dir: Path | str | None = None,
+    team_features: TeamHarnessConfig | None = None,
 ) -> dict | None:
     """Execute a team-mode task.
 
@@ -83,6 +84,7 @@ def execute_team(  # noqa: PLR0915  (long but linear; refactor lands in a follow
     agents = [f"agent{i + 1}" for i in range(n_agents)]
     run_id = uuid.uuid4().hex[:8]
     start_time = datetime.now()
+    harness_config = team_features or TeamHarnessConfig()
 
     logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
     feature_str = "_".join(f"f{f}" for f in sorted(features))
@@ -117,33 +119,47 @@ def execute_team(  # noqa: PLR0915  (long but linear; refactor lands in a follow
             console.print(f"  [dim]redis[/dim] [green]ready[/green] {redis_url}")
 
     namespaced_redis = f"{redis_url}#run:{run_id}"
-    team_volume = f"{TEAM_VOLUME_PREFIX}-{run_id}"
+    # When the scratchpad feature is off, we still pass a placeholder
+    # volume name to the session (used as a dict key downstream); the
+    # session's scratchpad_mount_args() will return []  so no volume is
+    # actually created or mounted.
+    team_volume = f"{TEAM_VOLUME_PREFIX}-{run_id}" if harness_config.scratchpad else ""
 
-    # Pre-seed task list.
-    task_list = None
-    try:
-        client = _redis_client(redis_url)
-        task_list = TaskListClient(redis_client=client, run_id=run_id)
-        sorted_features = sorted(features)
-        for agent_id, feature_id in zip(agents[1:], sorted_features[1:]):
-            # Members get pre-assigned tasks for the features they own.
+    session = TeamSession(
+        run_id=run_id,
+        redis_url=namespaced_redis,
+        agents=agents,
+        team_volume=team_volume,
+        config=harness_config,
+    )
+
+    # Pre-seed task list (only if the task_list feature is on).
+    task_list: TaskListClient | None = None
+    if harness_config.task_list:
+        try:
+            client = _redis_client(redis_url)
+            task_list = session.task_list_client(redis_client=client)
+            assert task_list is not None  # narrowing: enabled implies non-None
+            sorted_features = sorted(features)
+            for agent_id, feature_id in zip(agents[1:], sorted_features[1:]):
+                # Members get pre-assigned tasks for the features they own.
+                task_list.create(
+                    title=f"Implement feature {feature_id}",
+                    created_by="bench-runner",
+                    owner=agent_id,
+                    metadata={"feature_id": feature_id, "assigned_to": agent_id},
+                )
+            # Lead gets a meta-task to organize integration.
             task_list.create(
-                title=f"Implement feature {feature_id}",
+                title=f"Lead-only: integrate and submit feature {sorted_features[0]}",
                 created_by="bench-runner",
-                owner=agent_id,
-                metadata={"feature_id": feature_id, "assigned_to": agent_id},
+                owner=agents[0],
+                metadata={"feature_id": sorted_features[0], "assigned_to": agents[0], "lead_task": True},
             )
-        # Lead gets a meta-task to organize integration.
-        task_list.create(
-            title=f"Lead-only: integrate and submit feature {sorted_features[0]}",
-            created_by="bench-runner",
-            owner=agents[0],
-            metadata={"feature_id": sorted_features[0], "assigned_to": agents[0], "lead_task": True},
-        )
-    except (redis.exceptions.RedisError, OSError) as e:
-        if not quiet:
-            console.print(f"  [yellow]task-list[/yellow] degraded: {e}")
-        task_list = None
+        except (redis.exceptions.RedisError, OSError) as e:
+            if not quiet:
+                console.print(f"  [yellow]task-list[/yellow] degraded: {e}")
+            task_list = None
 
     git_server = None
     git_server_url = None
@@ -194,6 +210,7 @@ def execute_team(  # noqa: PLR0915  (long but linear; refactor lands in a follow
                 features=features,
                 dataset_dir=dataset_dir,
                 logs_dir=logs_dir,
+                team_features=harness_config,
             )
         except Exception as e:
             results[agent_id] = {
@@ -269,10 +286,8 @@ def execute_team(  # noqa: PLR0915  (long but linear; refactor lands in a follow
     if task_list is not None:
         try:
             fresh = _redis_client(redis_url)
-            harvest_list = TaskListClient(redis_client=fresh, run_id=run_id)
-            events = harvest_list.log_events()
-            final_tasks = harvest_list.list()
-            metrics = compute_metrics(events, final_tasks=final_tasks)
+            harvest_list = session.task_list_client(redis_client=fresh)
+            metrics, events, final_tasks = session.harvest_metrics(harvest_list)
             with open(log_dir / "task_log.json", "w") as f:
                 json.dump(events, f, indent=2, default=str)
             with open(log_dir / "tasks.json", "w") as f:
@@ -314,6 +329,16 @@ def execute_team(  # noqa: PLR0915  (long but linear; refactor lands in a follow
         "total_steps": total_steps,
         "messages_sent": len(sent_msgs),
         "metrics": metrics or {},
+        # Surface which harness features were enabled so downstream
+        # analysis (ablation studies, regressions) doesn't have to
+        # cross-reference run flags.
+        "team_features": {
+            "task_list": harness_config.task_list,
+            "scratchpad": harness_config.scratchpad,
+            "mcp": harness_config.mcp,
+            "auto_refresh": harness_config.auto_refresh,
+            "protocol": harness_config.protocol,
+        },
         "log_dir": str(log_dir),
     }
 
@@ -356,6 +381,7 @@ def _spawn_team_agent(
     features: list[int] | None,
     dataset_dir: Path | str | None,
     logs_dir: Path | str | None,
+    team_features: TeamHarnessConfig | None = None,
 ) -> dict:
     root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
     task_dir = root / repo_name / f"task{task_id}"
@@ -409,6 +435,7 @@ def _spawn_team_agent(
         team_role=team_role,
         team_id=team_id,
         task_list_url=task_list_url,
+        team_features=team_features,
     )
 
     return {

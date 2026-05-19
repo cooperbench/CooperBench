@@ -23,7 +23,7 @@ import time
 import fakeredis
 import pytest
 
-from cooperbench.agents._team.protocol import ProtocolClient
+from cooperbench.team_harness.protocol import ProtocolClient
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ Both branches must be agent-agnostic (no mention of Claude / Codex /
 specific tools beyond the coop-* CLI).
 """
 
-from cooperbench.agents._team.prompt import build_team_instruction, team_task_section
+from cooperbench.team_harness.prompt import build_team_instruction, team_task_section
 
 
 def _both(text: str) -> None:

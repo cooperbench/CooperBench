@@ -124,7 +124,7 @@ def cmd_update(args: argparse.Namespace) -> int:
 def _snapshot_to_directory(client, ns: str, target: str) -> None:
     """Mirror the full task list under ``target`` as one JSON file per task.
 
-    Inlined here (rather than importing ``cooperbench.agents._team.fs_mirror``)
+    Inlined here (rather than importing ``cooperbench.team_harness.fs_mirror``)
     because the in-container helper script must be self-contained — the
     cooperbench package isn't installed in the agent image.  The on-disk
     layout matches what ``fs_mirror.mirror_to_directory`` produces.

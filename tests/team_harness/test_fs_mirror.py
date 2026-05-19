@@ -26,8 +26,8 @@ import json
 import fakeredis
 import pytest
 
-from cooperbench.agents._team.fs_mirror import mirror_to_directory
-from cooperbench.agents._team.task_list import TaskListClient
+from cooperbench.team_harness.fs_mirror import mirror_to_directory
+from cooperbench.team_harness.task_list import TaskListClient
 
 
 @pytest.fixture

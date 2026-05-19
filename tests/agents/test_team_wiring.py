@@ -14,7 +14,7 @@ from unittest.mock import patch as mock_patch
 
 import pytest
 
-from cooperbench.agents._team.prompt import team_task_section
+from cooperbench.team_harness.prompt import team_task_section
 
 
 class TestTeamTaskSectionVsBuildInstruction:
@@ -24,7 +24,7 @@ class TestTeamTaskSectionVsBuildInstruction:
     *contain* the same section."""
 
     def test_lead_section_is_substring_of_full_lead_prompt(self):
-        from cooperbench.agents._team import build_team_instruction
+        from cooperbench.team_harness import build_team_instruction
 
         section = team_task_section(agents=["a1", "a2"], agent_id="a1", team_role="lead")
         full = build_team_instruction(
@@ -38,7 +38,7 @@ class TestTeamTaskSectionVsBuildInstruction:
         assert section.strip() in full
 
     def test_member_section_is_substring_of_full_member_prompt(self):
-        from cooperbench.agents._team import build_team_instruction
+        from cooperbench.team_harness import build_team_instruction
 
         section = team_task_section(agents=["a1", "a2"], agent_id="a2", team_role="member")
         full = build_team_instruction(
@@ -58,7 +58,7 @@ class TestMiniSweAgentV2TeamWiring:
         """We can't easily run the adapter end-to-end without a real
         sandbox, but we can verify the prompt-assembly side via a
         focused unit on the same code path the adapter uses."""
-        from cooperbench.agents._team import team_task_section
+        from cooperbench.team_harness import team_task_section
 
         section = team_task_section(agents=["agent1", "agent2"], agent_id="agent1", team_role="lead")
         # Sanity: this is the exact piece the v2 adapter appends.
@@ -72,7 +72,7 @@ class TestOpenHandsTeamWiring:
 
     def test_team_env_dict_has_expected_keys(self):
         from cooperbench.agents._coop.runtime import rewrite_comm_url_for_container
-        from cooperbench.agents._team.runtime import CONTAINER_TASKS_MIRROR_DIR
+        from cooperbench.team_harness.runtime import CONTAINER_TASKS_MIRROR_DIR
 
         # Reconstruct what the adapter builds.
         team_env = {

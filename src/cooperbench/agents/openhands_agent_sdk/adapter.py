@@ -325,6 +325,7 @@ class OpenHandsSDKRunner:
         team_role: str | None = None,
         team_id: str | None = None,
         task_list_url: str | None = None,
+        team_features: "TeamHarnessConfig | None" = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Run the OpenHands agent on a task.
@@ -435,29 +436,24 @@ class OpenHandsSDKRunner:
                     "git_enabled": False,
                 }
             if is_team and coop_info is not None:
-                from cooperbench.agents._coop.runtime import rewrite_comm_url_for_container
-                from cooperbench.agents._team import team_task_section
-                from cooperbench.agents._team.runtime import CONTAINER_TASKS_MIRROR_DIR
+                from cooperbench.team_harness import TeamHarnessConfig, TeamSession
 
-                coop_info["team_env"] = {
-                    "CB_TEAM_REDIS_URL": rewrite_comm_url_for_container(task_list_url) or "",
-                    "CB_TEAM_RUN_ID": team_id or "",
-                    "CB_TEAM_AGENT_ID": agent_id,
-                    "CB_TEAM_AGENTS": ",".join(agents or []),
-                    "CB_TEAM_TASKS_DIR": CONTAINER_TASKS_MIRROR_DIR,
-                    "CB_TEAM_ROLE": team_role or "",
-                }
+                team_session = TeamSession(
+                    run_id=team_id or "",
+                    redis_url=task_list_url or "",  # host URL; env_for() rewrites
+                    agents=list(agents or []),
+                    team_volume="",  # openhands_sdk uses Modal layered image, not docker volume
+                    config=team_features or TeamHarnessConfig(),
+                )
+                coop_info["team_env"] = team_session.env_for(agent_id)
+                coop_info["team_features"] = team_session.config
                 # Pass the team prompt section through coop_info so the
                 # OpenHands SDK injects it into the SYSTEM prompt (next
                 # to its own <collaboration> block).  Without this, the
                 # SDK's coop block teaches the model to use send_message
                 # only and our team_task_section appended to the user
                 # message gets ignored (oh_team_v2 failure mode).
-                coop_info["team_section"] = team_task_section(
-                    agents=agents,
-                    agent_id=agent_id,
-                    team_role=team_role,
-                )
+                coop_info["team_section"] = team_session.prompt_section(agent_id=agent_id)
             
             with ModalSandboxContext(oh_image, self.timeout, coop_info=coop_info) as sandbox_url:
 
@@ -735,11 +731,20 @@ class ModalSandboxContext:
         # subsequent runs are instant.  Detected via the team_env dict
         # that the adapter folds into coop_info.
         team_env = (self.coop_info or {}).get("team_env") if self.coop_info else None
-        if team_env:
+        team_features = (self.coop_info or {}).get("team_features") if self.coop_info else None
+        # Layering only matters when the in-container coop-task-* CLI
+        # would actually be invoked — i.e. task_list or protocol is on.
+        # If both are off, skip the (slow first-time) image build.
+        install_team_cli = bool(team_env) and (
+            team_features is None
+            or getattr(team_features, "task_list", True)
+            or getattr(team_features, "protocol", True)
+        )
+        if install_team_cli:
             from pathlib import Path as _Path
 
-            _team_pkg = _Path(__file__).resolve().parent.parent / "_team"
-            coop_task_path = _team_pkg / "coop_task.py"
+            from cooperbench.team_harness import COOP_TASK_SCRIPT_PATH
+            coop_task_path = COOP_TASK_SCRIPT_PATH
             # The CoopTaskTrackerTool definition needs to be injected
             # into the agent-server's openhands install so the agent
             # can resolve ``Tool(name="CoopTaskTrackerTool")``.  We

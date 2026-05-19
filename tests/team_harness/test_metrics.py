@@ -15,7 +15,7 @@ These tests use synthetic event lists so they're independent of Redis
 and of the production producer code.
 """
 
-from cooperbench.agents._team.metrics import compute_metrics
+from cooperbench.team_harness.metrics import compute_metrics
 
 
 def _ev(kind, ts, **kwargs):

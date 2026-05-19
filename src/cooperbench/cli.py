@@ -163,6 +163,35 @@ def main():
         "(N agents with shared task list, lead/member roles, shared "
         "scratchpad) (default: coop)",
     )
+    # Per-feature toggles for the team harness — flip any of these off
+    # to ablate that coordination mechanism while keeping the others on.
+    # The lead/member role split stays on either way (without it team is
+    # just coop).
+    run_parser.add_argument(
+        "--team-no-task-list",
+        action="store_true",
+        help="(team only) disable the shared Redis task list + pre-seeding + metrics.",
+    )
+    run_parser.add_argument(
+        "--team-no-scratchpad",
+        action="store_true",
+        help="(team only) disable the /workspace/shared Docker volume.",
+    )
+    run_parser.add_argument(
+        "--team-no-mcp",
+        action="store_true",
+        help="(team only) skip MCP wait_for_message registration in CLI configs.",
+    )
+    run_parser.add_argument(
+        "--team-no-auto-refresh",
+        action="store_true",
+        help="(team only) drop the in-loop task-list summary injection (Python-loop adapters).",
+    )
+    run_parser.add_argument(
+        "--team-no-protocol",
+        action="store_true",
+        help="(team only) drop the typed coop-request / coop-respond / coop-pending verbs.",
+    )
     run_parser.add_argument(
         "--redis",
         default="redis://localhost:6379",
@@ -302,6 +331,7 @@ def _config_command(args):
 def _run_command(args):
     """Handle the 'run' subcommand."""
     from cooperbench.runner import run
+    from cooperbench.team_harness import TeamHarnessConfig
 
     features = None
     if args.features:
@@ -319,6 +349,17 @@ def _run_command(args):
             task=args.task,
             git_enabled=args.git,
         )
+
+    # Compose team-harness config from --team-no-* flags.  Only relevant
+    # when --setting team is passed, but always-constructed so the
+    # serialized result.json's team_features field is consistent.
+    team_features = TeamHarnessConfig(
+        task_list=not args.team_no_task_list,
+        scratchpad=not args.team_no_scratchpad,
+        mcp=not args.team_no_mcp,
+        auto_refresh=not args.team_no_auto_refresh,
+        protocol=not args.team_no_protocol,
+    )
 
     run(
         run_name=run_name,
@@ -340,6 +381,7 @@ def _run_command(args):
         agent_config=args.agent_config if hasattr(args, "agent_config") else None,
         dataset_dir=args.dataset_dir if hasattr(args, "dataset_dir") else None,
         logs_dir=args.log_dir if hasattr(args, "log_dir") else None,
+        team_features=team_features,
     )
 
 

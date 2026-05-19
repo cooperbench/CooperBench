@@ -24,6 +24,7 @@ from cooperbench.runner.coop import execute_coop
 from cooperbench.runner.solo import execute_solo
 from cooperbench.runner.tasks import discover_tasks
 from cooperbench.runner.team import execute_team
+from cooperbench.team_harness import TeamHarnessConfig
 from cooperbench.utils import console
 
 install_cleanup_handler = None
@@ -54,6 +55,7 @@ def run(
     agent_config: str | None = None,
     dataset_dir: str | None = None,
     logs_dir: str | None = None,
+    team_features: TeamHarnessConfig | None = None,
 ) -> None:
     """Run benchmark tasks.
 
@@ -155,6 +157,7 @@ def run(
                 agent_config=agent_config,
                 dataset_dir=dataset_dir,
                 logs_dir=logs_dir,
+                team_features=team_features,
             )
         else:
             return execute_coop(

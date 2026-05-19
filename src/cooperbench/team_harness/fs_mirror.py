@@ -28,7 +28,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from cooperbench.agents._team.task_list import TaskListClient
+from cooperbench.team_harness.task_list import TaskListClient
 
 
 def _atomic_write_text(path: Path, content: str) -> None:

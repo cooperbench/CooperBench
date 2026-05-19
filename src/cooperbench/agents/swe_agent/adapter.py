@@ -17,6 +17,7 @@ from pathlib import Path
 
 from cooperbench.agents import AgentResult
 from cooperbench.agents.registry import register
+from cooperbench.team_harness import TeamHarnessConfig, TeamSession
 
 
 @register("swe_agent")
@@ -41,6 +42,7 @@ class SweAgentRunner:
         team_role: str | None = None,
         team_id: str | None = None,
         task_list_url: str | None = None,
+        team_features: TeamHarnessConfig | None = None,
         **kwargs,
     ) -> AgentResult:
         """Run SWE-agent on a task.
@@ -68,9 +70,14 @@ class SweAgentRunner:
         del kwargs  # unused
         is_team = bool(team_role and team_id and task_list_url and agents and len(agents) > 1)
         if is_team:
-            from cooperbench.agents._team import team_task_section
-
-            section = team_task_section(agents=agents, agent_id=agent_id, team_role=team_role)
+            team_session = TeamSession(
+                run_id=team_id or "",
+                redis_url=task_list_url or "",
+                agents=list(agents or []),
+                team_volume=str((config or {}).get("team_volume") or ""),
+                config=team_features or TeamHarnessConfig(),
+            )
+            section = team_session.prompt_section(agent_id=agent_id)
             if section:
                 task = task + "\n\n---\n\n" + section
         import litellm

@@ -17,7 +17,7 @@ minimal surface:
 Adapters register us via their CLI's config:
 ``~/.claude.json`` for Claude Code and ``~/.codex/config.toml`` for
 Codex.  The actual server invocation is just
-``python3 -m cooperbench.agents._team.mcp_server`` with the
+``python3 -m cooperbench.team_harness.mcp_server`` with the
 ``CB_TEAM_REDIS_URL`` / ``CB_TEAM_AGENT_ID`` env vars set.
 
 The server is intentionally minimal — adding more tools later is just

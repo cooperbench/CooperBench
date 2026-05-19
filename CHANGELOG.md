@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Team-mode primitives moved to `cooperbench.team_harness`** — extracted from `cooperbench/agents/_team` (private) to `cooperbench/team_harness` (public, library-shaped) so other benchmarks can consume the coordination algorithm without depending on CooperBench's task layout.  Adds a `TeamSession` facade that bundles per-run state (run_id, Redis URL, agents, scratchpad volume) and exposes adapter-facing factories (`env_for`, `scratchpad_mount_args`, `mcp_config`, `prompt_for`, `prompt_section`, `loop_poller`, `task_list_client`, `harvest_metrics`).  Adapters consume the session instead of calling loose helpers; the runner constructs one per run.
+
+### Added
+
+- **Ablation flags for team mode** — five `--team-no-*` CLI flags (`--team-no-task-list`, `--team-no-scratchpad`, `--team-no-mcp`, `--team-no-auto-refresh`, `--team-no-protocol`) gate each coordination feature independently.  Each flag flips one boolean on `TeamHarnessConfig`; the session's factory methods return `None`/`[]`/`{}` for disabled features so adapter blocks skip cleanly.  The lead/member role split stays on as the always-on baseline (without it team collapses to coop).  `result.json` now surfaces `team_features: {...}` so post-hoc analysis can attribute pass-rate deltas to the specific feature that was off.  End-to-end smoke on `dottxt_ai_outlines/1371 [1,2]` with codex: default writes `task_log.json`+`tasks.json`+metrics; `--team-no-task-list --team-no-scratchpad --team-no-mcp` drops all three and produces no `cb-team-*` Docker volume.
+
 ### Fixed
 
 - **`swe_agent` now supports `--backend docker` too** — adapter was hardcoded to `swerex.ModalDeploymentConfig`.  Added a backend dispatch that picks `DockerDeploymentConfig` when `config["backend"] == "docker"`.  Required two follow-on fixes: (a) `docker_args=["--entrypoint", ""]` to clear the task image's `ENTRYPOINT=runner.sh` (otherwise swerex's `sh -c "..."` becomes a `runner.sh sh -c "..."` and the first positional arg gets interpreted as a feature-patch path); (b) monkey-patch swerex's `DockerDeployment._get_swerex_start_cmd` to invoke `pipx run --spec swe-rex swerex-remote ...` instead of `pipx run swe-rex ...` — upstream swerex assumes the package's executable matches the package name, but the published `swe-rex` package provides an executable named `swerex-remote`.  Smoke-tested with `dottxt_ai_outlines/1655 [1,3]` solo: 1/1 pass in 2m 53s.

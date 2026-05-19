@@ -18,7 +18,7 @@ sandbox's openhands install and appends a side-effect import to
 package-import time.
 
 Wire shape on Redis matches what the host-side ``TaskListClient``
-writes — see ``cooperbench/agents/_team/task_list.py`` for the
+writes — see ``cooperbench/team_harness/task_list.py`` for the
 authoritative description.
 
 KNOWN LIMITATION — Modal sandbox network isolation

@@ -5,7 +5,7 @@ that the in-container ``coop-task-*`` CLIs read, and into the docker
 arg list (scratchpad mount).
 """
 
-from cooperbench.agents._team.runtime import (
+from cooperbench.team_harness.runtime import (
     CONTAINER_SCRATCHPAD_DIR,
     CONTAINER_TASKS_MIRROR_DIR,
     build_team_env,

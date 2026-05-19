@@ -21,6 +21,7 @@ import pytest
 
 from cooperbench.agents import AgentResult
 from cooperbench.runner.team import execute_team
+from cooperbench.team_harness import TeamHarnessConfig
 
 
 @pytest.fixture
@@ -165,6 +166,105 @@ class TestExecuteTeam:
         assert "claims_per_agent" in m
         # Two tasks were pre-seeded, both should be present.
         assert m["tasks_total"] == 2
+
+    def test_team_features_default_recorded_in_result(self, mock_get_runner, in_memory_redis, isolated_dirs):
+        """The runner serializes which features were active into
+        ``result.json['team_features']`` so post-hoc ablation analysis
+        doesn't have to cross-reference CLI flags."""
+        result = execute_team(
+            repo_name="demo_repo",
+            task_id=1,
+            features=[1, 2],
+            run_name="t1",
+            agent_name="fake",
+            model_name="fake-model",
+            force=True,
+            backend="docker",
+            dataset_dir=isolated_dirs["dataset"],
+            logs_dir=isolated_dirs["logs"],
+            redis_url="redis://localhost:6379",
+        )
+        features = result["result"]["team_features"]
+        assert features == {
+            "task_list": True,
+            "scratchpad": True,
+            "mcp": True,
+            "auto_refresh": True,
+            "protocol": True,
+        }
+
+    def test_team_features_propagated_to_adapter(self, mock_get_runner, in_memory_redis, isolated_dirs):
+        """The adapter ``run()`` call gets the same ``team_features``
+        config so adapter-side gates fire correctly."""
+        cfg = TeamHarnessConfig(scratchpad=False, mcp=False)
+        execute_team(
+            repo_name="demo_repo",
+            task_id=1,
+            features=[1, 2],
+            run_name="t1",
+            agent_name="fake",
+            model_name="fake-model",
+            force=True,
+            backend="docker",
+            dataset_dir=isolated_dirs["dataset"],
+            logs_dir=isolated_dirs["logs"],
+            redis_url="redis://localhost:6379",
+            team_features=cfg,
+        )
+        for call in mock_get_runner.calls:
+            forwarded = call.get("team_features")
+            assert forwarded is cfg, "adapter should receive the same config instance"
+
+    def test_task_list_disabled_skips_preseed_and_metrics(self, mock_get_runner, in_memory_redis, isolated_dirs):
+        """When ``--team-no-task-list`` is set, no tasks are pre-seeded
+        and the metrics block is empty.  The lead/member role split
+        still works (it's the baseline)."""
+        cfg = TeamHarnessConfig(task_list=False)
+        result = execute_team(
+            repo_name="demo_repo",
+            task_id=1,
+            features=[1, 2],
+            run_name="t1",
+            agent_name="fake",
+            model_name="fake-model",
+            force=True,
+            backend="docker",
+            dataset_dir=isolated_dirs["dataset"],
+            logs_dir=isolated_dirs["logs"],
+            redis_url="redis://localhost:6379",
+            team_features=cfg,
+        )
+        # No tasks pre-seeded → no keys in Redis namespace.
+        all_keys = list(in_memory_redis.keys("cb:*:tasks:all"))
+        assert all_keys == []
+        # Metrics block empty but the team still ran with lead/member roles.
+        assert result["result"]["metrics"] == {}
+        assert result["result"]["team_features"]["task_list"] is False
+        roles = {c["agent_id"]: c.get("team_role") for c in mock_get_runner.calls}
+        assert roles == {"agent1": "lead", "agent2": "member"}
+
+    def test_scratchpad_disabled_clears_team_volume(self, mock_get_runner, in_memory_redis, isolated_dirs):
+        """When the scratchpad is off, the runner passes an empty
+        ``team_volume`` through ``config``; the adapter then receives no
+        mount-args from ``TeamSession.scratchpad_mount_args()``."""
+        cfg = TeamHarnessConfig(scratchpad=False)
+        execute_team(
+            repo_name="demo_repo",
+            task_id=1,
+            features=[1, 2],
+            run_name="t1",
+            agent_name="fake",
+            model_name="fake-model",
+            force=True,
+            backend="docker",
+            dataset_dir=isolated_dirs["dataset"],
+            logs_dir=isolated_dirs["logs"],
+            redis_url="redis://localhost:6379",
+            team_features=cfg,
+        )
+        for call in mock_get_runner.calls:
+            config = call.get("config") or {}
+            assert config.get("team_volume") == ""
 
     def test_supports_three_agent_team(self, mock_get_runner, in_memory_redis, isolated_dirs):
         # Add a third feature so we can test 3-agent teams.

@@ -41,9 +41,22 @@ from cooperbench.agents._coop.runtime import (
     read_file_from_container,
     write_file_in_container,
 )
-from cooperbench.agents._team import build_team_env, build_team_instruction, scratchpad_mount_args
 from cooperbench.agents.codex.parsers import parse_messages, parse_stream_jsonl
 from cooperbench.agents.registry import register
+from cooperbench.team_harness import (
+    COOP_TASK_SCRIPT_PATH as TEAM_TASK_SCRIPT_PATH,
+)
+from cooperbench.team_harness import (
+    INSTALL_SNIPPET_PATH as TEAM_INSTALL_SNIPPET_PATH,
+)
+from cooperbench.team_harness import (
+    MCP_SERVER_NAME,
+    TeamHarnessConfig,
+    TeamSession,
+)
+from cooperbench.team_harness import (
+    MCP_SERVER_SCRIPT_PATH as TEAM_MCP_SCRIPT_PATH,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +65,6 @@ _PACKAGE_DIR = Path(__file__).parent
 SETUP_SCRIPT_PATH = _PACKAGE_DIR / "setup.sh"
 COOP_MSG_SCRIPT_PATH = _PACKAGE_DIR.parent / "_coop" / "coop_msg.py"
 COOP_INSTALL_SNIPPET_PATH = _PACKAGE_DIR.parent / "_coop" / "install_snippet.sh"
-TEAM_TASK_SCRIPT_PATH = _PACKAGE_DIR.parent / "_team" / "coop_task.py"
-TEAM_INSTALL_SNIPPET_PATH = _PACKAGE_DIR.parent / "_team" / "install_snippet.sh"
-TEAM_MCP_SCRIPT_PATH = _PACKAGE_DIR.parent / "_team" / "mcp_server.py"
 CONTAINER_TEAM_TASK_PATH = "/tmp/cb-coop-task.py"
 CONTAINER_TEAM_INSTALL_PATH = "/tmp/cb-team-install.sh"
 CONTAINER_TEAM_MCP_PATH = "/tmp/cb-mcp-server.py"
@@ -166,6 +176,7 @@ class CodexRunner:
         team_role: str | None = None,
         team_id: str | None = None,
         task_list_url: str | None = None,
+        team_features: TeamHarnessConfig | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         del agent_config, kwargs  # external-agent-config not yet wired
@@ -188,12 +199,22 @@ class CodexRunner:
         use_git = bool(git_enabled and git_server_url and agents and len(agents) > 1)
         is_team = bool(team_role and team_id and task_list_url and agents and len(agents) > 1)
 
+        team_session: TeamSession | None = None
         if is_team:
-            instruction = build_team_instruction(
-                task,
-                agents=agents,
+            # Pass the host URL — TeamSession.env_for() rewrites to the
+            # container-reachable form when assembling CB_TEAM_* env vars.
+            team_session = TeamSession(
+                run_id=team_id or "",
+                redis_url=task_list_url or "",
+                agents=list(agents or []),
+                team_volume=str((config or {}).get("team_volume") or ""),
+                config=team_features or TeamHarnessConfig(),
+            )
+
+        if team_session is not None:
+            instruction = team_session.prompt_for(
+                task=task,
                 agent_id=agent_id,
-                team_role=team_role,
                 git_enabled=use_git,
             )
         else:
@@ -205,7 +226,8 @@ class CodexRunner:
             )
         setup_script = SETUP_SCRIPT_PATH.read_text()
         coop_msg_source = COOP_MSG_SCRIPT_PATH.read_text() if is_coop else None
-        team_task_source = TEAM_TASK_SCRIPT_PATH.read_text() if is_team else None
+        install_team_cli = bool(team_session and (team_session.config.task_list or team_session.config.protocol))
+        team_task_source = TEAM_TASK_SCRIPT_PATH.read_text() if install_team_cli else None
 
         coop_env: dict[str, str] = {}
         extra_run_args: list[str] = []
@@ -218,19 +240,9 @@ class CodexRunner:
                 "COOP_LOG_PATH": CONTAINER_COOP_SEND_LOG,
             }
             extra_run_args.append("--add-host=host.docker.internal:host-gateway")
-        if is_team:
-            team_container_url = rewrite_comm_url_for_container(task_list_url) or ""
-            coop_env.update(
-                build_team_env(
-                    redis_url=team_container_url,
-                    run_id=team_id or "",
-                    agent_id=agent_id,
-                    agents=agents or [],
-                    team_role=team_role,
-                )
-            )
-            team_volume = (config or {}).get("team_volume") if isinstance(config, dict) else None
-            extra_run_args.extend(scratchpad_mount_args(team_volume))
+        if team_session is not None:
+            coop_env.update(team_session.env_for(agent_id))
+            extra_run_args.extend(team_session.scratchpad_mount_args())
             if "--add-host=host.docker.internal:host-gateway" not in extra_run_args:
                 extra_run_args.append("--add-host=host.docker.internal:host-gateway")
 
@@ -258,7 +270,10 @@ class CodexRunner:
             if team_task_source is not None:
                 write_file_in_container(env, CONTAINER_TEAM_TASK_PATH, team_task_source)
                 write_file_in_container(env, CONTAINER_TEAM_INSTALL_PATH, TEAM_INSTALL_SNIPPET_PATH.read_text())
-                # MCP long-poll server: copy + register in Codex's TOML config.
+            # MCP long-poll server: copy + register in Codex's TOML config.
+            # Gated independently of the coop-task-* install.
+            install_mcp = team_session is not None and team_session.config.mcp
+            if install_mcp:
                 write_file_in_container(env, CONTAINER_TEAM_MCP_PATH, TEAM_MCP_SCRIPT_PATH.read_text())
                 env.execute(
                     {"command": f"mkdir -p {shlex.quote(CONTAINER_CODEX_HOME)}"},
@@ -269,7 +284,7 @@ class CodexRunner:
                 # yet — Codex tolerates a fresh config that *only*
                 # contains mcpServers.
                 toml_body = (
-                    f'[mcp_servers.cooperbench-team]\ncommand = "python3"\nargs = ["{CONTAINER_TEAM_MCP_PATH}"]\n'
+                    f'[mcp_servers.{MCP_SERVER_NAME}]\ncommand = "python3"\nargs = ["{CONTAINER_TEAM_MCP_PATH}"]\n'
                 )
                 write_file_in_container(env, f"{CONTAINER_CODEX_HOME}/config.toml", toml_body)
 

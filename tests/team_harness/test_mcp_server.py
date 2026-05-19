@@ -27,7 +27,7 @@ import time
 import fakeredis
 import pytest
 
-from cooperbench.agents._team.mcp_server import (
+from cooperbench.team_harness.mcp_server import (
     MCPLongPollServer,
     build_redis_client_from_env,
 )
