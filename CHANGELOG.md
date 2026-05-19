@@ -7,19 +7,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.15] - 2026-05-18
+
 ### Added
+
+- **Claude Code adapter** (`cooperbench.agents.claude_code`).  Wraps the
+  Claude Code CLI inside the task's Docker container with coop messaging
+  and git-collaboration support.  Authenticates via the host's
+  `ANTHROPIC_API_KEY`, registers the shared `coop-*` shell wrappers, and
+  participates in solo / coop / coop+git / team runs alongside the
+  existing `mini_swe_agent_v2`, `swe_agent`, and `openhands_sdk`
+  adapters.
+
+- **Codex adapter** (`cooperbench.agents.codex`).  Wraps the OpenAI
+  Codex CLI (`codex exec --json --sandbox danger-full-access
+  --skip-git-repo-check`).  Writes `${CODEX_HOME}/auth.json` inside the
+  container so the CLI authenticates without prompts, parses Codex's
+  JSONL event stream for status / token totals / messages, and reports
+  cost as `0.0` because Codex does not emit a cost field.  Includes a
+  one-shot model-name fallback (retries without `--model` if Codex
+  rejects the requested model) and a preflight `OPENAI_API_KEY` check.
 
 - **`team` setting** alongside `solo` and `coop`.  N agents organized
   as one lead + N-1 members, with a Redis-backed shared task list
   (atomic claim via `coop-task-claim`), a shared scratchpad volume
   mounted at `/workspace/shared`, and role-specific prompt blocks.
-  All five existing adapters (`mini_swe_agent_v2`, `swe_agent`,
-  `openhands_sdk`, `claude_code`, `codex`) accept the new `team_role`
-  / `team_id` / `task_list_url` kwargs; CLI adapters install
-  `coop-task-*` shell wrappers next to the existing `coop-*` messaging
-  tools.  Post-run, the task-list audit log is used to compute
-  coordination metrics (`time_to_first_claim_seconds`,
-  `claims_per_agent`, etc.) saved in `result.json`.
+  All five adapters (`mini_swe_agent_v2`, `swe_agent`, `openhands_sdk`,
+  `claude_code`, `codex`) accept the new `team_role` / `team_id` /
+  `task_list_url` kwargs; CLI adapters install `coop-task-create` /
+  `coop-task-claim` / `coop-task-update` / `coop-task-list` shell
+  wrappers next to the existing `coop-*` messaging tools.  Post-run,
+  the task-list audit log is used to compute coordination metrics
+  (`time_to_first_claim_seconds`, `claims_per_agent`,
+  `updates_per_agent`, `tasks_done`, `unowned_at_end`) saved in
+  `result.json`.
+
+- **Team-mode filesystem mirror** of the task list at
+  `/workspace/shared/tasks/`.  One `<id>.json` per task plus
+  `_index.json` (cheap `ls` target) and `_log.jsonl` (audit trail),
+  written via tempfile+replace so readers never observe partial state.
+  Lets agents `ls` and `cat` tasks with their existing tools instead of
+  going through the `coop-task-list` CLI.
+
+- **Typed `coop-request` / `coop-respond` protocol**
+  (`cooperbench.agents._team.protocol`) layered on plain Redis
+  messaging.  `coop-request <peer> <kind> <body>` returns a request_id
+  and optionally blocks via `--wait N`; `coop-respond <request_id>
+  <body>` writes back.  The sender's `await_response` uses BLPOP so it
+  sleeps instead of busy-polling, and both events flow into the shared
+  task-log so coordination metrics include protocol events.
+
+- **MCP long-poll server** (`cooperbench.agents._team.mcp_server`).
+  Stdio JSON-RPC server exposing a single `wait_for_message` tool
+  backed by BLPOP on the agent's inbox.  Registered automatically for
+  CLI adapters: Claude Code writes to `$CLAUDE_CONFIG_DIR/.claude.json`,
+  Codex writes to `$CODEX_HOME/config.toml`.  Gives opaque CLI agent
+  loops the closest thing to push-style inbox delivery.
+
+- **In-loop task-list auto-refresh** for `mini_swe_agent_v2`
+  (`cooperbench.agents._team.loop_refresh`).  `TeamPoller` runs between
+  LLM queries — same hook as the existing inbox poll — and prepends a
+  compact `[Team task list] open: 1, in_progress: 2, ...` summary so
+  the LLM doesn't need to remember to call `coop-task-list`.
+
+- **Shared `cooperbench.agents._coop` module** holding the
+  agent-agnostic coop primitives that the CLI adapters previously
+  duplicated: `coop_msg.py` (Redis-backed messaging CLI installed as
+  `coop-send` / `coop-recv` / `coop-broadcast` / `coop-peek` /
+  `coop-agents`), `prompt.py` (solo / coop / coop+git prompt assembly),
+  `runtime.py` (`ContainerEnv` protocol, environment assembly,
+  in-container file I/O helpers, git-setup command construction,
+  sent-messages log parsing, and `normalize_patch`), and
+  `install_snippet.sh` (sourced from each adapter's `setup.sh`).
+
+### Fixed
+
+- **`mini_swe_agent_v2`: prevent re-exploration loops after compaction**
+  (PR #54).  The default compaction summarizer was producing terse,
+  generic summaries that lost the file contents agents had already
+  read.  After compaction the agent would re-cat/grep the same files,
+  hit the 100-step limit, and fail to submit — in one full coop run,
+  91% of agents (63/72 sampled trajectories) hit `LimitsExceeded` with
+  mean ~99 of 100 steps used.  Two targeted changes: (1) `summarize_context`
+  now serializes prior turns into a single user message as a tagged
+  transcript, preventing the model from role-playing as the next
+  assistant turn; (2) the default `compaction_summary_prompt` is now
+  a structured template with explicit headings (FILE MAP, RELEVANT CODE
+  READ, KEY SYMBOLS, SEARCH RESULTS, EDITS, BUILD/TEST OUTPUT, COLLEAGUE
+  MESSAGES, OPEN QUESTIONS, CURRENT PLAN), asks for verbatim quoting
+  with `file:line` citations, and includes an anti-hallucination guard
+  for line counts.  Measured on an A/B replay of 9 real solver segments,
+  coverage of post-compaction re-explores went from 40% to 57% on a
+  heuristic file+symbol scorer.
+
+- **`runner/coop`: coerce message timestamps to float before sorting**
+  (PR #49).  `execute_coop` crashed mid-rollout with `TypeError: '<'
+  not supported between instances of 'int' and 'str'` when one agent
+  adapter reported numeric timestamps (`mini_swe_agent` uses
+  `time.time()` floats) and another reported ISO strings (OpenHands
+  SDK).  The sort fired before `agent{fid}_traj.json` was written, so
+  callers relying on the structured trajectory got nothing even though
+  the rollout completed.  Added `_message_timestamp_key` that
+  best-effort coerces to float (None / non-numeric → 0.0).
+
+- **CLI adapter patch normalization** (PR #51).  The previous Claude
+  Code adapter's `.strip()` on `patch.txt` was eating the trailing
+  newline that `git apply` requires, producing "corrupt patch at line
+  N" errors.  Replaced with `normalize_patch()` (one trailing newline,
+  no leading whitespace) in the shared `_coop` module.
+
+- **Team-mode prompt: explicit `patch.txt` submission step**.  The
+  initial team-mode end-to-end had members writing diffs to
+  `/workspace/shared/<id>.patch` only and never to
+  `/workspace/repo/patch.txt`, scoring 0/2 despite great coordination.
+  Both lead and member prompts now have an explicit
+  `### Final submission — REQUIRED` section that names `patch.txt` as
+  the only file the bench evaluates and provides the exact
+  `git diff > patch.txt` command.  Verified by a follow-up run on the
+  same task that scored 2/2.
+
+- **Result-table rendering for team mode**.  Cosmetic fix to
+  `runner/core._print_single_result` — team mode's per-agent dicts
+  carry `patch_lines: int`, but the previous code tried
+  `len(r.get("patch", "").splitlines())` and showed 0.
+
+### Changed
+
+- **`fakeredis` is now a dev dependency** (and `uv.lock` is regenerated
+  to match).  Six team-mode test modules import `fakeredis` to mock
+  Redis; without it pinned, CI's `uv pip install -e ".[dev]"` left it
+  missing and pytest collection failed.
 
 ## [0.0.14] - 2026-04-30
 
