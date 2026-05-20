@@ -47,15 +47,15 @@ _git_refcounts: dict[str, int] = {}  # run_id -> refcount
 
 def _get_or_create_redis(run_id: str, agents: list[str], timeout: int = 3600) -> str:
     """Get or create a shared ModalRedisServer for coop runs.
-    
+
     Thread-safe: First caller creates the server, all others reuse it.
     Returns a namespaced Redis URL: redis://host:port#run:{run_id}
-    
+
     The namespace prefix ensures concurrent runs don't interfere with each other.
     """
     global _shared_redis, _redis_refcount
     from cooperbench.agents.openhands_agent_sdk.connectors import ModalRedisServer
-    
+
     with _redis_lock:
         if _shared_redis is None:
             app = modal.App.lookup("cooperbench", create_if_missing=True)
@@ -65,7 +65,7 @@ def _get_or_create_redis(run_id: str, agents: list[str], timeout: int = 3600) ->
                 agents=agents,
                 timeout=timeout,
             )
-        
+
         _redis_refcount += 1
         # Return namespaced URL so each run has isolated keys
         return f"{_shared_redis.url}#run:{run_id}"
@@ -73,17 +73,17 @@ def _get_or_create_redis(run_id: str, agents: list[str], timeout: int = 3600) ->
 
 def _release_redis() -> None:
     """Release a reference to the shared Redis server.
-    
+
     When refcount reaches 0, the server is cleaned up.
     """
     global _shared_redis, _redis_refcount
-    
+
     with _redis_lock:
         if _redis_refcount <= 0:
             return
-        
+
         _redis_refcount -= 1
-        
+
         if _redis_refcount <= 0 and _shared_redis is not None:
             try:
                 _shared_redis.cleanup()
@@ -94,16 +94,16 @@ def _release_redis() -> None:
 
 def _get_or_create_git_server(run_id: str, agents: list[str], timeout: int = 3600) -> str:
     """Get or create a ModalGitServer for a specific run.
-    
+
     Thread-safe: First caller for a run_id creates the server, others reuse it.
     Each run gets its own git server (unlike Redis which is shared).
-    
+
     Returns:
         Git URL (e.g., git://host:port/repo.git)
     """
     global _git_servers, _git_refcounts
     from cooperbench.agents.openhands_agent_sdk.connectors import ModalGitServer
-    
+
     with _git_lock:
         if run_id not in _git_servers:
             app = modal.App.lookup("cooperbench", create_if_missing=True)
@@ -114,24 +114,24 @@ def _get_or_create_git_server(run_id: str, agents: list[str], timeout: int = 360
                 timeout=timeout,
             )
             _git_refcounts[run_id] = 0
-        
+
         _git_refcounts[run_id] += 1
         return _git_servers[run_id].url
 
 
 def _release_git_server(run_id: str) -> None:
     """Release a reference to a run's git server.
-    
+
     When refcount reaches 0, the server is cleaned up.
     """
     global _git_servers, _git_refcounts
-    
+
     with _git_lock:
         if run_id not in _git_refcounts:
             return
-        
+
         _git_refcounts[run_id] -= 1
-        
+
         if _git_refcounts[run_id] <= 0:
             if run_id in _git_servers:
                 try:
@@ -145,7 +145,7 @@ def _release_git_server(run_id: str) -> None:
 
 def _needs_modal_redis(comm_url: str | None) -> bool:
     """Check if we need to create a Modal Redis server.
-    
+
     Returns True if:
     - No comm_url provided
     - comm_url points to localhost (not reachable from Modal)
@@ -158,10 +158,10 @@ def _needs_modal_redis(comm_url: str | None) -> bool:
 
 def _parse_redis_url(redis_url: str) -> tuple[str, str]:
     """Parse Redis URL and extract namespace prefix.
-    
+
     Args:
         redis_url: URL like "redis://host:port" or "redis://host:port#run:abc123"
-        
+
     Returns:
         Tuple of (clean_url, prefix) where prefix includes trailing colon if present
     """
@@ -173,19 +173,20 @@ def _parse_redis_url(redis_url: str) -> tuple[str, str]:
 
 def _retrieve_sent_messages(redis_url: str, agent_id: str) -> list[dict]:
     """Retrieve sent messages from Redis for conversation extraction.
-    
+
     The SendMessageExecutor stores a copy of each sent message in a
     {prefix}{agent_id}:sent_messages key for later retrieval.
     """
     try:
         import redis
+
         url, prefix = _parse_redis_url(redis_url)
         client = redis.from_url(url)
         log_key = f"{prefix}{agent_id}:sent_messages"
-        
+
         messages = []
         raw_messages = client.lrange(log_key, 0, -1)
-        
+
         for raw in raw_messages:
             try:
                 msg = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
@@ -200,33 +201,25 @@ def _retrieve_sent_messages(redis_url: str, agent_id: str) -> list[dict]:
 
 def _extract_patch(workspace: Any, base_commit: str | None) -> str:
     """Extract git diff patch from workspace.
-    
+
     Captures all changes: staged, unstaged, and new untracked files.
     Uses `git add -A` first to ensure new files are included in the diff.
-    
+
     Args:
         workspace: RemoteWorkspace instance
         base_commit: Base commit SHA to diff from
-        
+
     Returns:
         Patch content as string, or empty string on failure
     """
     if not base_commit or not workspace:
         return ""
-    
+
     try:
         # Stage all changes (including new files) so they appear in diff
-        workspace.execute_command(
-            "git add -A",
-            cwd="/workspace/repo",
-            timeout=30.0
-        )
+        workspace.execute_command("git add -A", cwd="/workspace/repo", timeout=30.0)
         # Diff from base commit to working tree (includes all staged/unstaged changes)
-        diff_result = workspace.execute_command(
-            f"git diff {base_commit}",
-            cwd="/workspace/repo",
-            timeout=60.0
-        )
+        diff_result = workspace.execute_command(f"git diff {base_commit}", cwd="/workspace/repo", timeout=60.0)
         return diff_result.stdout if diff_result.exit_code == 0 else ""
     except Exception as e:
         logger.warning(f"Failed to extract patch: {e}")
@@ -236,13 +229,13 @@ def _extract_patch(workspace: Any, base_commit: str | None) -> str:
 @register("openhands_sdk")
 class OpenHandsSDKRunner:
     """Runs OpenHands SDK agent with remote execution in Modal.
-    
+
     This adapter:
     1. Starts the agent-server Docker image in Modal
     2. Connects to it via RemoteWorkspace
     3. Runs the OpenHands agent with default tools
     4. Collects the patch and trajectory
-    
+
     Note: This adapter expects images with the `-oh` suffix (e.g., task17244-oh)
     which include the OpenHands agent-server. If a base image is passed
     (e.g., task17244), the `-oh` suffix is automatically appended.
@@ -258,47 +251,54 @@ class OpenHandsSDKRunner:
         if "-oh" in image:
             # Already an OH image - normalize to just -oh (remove version suffixes)
             import re
-            return re.sub(r'-oh(-v\d+)?$', '-oh', image)
+
+            return re.sub(r"-oh(-v\d+)?$", "-oh", image)
         # Split image:tag and append -oh to tag
         if ":" in image:
             base, tag = image.rsplit(":", 1)
             return f"{base}:{tag}-oh"
         # No tag specified
         return f"{image}-oh"
-    
+
     def _setup_git_remote(self, workspace, git_url: str, agent_id: str) -> None:
         """Configure git remote in the agent's sandbox for collaboration.
-        
+
         Sets up the 'team' remote pointing to the shared git server,
         creates an agent-specific branch, and pushes the initial state.
-        
+
         Args:
             workspace: RemoteWorkspace instance
             git_url: Git server URL (e.g., git://host:port/repo.git)
             agent_id: This agent's identifier
         """
         REMOTE_NAME = "team"
-        
+
         # Configure git user (needed for commits)
-        workspace.execute_command('git config user.email "agent@cooperbench.local"', cwd="/workspace/repo", timeout=10.0)
+        workspace.execute_command(
+            'git config user.email "agent@cooperbench.local"', cwd="/workspace/repo", timeout=10.0
+        )
         workspace.execute_command(f'git config user.name "{agent_id}"', cwd="/workspace/repo", timeout=10.0)
-        
+
         # Add shared remote (or update if exists)
-        result = workspace.execute_command(f"git remote add {REMOTE_NAME} {git_url}", cwd="/workspace/repo", timeout=10.0)
+        result = workspace.execute_command(
+            f"git remote add {REMOTE_NAME} {git_url}", cwd="/workspace/repo", timeout=10.0
+        )
         if result.exit_code != 0:
             # Remote might already exist, update URL
-            workspace.execute_command(f"git remote set-url {REMOTE_NAME} {git_url}", cwd="/workspace/repo", timeout=10.0)
-        
+            workspace.execute_command(
+                f"git remote set-url {REMOTE_NAME} {git_url}", cwd="/workspace/repo", timeout=10.0
+            )
+
         # Wait for git server to be reachable (with tenacity retry)
         wait_for_git_server(workspace, git_url)
-        
+
         # Create agent's branch
         workspace.execute_command(f"git checkout -b {agent_id}", cwd="/workspace/repo", timeout=10.0)
-        
+
         # Push initial state with retry (first agent initializes the server)
         if not git_push_with_retry(workspace, REMOTE_NAME, agent_id, force=True):
             logger.error(f"Initial git push failed for {agent_id} after retries")
-        
+
         # Also push main/master as base reference
         workspace.execute_command(
             f"git push {REMOTE_NAME} HEAD:refs/heads/main --force 2>/dev/null || true",
@@ -334,7 +334,7 @@ class OpenHandsSDKRunner:
         are accepted so the OpenHands adapter is API-compatible with the
         team runner.  In-loop integration with the shared task list
         lands in a follow-up PR.
-        
+
         Args:
             task: The task description (feature spec)
             image: Docker image (base or with -oh suffix). If base image is passed,
@@ -347,7 +347,7 @@ class OpenHandsSDKRunner:
             git_enabled: Whether git collaboration is enabled
             messaging_enabled: Whether messaging is enabled
             config: Agent-specific configuration
-            
+
         Returns:
             AgentResult with status, patch, cost, steps, messages
         """
@@ -375,7 +375,7 @@ class OpenHandsSDKRunner:
         patch = ""
         status = "Error"
         error = None
-        
+
         # Determine if this is a coop run
         is_coop = (messaging_enabled or git_enabled) and agents and len(agents) > 1
         redis_url = comm_url
@@ -385,7 +385,7 @@ class OpenHandsSDKRunner:
         run_id = None
         owns_redis = False  # Track if we need to release Redis reference
         owns_git = False  # Track if we need to release Git server reference
-        
+
         if is_coop:
             # Extract run_id from config or comm_url namespace
             config = config or {}
@@ -394,17 +394,18 @@ class OpenHandsSDKRunner:
                 run_id = comm_url.split("#run:")[1]
             else:
                 run_id = config.get("run_id")
-            
+
             # Generate run_id if not provided
             if not run_id:
                 import uuid
+
                 run_id = uuid.uuid4().hex[:8]
-            
+
             # Create Modal Redis if needed (localhost not reachable from Modal)
             if messaging_enabled and _needs_modal_redis(comm_url):
                 redis_url = _get_or_create_redis(run_id, agents, self.timeout)
                 owns_redis = True
-            
+
             # Create Modal Git server if git is enabled
             # OpenHands adapter always creates its own git server (ignores git_server_url from coop.py)
             # to ensure git setup works correctly with RemoteWorkspace
@@ -417,14 +418,18 @@ class OpenHandsSDKRunner:
 
         try:
             # Build coop_info for both sandbox env vars AND agent system prompt
-            coop_info = {
-                "redis_url": redis_url,
-                "git_url": git_url,
-                "agent_id": agent_id,
-                "agents": agents or [],
-                "messaging_enabled": redis_url is not None,
-                "git_enabled": git_enabled and git_url is not None,
-            } if is_coop else None
+            coop_info = (
+                {
+                    "redis_url": redis_url,
+                    "git_url": git_url,
+                    "agent_id": agent_id,
+                    "agents": agents or [],
+                    "messaging_enabled": redis_url is not None,
+                    "git_enabled": git_enabled and git_url is not None,
+                }
+                if is_coop
+                else None
+            )
             # In team mode, fold team-mode env vars into coop_info so
             # _build_credentials_dict (which already understands
             # coop_info) propagates them to the sandbox.
@@ -454,18 +459,32 @@ class OpenHandsSDKRunner:
                 # only and our team_task_section appended to the user
                 # message gets ignored (oh_team_v2 failure mode).
                 coop_info["team_section"] = team_session.prompt_section(agent_id=agent_id)
-            
-            with ModalSandboxContext(oh_image, self.timeout, coop_info=coop_info) as sandbox_url:
 
+            with ModalSandboxContext(oh_image, self.timeout, coop_info=coop_info) as sandbox_url:
                 # Import SDK components
                 from openhands.sdk import LLM
                 from openhands.sdk.conversation import RemoteConversation
                 from openhands.sdk.workspace import RemoteWorkspace
                 from openhands.tools.preset.default import get_default_agent
 
-                # Create LLM instance (will be serialized and sent to server)
-                api_key = os.getenv("GEMINI_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
-                llm = LLM(model=model_name, api_key=api_key)
+                # Create LLM instance (will be serialized and sent to server).
+                # Azure OpenAI: when AZURE_OPENAI_* is set, point the LLM at
+                # the Azure deployment via litellm's openai-compatible
+                # provider (model openai/<deployment> + base_url + key).
+                from cooperbench.agents._azure import azure_litellm_model, resolve_azure_config
+
+                azure = resolve_azure_config()
+                if azure:
+                    llm = LLM(
+                        model=azure_litellm_model(model_name),
+                        api_key=azure["api_key"],
+                        base_url=azure["endpoint"],
+                    )
+                else:
+                    api_key = (
+                        os.getenv("GEMINI_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
+                    )
+                    llm = LLM(model=model_name, api_key=api_key)
 
                 # Create agent with default tools (terminal, file_editor, task_tracker)
                 # Browser tools disabled since we're running headless
@@ -473,25 +492,21 @@ class OpenHandsSDKRunner:
                 # but only active when REDIS_URL env var is set in the sandbox
                 # Pass coop_info to inject collaboration instructions into system prompt
                 agent = get_default_agent(llm=llm, cli_mode=True, coop_info=coop_info)
-                
+
                 # Connect to remote workspace (agent-server in Modal)
                 workspace = RemoteWorkspace(
                     host=sandbox_url,
                     working_dir="/workspace/repo",
                 )
-                
+
                 # Capture base commit for patch generation (before any changes)
                 try:
-                    base_result = workspace.execute_command(
-                        "git rev-parse HEAD",
-                        cwd="/workspace/repo",
-                        timeout=10.0
-                    )
+                    base_result = workspace.execute_command("git rev-parse HEAD", cwd="/workspace/repo", timeout=10.0)
                     base_commit = base_result.stdout.strip() if base_result.exit_code == 0 else None
                 except Exception as e:
                     logger.warning(f"Failed to get base commit: {e}")
                     base_commit = None
-                
+
                 # Set up git remote if git collaboration is enabled
                 if coop_info and coop_info.get("git_enabled") and coop_info.get("git_url"):
                     self._setup_git_remote(
@@ -504,34 +519,37 @@ class OpenHandsSDKRunner:
                 def event_callback(event):
                     nonlocal steps, sent_messages
                     steps += 1
-                    
+
                     event_data = {
                         "step": steps,
                         "event_type": type(event).__name__,
                         "event": str(event),
                     }
-                    
+
                     # Extract message details for SendMessageAction
                     event_str = str(event)
                     if "SendMessageAction" in event_str:
                         import time
-                        action = getattr(event, 'action', None)
-                        recipient = getattr(action, 'recipient', None) if action else None
-                        content = getattr(action, 'content', None) if action else None
-                        
+
+                        action = getattr(event, "action", None)
+                        recipient = getattr(action, "recipient", None) if action else None
+                        content = getattr(action, "content", None) if action else None
+
                         if recipient and content:
                             # Add to event_data for trajectory visibility (use different names to avoid extraction duplication)
                             event_data["to"] = recipient
                             event_data["msg"] = content
                             # Add to sent_messages for conversation extraction
-                            sent_messages.append({
-                                "from": agent_id,
-                                "to": recipient,
-                                "content": content,
-                                "step": steps,
-                                "timestamp": time.time(),
-                            })
-                    
+                            sent_messages.append(
+                                {
+                                    "from": agent_id,
+                                    "to": recipient,
+                                    "content": content,
+                                    "step": steps,
+                                    "timestamp": time.time(),
+                                }
+                            )
+
                     messages.append(event_data)
 
                 # Create remote conversation - agent loop runs on server
@@ -629,10 +647,10 @@ class OpenHandsSDKRunner:
 
 class ModalSandboxContext:
     """Context manager for Modal sandbox with agent-server.
-    
+
     This starts an agent-server in a Modal sandbox and provides an HTTP URL to connect to it.
     The agent-server runs as the container's entrypoint and exposes port 8000.
-    
+
     Credentials are passed to the sandbox via modal.Secret:
     - GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY from environment
     - Google Cloud credentials from GOOGLE_APPLICATION_CREDENTIALS file
@@ -641,7 +659,7 @@ class ModalSandboxContext:
 
     def __init__(self, image_name: str, timeout: int, coop_info: dict | None = None):
         """Initialize the context manager.
-        
+
         Args:
             image_name: Docker image name for the agent-server
             timeout: Sandbox timeout in seconds
@@ -657,7 +675,7 @@ class ModalSandboxContext:
     def _collect_credentials(self) -> dict[str, str]:
         """Collect API keys, credentials, and coop info from environment."""
         creds = {}
-        
+
         # Collect API keys and Vertex AI config (litellm reads VERTEXAI_* env vars)
         for key in [
             "GEMINI_API_KEY",
@@ -671,25 +689,26 @@ class ModalSandboxContext:
         ]:
             if value := os.environ.get(key):
                 creds[key] = value
-        
+
         # Read Google Cloud credentials JSON if available
         gcp_creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        
+
         # If not explicitly set, check standard gcloud ADC location
         if not gcp_creds_path:
             home = os.path.expanduser("~")
             default_adc_path = os.path.join(home, ".config", "gcloud", "application_default_credentials.json")
             if os.path.exists(default_adc_path):
                 gcp_creds_path = default_adc_path
-        
+
         if gcp_creds_path and os.path.exists(gcp_creds_path):
             with open(gcp_creds_path) as f:
                 creds_content = f.read()
                 creds["GOOGLE_APPLICATION_CREDENTIALS_JSON"] = creds_content
-                
+
                 # Extract project from ADC if not already set
                 if "VERTEXAI_PROJECT" not in creds:
                     import json
+
                     try:
                         adc_data = json.loads(creds_content)
                         if project_id := adc_data.get("quota_project_id"):
@@ -697,7 +716,7 @@ class ModalSandboxContext:
                             creds["GOOGLE_CLOUD_PROJECT"] = project_id
                     except json.JSONDecodeError:
                         pass
-        
+
         # Add coop info for collaboration tools
         if self.coop_info:
             if self.coop_info.get("redis_url"):
@@ -714,7 +733,7 @@ class ModalSandboxContext:
             for k, v in team_env.items():
                 if v:
                     creds[k] = v
-        
+
         return creds
 
     def __enter__(self) -> str:
@@ -744,15 +763,14 @@ class ModalSandboxContext:
             from pathlib import Path as _Path
 
             from cooperbench.team_harness import COOP_TASK_SCRIPT_PATH
+
             coop_task_path = COOP_TASK_SCRIPT_PATH
             # The CoopTaskTrackerTool definition needs to be injected
             # into the agent-server's openhands install so the agent
             # can resolve ``Tool(name="CoopTaskTrackerTool")``.  We
             # also drop a .pth file that auto-imports the module at
             # site-init so register_tool fires before any tool lookup.
-            _oh_tools_dir = (
-                _Path(__file__).resolve().parent / "openhands-tools" / "openhands" / "tools"
-            )
+            _oh_tools_dir = _Path(__file__).resolve().parent / "openhands-tools" / "openhands" / "tools"
             coop_tracker_path = _oh_tools_dir / "task_tracker" / "coop_definition.py"
             # Replacement __init__.py imports coop_definition so the
             # registration overrides the upstream local TaskTracker.
@@ -793,7 +811,7 @@ class ModalSandboxContext:
                     #    avoids quoting fragility.
                     # 3. Delete any cached .pyc files so Python
                     #    recompiles the new __init__ on next import.
-                    'OH_DIR="$(python3 -c \'import openhands.tools.task_tracker as t, os; print(os.path.dirname(t.__file__))\')"; '
+                    "OH_DIR=\"$(python3 -c 'import openhands.tools.task_tracker as t, os; print(os.path.dirname(t.__file__))')\"; "
                     'cp /tmp/cb-coop-tracker.py "$OH_DIR/coop_definition.py" && '
                     'cp /tmp/cb-task-tracker-init.py "$OH_DIR/__init__.py" && '
                     'find "$OH_DIR" -name "*.pyc" -delete; '
@@ -805,20 +823,20 @@ class ModalSandboxContext:
                     # Same Modal-Redis caveat as above; binaries are
                     # present and discoverable but won't function until
                     # Redis is reachable.
-                    'for sub in create claim update list request respond pending; do '
+                    "for sub in create claim update list request respond pending; do "
                     'printf "#!/bin/bash\\nexec python3 /usr/local/bin/cb-coop-task.py %s \\"\\$@\\"\\n" "$sub" '
                     '> "/usr/local/bin/coop-task-$sub" && chmod +x "/usr/local/bin/coop-task-$sub"; '
-                    'done'
+                    "done"
                 )
             )
-        
+
         # Get or create app
         app = modal.App.lookup("cooperbench", create_if_missing=True)
-        
+
         # Collect credentials and create Modal secret
         creds = self._collect_credentials()
         secrets = [modal.Secret.from_dict(creds)] if creds else []
-        
+
         # Create sandbox with tunnel for port 8000
         self._sandbox = modal.Sandbox.create(
             image=image,
@@ -831,14 +849,14 @@ class ModalSandboxContext:
             # Expose port 8000 for the agent-server
             encrypted_ports=[8000],
         )
-        
+
         # Get tunnel URL
         tunnel_info = self._sandbox.tunnels()[8000]
         tunnel_url = tunnel_info.url
-        
+
         # Wait for server to be ready
         self._wait_for_server(tunnel_url)
-        
+
         return tunnel_url
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -855,7 +873,7 @@ class ModalSandboxContext:
 
         start = time.time()
         last_error = None
-        
+
         while time.time() - start < timeout:
             try:
                 response = httpx.get(f"{url}/health", timeout=10)
@@ -865,7 +883,4 @@ class ModalSandboxContext:
                 last_error = e
             time.sleep(2)
 
-        raise TimeoutError(
-            f"Agent-server did not become ready within {timeout}s. "
-            f"Last error: {last_error}"
-        )
+        raise TimeoutError(f"Agent-server did not become ready within {timeout}s. Last error: {last_error}")

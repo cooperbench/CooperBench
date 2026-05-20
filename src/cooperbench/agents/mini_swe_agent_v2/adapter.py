@@ -191,6 +191,18 @@ class MiniSweAgentV2Runner:
         # command string (``send_message <recipient> <<'MSG' ... MSG``).
         # Exposing a separate send_message tool confuses smaller models
         # into alternating between tools unreliably.
+        #
+        # Azure OpenAI: when AZURE_OPENAI_* is set, point litellm at the
+        # Azure deployment via the openai-compatible provider (model
+        # openai/<deployment> + api_base + api_key folded into model_kwargs).
+        from cooperbench.agents._azure import azure_litellm_model, resolve_azure_config
+
+        azure = resolve_azure_config()
+        if azure:
+            model_name = azure_litellm_model(model_name)
+            model_kwargs = dict(model_cfg.get("model_kwargs") or {})
+            model_kwargs.update({"api_base": azure["endpoint"], "api_key": azure["api_key"]})
+            model_cfg = {**model_cfg, "model_kwargs": model_kwargs}
         model = LitellmModel(model_name=model_name, **model_cfg)
 
         # Setup git connector if enabled

@@ -181,12 +181,24 @@ class SweAgentRunner:
                     hp for hp in agent_yaml_config["history_processors"] if hp.get("type") != "cache_control"
                 ]
 
-        # Configure the model (SWE-agent uses litellm internally)
+        # Configure the model (SWE-agent uses litellm internally).
+        # Azure OpenAI: when AZURE_OPENAI_* is set, route at the Azure
+        # deployment via litellm's openai-compatible provider
+        # (name openai/<deployment> + api_base + api_key).
+        from cooperbench.agents._azure import azure_litellm_model, resolve_azure_config
+
+        azure = resolve_azure_config()
+        model_extra: dict = {}
+        effective_model_name = model_name
+        if azure:
+            effective_model_name = azure_litellm_model(model_name)
+            model_extra = {"api_base": azure["endpoint"], "api_key": azure["api_key"]}
         model_config = GenericAPIModelConfig(
-            name=model_name,
+            name=effective_model_name,
             per_instance_cost_limit=agent_config.get("cost_limit", 0.5),
             total_cost_limit=agent_config.get("total_cost_limit", 0.0),
             temperature=agent_config.get("temperature", 0.0),
+            **model_extra,
         )
 
         # Update the YAML config with our model
