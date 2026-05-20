@@ -13,6 +13,17 @@ coop (Redis), coop + git (shared ``team`` remote).
 Auth: ``OPENAI_API_KEY`` from the host environment is written into
 ``${CODEX_HOME}/auth.json`` inside the container (the file Codex reads
 at startup).
+
+Azure OpenAI: set ``AZURE_OPENAI_API_KEY`` + ``AZURE_OPENAI_ENDPOINT``
+(the OpenAI-compatible v1 base, e.g.
+``https://<resource>.cognitiveservices.azure.com/openai/v1``) and pass
+the Azure *deployment* name via ``-m``.  When both are present they take
+precedence over ``OPENAI_API_KEY``: a custom ``model_provider`` is
+written into ``config.toml`` and the key is read from the env var.
+Azure runs use codex's plain output (not ``--json``) — codex 0.132's
+JSONL event stream mishandles Azure's HTTP/2 ``/responses`` endpoint —
+so token/cost telemetry is unavailable on that path; the patch is still
+harvested from ``patch.txt``.
 """
 
 from __future__ import annotations
@@ -72,6 +83,10 @@ CONTAINER_TEAM_MCP_PATH = "/tmp/cb-mcp-server.py"
 CONTAINER_CODEX_HOME = "/tmp/codex-home"
 CONTAINER_AUTH_PATH = f"{CONTAINER_CODEX_HOME}/auth.json"
 CONTAINER_STREAM_LOG = "/tmp/codex-stream.jsonl"
+# Azure path runs codex without --json (its JSONL event stream hits a
+# codex/HTTP2 bug against Azure), so we capture the final assistant
+# message here via --output-last-message instead of parsing the stream.
+CONTAINER_LAST_MSG = "/tmp/codex-last-message.txt"
 
 # Test-time shim: tests monkey-patch this for fake-env injection.
 _build_environment = build_environment
@@ -87,6 +102,47 @@ def resolve_credentials() -> dict[str, str]:
     if api_key:
         return {"OPENAI_API_KEY": api_key}
     return {}
+
+
+def resolve_azure_config() -> dict[str, str] | None:
+    """Azure OpenAI provider config from the host environment.
+
+    Returns ``{"api_key": ..., "endpoint": ...}`` when both
+    ``AZURE_OPENAI_API_KEY`` and ``AZURE_OPENAI_ENDPOINT`` are set, else
+    ``None``.  When set, Azure takes precedence over the plain
+    ``OPENAI_API_KEY`` path: codex is pointed at the Azure deployment via
+    a custom ``model_provider`` in ``config.toml`` (see
+    ``_azure_config_toml``).
+
+    ``AZURE_OPENAI_ENDPOINT`` must be the OpenAI-compatible v1 base, e.g.
+    ``https://<resource>.cognitiveservices.azure.com/openai/v1`` (codex
+    appends ``/responses``).  The model name passed via ``-m`` is the
+    Azure *deployment* name (e.g. ``gpt-5.5-hao``).
+    """
+    key = os.environ.get("AZURE_OPENAI_API_KEY", "").strip()
+    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip()
+    if key and endpoint:
+        return {"api_key": key, "endpoint": endpoint.rstrip("/")}
+    return None
+
+
+def _azure_config_toml(endpoint: str) -> str:
+    """Render the ``config.toml`` fragment that points codex at Azure.
+
+    codex 0.132+ only speaks the Responses wire API (``chat`` was
+    removed), and Azure's ``/openai/v1`` surface supports it, so we use
+    ``wire_api = "responses"``.  The key is read from the
+    ``AZURE_OPENAI_API_KEY`` env var (exported into the codex command),
+    not from ``auth.json``.
+    """
+    return (
+        'model_provider = "azure"\n\n'
+        "[model_providers.azure]\n"
+        'name = "Azure OpenAI"\n'
+        f'base_url = "{endpoint}"\n'
+        'env_key = "AZURE_OPENAI_API_KEY"\n'
+        'wire_api = "responses"\n'
+    )
 
 
 def _strip_provider_prefix(model_name: str) -> str:
@@ -105,12 +161,21 @@ def _build_codex_command(
     stream_log_path: str,
     auth_dir: str,
     coop_env: dict[str, str] | None = None,
+    json_output: bool = True,
+    last_message_path: str | None = None,
 ) -> str:
     """Compose the in-container shell command that invokes ``codex exec``.
 
     Reads the prompt from a file so we don't have to shell-escape the
-    whole instruction.  Tees stdout (the JSONL stream) so we can read it
-    back post-run.
+    whole instruction.  Tees stdout so we can read it back post-run.
+
+    ``json_output`` controls ``--json`` (the JSONL event stream the
+    parser consumes).  It is forced off for the Azure provider: codex
+    0.132's ``--json`` path mishandles Azure's HTTP/2 ``/responses``
+    stream and dies with "stream disconnected", while plain (human)
+    output works.  In that mode pass ``last_message_path`` so codex
+    writes the final assistant message via ``--output-last-message`` —
+    the patch itself is still harvested from ``patch.txt``.
     """
     coop_exports = ""
     if coop_env:
@@ -119,6 +184,11 @@ def _build_codex_command(
     model_flag = ""
     if model_name:
         model_flag = f"--model {shlex.quote(_strip_provider_prefix(model_name))} "
+
+    json_flag = "--json " if json_output else ""
+    last_msg_flag = ""
+    if last_message_path:
+        last_msg_flag = f"--output-last-message {shlex.quote(last_message_path)} "
 
     # IMPORTANT: redirect stdin from /dev/null.  Codex's `exec` mode otherwise
     # prints "Reading additional input from stdin..." and blocks indefinitely
@@ -134,7 +204,8 @@ def _build_codex_command(
         "--sandbox danger-full-access "
         "--skip-git-repo-check "
         f"{model_flag}"
-        "--json "
+        f"{json_flag}"
+        f"{last_msg_flag}"
         f'-- "$(cat {shlex.quote(instruction_path)})" '
         f"</dev/null 2>&1 | tee {shlex.quote(stream_log_path)}"
     )
@@ -183,16 +254,20 @@ class CodexRunner:
         config = config or {}
 
         credentials = resolve_credentials()
-        if not credentials:
+        azure = resolve_azure_config()
+        if not azure and not credentials:
             # Fail fast: no point spinning up a container when we know
             # codex will reject every request.
-            logger.error("OPENAI_API_KEY is not set in the host environment; skipping codex run.")
+            logger.error(
+                "No codex credentials in host environment; skipping run. "
+                "Set OPENAI_API_KEY, or AZURE_OPENAI_API_KEY + AZURE_OPENAI_ENDPOINT for Azure."
+            )
             return AgentResult(
                 status="Error",
                 patch="",
                 cost=0.0,
                 steps=0,
-                error="OPENAI_API_KEY not set in host environment",
+                error="no codex credentials (OPENAI_API_KEY or AZURE_OPENAI_API_KEY+AZURE_OPENAI_ENDPOINT) set",
             )
 
         is_coop = bool(messaging_enabled and comm_url and agents and len(agents) > 1)
@@ -231,6 +306,10 @@ class CodexRunner:
 
         coop_env: dict[str, str] = {}
         extra_run_args: list[str] = []
+        if azure:
+            # codex reads the Azure key from this env var (env_key in the
+            # provider block); exported into the codex command below.
+            coop_env["AZURE_OPENAI_API_KEY"] = azure["api_key"]
         if is_coop:
             container_url = rewrite_comm_url_for_container(comm_url) or ""
             coop_env = {
@@ -260,6 +339,9 @@ class CodexRunner:
         stream_text = ""
         patch_text = ""
         sent_log_text = ""
+        azure_last_message = ""
+        codex_returncode: int | None = None
+        use_json = not azure  # Azure runs codex in plain (non-JSON) mode
 
         try:
             # 1. Drop coop helper + install snippet (if coop) before setup.
@@ -270,23 +352,26 @@ class CodexRunner:
             if team_task_source is not None:
                 write_file_in_container(env, CONTAINER_TEAM_TASK_PATH, team_task_source)
                 write_file_in_container(env, CONTAINER_TEAM_INSTALL_PATH, TEAM_INSTALL_SNIPPET_PATH.read_text())
-            # MCP long-poll server: copy + register in Codex's TOML config.
-            # Gated independently of the coop-task-* install.
+            # Compose codex's config.toml from independent fragments:
+            #   - Azure provider block (when AZURE_OPENAI_* is set)
+            #   - team-mode MCP long-poll server entry
+            # Both share one file, so build the parts then write once.
             install_mcp = team_session is not None and team_session.config.mcp
+            toml_parts: list[str] = []
+            if azure:
+                toml_parts.append(_azure_config_toml(azure["endpoint"]))
             if install_mcp:
                 write_file_in_container(env, CONTAINER_TEAM_MCP_PATH, TEAM_MCP_SCRIPT_PATH.read_text())
+                # Codex's MCP config lives in config.toml.
+                toml_parts.append(
+                    f'[mcp_servers.{MCP_SERVER_NAME}]\ncommand = "python3"\nargs = ["{CONTAINER_TEAM_MCP_PATH}"]\n'
+                )
+            if toml_parts:
                 env.execute(
                     {"command": f"mkdir -p {shlex.quote(CONTAINER_CODEX_HOME)}"},
                     timeout=30,
                 )
-                # Codex's MCP config lives in config.toml.  We keep it
-                # tiny (one server entry) since the file may not exist
-                # yet — Codex tolerates a fresh config that *only*
-                # contains mcpServers.
-                toml_body = (
-                    f'[mcp_servers.{MCP_SERVER_NAME}]\ncommand = "python3"\nargs = ["{CONTAINER_TEAM_MCP_PATH}"]\n'
-                )
-                write_file_in_container(env, f"{CONTAINER_CODEX_HOME}/config.toml", toml_body)
+                write_file_in_container(env, f"{CONTAINER_CODEX_HOME}/config.toml", "\n".join(toml_parts))
 
             # 2. Install codex in the container.
             write_file_in_container(env, CONTAINER_SETUP_PATH, setup_script)
@@ -297,8 +382,10 @@ class CodexRunner:
             if install.get("returncode") not in (0, None):
                 raise RuntimeError("codex install failed: " + (install.get("output") or "")[:2000])
 
-            # 2b. Write the auth file so codex can authenticate.
-            if credentials.get("OPENAI_API_KEY"):
+            # 2b. Write the auth file so codex can authenticate.  Skipped
+            #     for Azure — that path authenticates via the
+            #     AZURE_OPENAI_API_KEY env var (provider env_key), not auth.json.
+            if not azure and credentials.get("OPENAI_API_KEY"):
                 _write_auth_file(env, credentials["OPENAI_API_KEY"])
 
             # 3a. Optional: git remote setup so peers can fetch each other.
@@ -317,6 +404,11 @@ class CodexRunner:
             # 3. Write the instruction to a file and invoke codex.
             write_file_in_container(env, CONTAINER_INSTRUCTION_PATH, instruction)
 
+            # Azure runs without --json (codex's JSONL stream is broken
+            # against Azure's HTTP/2 endpoint); capture the final message
+            # via --output-last-message instead.
+            last_message_path = None if use_json else CONTAINER_LAST_MSG
+
             # First attempt: with --model gpt-5.5 (or whatever user passed).
             invoke_cmd = _build_codex_command(
                 CONTAINER_INSTRUCTION_PATH,
@@ -324,31 +416,40 @@ class CodexRunner:
                 stream_log_path=CONTAINER_STREAM_LOG,
                 auth_dir=CONTAINER_CODEX_HOME,
                 coop_env=coop_env or None,
+                json_output=use_json,
+                last_message_path=last_message_path,
             )
-            env.execute({"command": invoke_cmd}, timeout=7200)
+            invoke_result = env.execute({"command": invoke_cmd}, timeout=7200)
+            codex_returncode = invoke_result.get("returncode")
             stream_text = read_file_from_container(env, CONTAINER_STREAM_LOG)
-            summary = parse_stream_jsonl(stream_text)
 
-            # Fallback: if the requested model isn't available, drop the
-            # --model flag and let Codex pick its default.
-            if summary.is_model_error:
-                logger.warning(
-                    "Codex rejected model '%s' (%s); retrying without --model",
-                    model_name,
-                    (summary.raw_result.get("message") or "")[:200],
-                )
-                invoke_cmd = _build_codex_command(
-                    CONTAINER_INSTRUCTION_PATH,
-                    model_name=None,
-                    stream_log_path=CONTAINER_STREAM_LOG,
-                    auth_dir=CONTAINER_CODEX_HOME,
-                    coop_env=coop_env or None,
-                )
-                env.execute({"command": invoke_cmd}, timeout=7200)
-                stream_text = read_file_from_container(env, CONTAINER_STREAM_LOG)
+            # Model-name fallback only applies in JSON mode (it needs the
+            # parsed error).  Azure passes a fixed deployment name, so no
+            # fallback there.
+            if use_json:
+                summary = parse_stream_jsonl(stream_text)
+                if summary.is_model_error:
+                    logger.warning(
+                        "Codex rejected model '%s' (%s); retrying without --model",
+                        model_name,
+                        (summary.raw_result.get("message") or "")[:200],
+                    )
+                    invoke_cmd = _build_codex_command(
+                        CONTAINER_INSTRUCTION_PATH,
+                        model_name=None,
+                        stream_log_path=CONTAINER_STREAM_LOG,
+                        auth_dir=CONTAINER_CODEX_HOME,
+                        coop_env=coop_env or None,
+                    )
+                    env.execute({"command": invoke_cmd}, timeout=7200)
+                    stream_text = read_file_from_container(env, CONTAINER_STREAM_LOG)
 
             # 4. Collect outputs.
             patch_text = normalize_patch(read_file_from_container(env, f"{CONTAINER_REPO_PATH}/patch.txt"))
+            if not use_json:
+                # Best-effort final assistant message (file is absent if
+                # codex never produced one).
+                azure_last_message = read_file_from_container(env, CONTAINER_LAST_MSG)
             if is_coop:
                 sent_log_text = read_file_from_container(env, CONTAINER_COOP_SEND_LOG)
         except Exception as e:
@@ -360,23 +461,47 @@ class CodexRunner:
             except Exception:
                 logger.warning("Env cleanup failed", exc_info=True)
 
-        summary = parse_stream_jsonl(stream_text)
-        messages = parse_messages(stream_text)
         sent_messages = parse_sent_messages_log(sent_log_text)
 
-        if error_msg is not None:
-            status = "Error"
+        if use_json:
+            # OpenAI path: rich JSONL parse (status, tokens, messages).
+            summary = parse_stream_jsonl(stream_text)
+            messages = parse_messages(stream_text)
+            cost = summary.cost
+            steps = summary.steps
+            input_tokens = summary.input_tokens
+            output_tokens = summary.output_tokens
+            cache_read_tokens = summary.cache_read_tokens
+            cache_write_tokens = summary.cache_write_tokens
+            if error_msg is not None:
+                status = "Error"
+            else:
+                status = summary.status
+                # Treat "no creds" as an explicit error rather than swallowing it.
+                if status == "Error" and not credentials and not azure:
+                    error_msg = "OPENAI_API_KEY missing"
         else:
-            status = summary.status
-            # Treat "no creds" as an explicit error rather than swallowing it.
-            if status == "Error" and not credentials:
-                error_msg = "OPENAI_API_KEY missing"
+            # Azure path: no JSONL stream.  Derive status from codex's exit
+            # code, surface the final message, and leave token/cost counts
+            # at 0 (codex's plain output carries no usage data).
+            cost = 0.0
+            steps = 0
+            input_tokens = output_tokens = cache_read_tokens = cache_write_tokens = 0
+            messages = [{"role": "assistant", "content": azure_last_message}] if azure_last_message.strip() else []
+            if error_msg is not None:
+                status = "Error"
+            elif codex_returncode in (0, None):
+                status = "Submitted"
+            else:
+                status = "Error"
+                error_msg = f"codex exited with code {codex_returncode}"
 
         if log_dir:
             try:
                 log_root = Path(log_dir)
                 log_root.mkdir(parents=True, exist_ok=True)
-                (log_root / f"{agent_id}_stream.jsonl").write_text(stream_text)
+                suffix = "jsonl" if use_json else "log"
+                (log_root / f"{agent_id}_stream.{suffix}").write_text(stream_text)
                 if sent_log_text:
                     (log_root / f"{agent_id}_sent.jsonl").write_text(sent_log_text)
             except OSError:
@@ -385,12 +510,12 @@ class CodexRunner:
         return AgentResult(
             status=status,
             patch=patch_text,
-            cost=summary.cost,
-            steps=summary.steps,
-            input_tokens=summary.input_tokens,
-            output_tokens=summary.output_tokens,
-            cache_read_tokens=summary.cache_read_tokens,
-            cache_write_tokens=summary.cache_write_tokens,
+            cost=cost,
+            steps=steps,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
             messages=messages,
             sent_messages=sent_messages,
             error=error_msg,

@@ -14,7 +14,11 @@ from unittest.mock import patch as mock_patch
 import pytest
 
 from cooperbench.agents import AgentResult, get_runner, list_agents
-from cooperbench.agents.codex.adapter import resolve_credentials
+from cooperbench.agents.codex.adapter import (
+    _azure_config_toml,
+    resolve_azure_config,
+    resolve_credentials,
+)
 
 
 class _FakeEnv:
@@ -65,6 +69,15 @@ def fake_env_factory():
     return _factory
 
 
+@pytest.fixture(autouse=True)
+def _clear_azure_env(monkeypatch):
+    """Keep non-Azure tests hermetic: clear Azure provider env vars so a
+    dev machine that has them set doesn't flip tests onto the Azure path.
+    Azure tests re-set them explicitly."""
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("AZURE_OPENAI_ENDPOINT", raising=False)
+
+
 def _stream(steps: int = 1, error: bool = False, message: str = "") -> str:
     lines = [json.dumps({"type": "thread.started", "thread_id": "t1"})]
     for _ in range(steps):
@@ -107,6 +120,39 @@ class TestResolveCredentials:
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         creds = resolve_credentials()
         assert creds == {}
+
+
+class TestResolveAzureConfig:
+    def test_returns_config_when_both_set(self, monkeypatch):
+        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "az-key")
+        monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://r.cognitiveservices.azure.com/openai/v1/")
+        cfg = resolve_azure_config()
+        assert cfg == {
+            "api_key": "az-key",
+            # trailing slash stripped (codex appends /responses)
+            "endpoint": "https://r.cognitiveservices.azure.com/openai/v1",
+        }
+
+    def test_none_when_key_missing(self, monkeypatch):
+        monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://r/openai/v1")
+        assert resolve_azure_config() is None
+
+    def test_none_when_endpoint_missing(self, monkeypatch):
+        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "az-key")
+        monkeypatch.delenv("AZURE_OPENAI_ENDPOINT", raising=False)
+        assert resolve_azure_config() is None
+
+
+class TestAzureConfigToml:
+    def test_fragment_shape(self):
+        toml = _azure_config_toml("https://r/openai/v1")
+        assert 'model_provider = "azure"' in toml
+        assert "[model_providers.azure]" in toml
+        assert 'base_url = "https://r/openai/v1"' in toml
+        assert 'env_key = "AZURE_OPENAI_API_KEY"' in toml
+        # codex 0.132 only supports the responses wire API
+        assert 'wire_api = "responses"' in toml
 
 
 class TestAdapterRun:
@@ -246,6 +292,67 @@ class TestAdapterRun:
 
         # Adapter still runs install + invokes codex, but codex will fail.
         # Status should be Error and error message should mention auth.
+        assert result.status == "Error"
+
+    def _azure_responses(self, patch_text: str = "", last_message: str = "", codex_rc: int = 0):
+        return {
+            "cb-setup.sh": {"output": "installed\n", "returncode": 0},
+            "codex exec": {"output": "human readable output\n", "returncode": codex_rc},
+            "codex-stream.jsonl": {"output": "human readable output\n", "returncode": 0},
+            "codex-last-message.txt": {"output": last_message, "returncode": 0},
+            "patch.txt": {"output": patch_text, "returncode": 0},
+        }
+
+    def test_azure_run_uses_non_json_and_provider_config(self, fake_env_factory, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "az-key")
+        monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://r.cognitiveservices.azure.com/openai/v1")
+        env = fake_env_factory(self._azure_responses("diff --git a/x b/x\n+hi\n", "done", codex_rc=0))
+
+        with mock_patch(
+            "cooperbench.agents.codex.adapter._build_environment",
+            return_value=env,
+        ):
+            result = get_runner("codex").run(
+                task="t",
+                image="cooperbench/example:task1",
+                model_name="gpt-5.5-hao",
+            )
+
+        codex_cmds = [c for c in env.executed if "codex exec" in c]
+        assert len(codex_cmds) == 1
+        cmd = codex_cmds[0]
+        # Azure path must NOT use --json, and must capture the last message.
+        assert "--json" not in cmd
+        assert "--output-last-message" in cmd
+        assert "--model gpt-5.5-hao" in cmd or "--model 'gpt-5.5-hao'" in cmd
+        # Azure key exported into the codex command (provider env_key).
+        assert "AZURE_OPENAI_API_KEY" in cmd
+        joined = "\n".join(env.executed)
+        # config.toml carries the azure provider; auth.json is NOT written.
+        assert "model_providers.azure" in joined or 'model_provider = "azure"' in joined
+        assert "auth.json" not in joined
+        assert result.status == "Submitted"
+        assert result.patch.startswith("diff --git")
+        # No JSONL telemetry on the Azure path.
+        assert result.input_tokens == 0
+        assert result.steps == 0
+
+    def test_azure_error_status_on_nonzero_exit(self, fake_env_factory, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "az-key")
+        monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://r/openai/v1")
+        env = fake_env_factory(self._azure_responses("", "", codex_rc=1))
+
+        with mock_patch(
+            "cooperbench.agents.codex.adapter._build_environment",
+            return_value=env,
+        ):
+            result = get_runner("codex").run(
+                task="t",
+                image="cooperbench/example:task1",
+                model_name="gpt-5.5-hao",
+            )
         assert result.status == "Error"
 
     def test_coop_messaging_and_git_setup_wired(self, fake_env_factory, monkeypatch):
