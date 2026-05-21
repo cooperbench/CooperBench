@@ -312,12 +312,16 @@ class CodexRunner:
             coop_env["AZURE_OPENAI_API_KEY"] = azure["api_key"]
         if is_coop:
             container_url = rewrite_comm_url_for_container(comm_url) or ""
-            coop_env = {
-                "COOP_REDIS_URL": container_url,
-                "COOP_AGENT_ID": agent_id,
-                "COOP_AGENTS": ",".join(agents or []),
-                "COOP_LOG_PATH": CONTAINER_COOP_SEND_LOG,
-            }
+            # NB: update (not reassign) — reassigning would wipe the Azure
+            # key added above, breaking codex's provider auth in coop/team.
+            coop_env.update(
+                {
+                    "COOP_REDIS_URL": container_url,
+                    "COOP_AGENT_ID": agent_id,
+                    "COOP_AGENTS": ",".join(agents or []),
+                    "COOP_LOG_PATH": CONTAINER_COOP_SEND_LOG,
+                }
+            )
             extra_run_args.append("--add-host=host.docker.internal:host-gateway")
         if team_session is not None:
             coop_env.update(team_session.env_for(agent_id))

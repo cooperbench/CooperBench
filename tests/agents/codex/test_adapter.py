@@ -338,6 +338,37 @@ class TestAdapterRun:
         assert result.input_tokens == 0
         assert result.steps == 0
 
+    def test_azure_key_survives_coop_mode(self, fake_env_factory, monkeypatch):
+        """Regression: the coop branch must not wipe the Azure key.
+
+        The is_coop block originally *reassigned* coop_env = {...}, which
+        dropped AZURE_OPENAI_API_KEY (added before it) and made codex fail
+        provider auth in coop/team — coop+git scored 0/N on the full sweep.
+        """
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "az-key")
+        monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://r/openai/v1")
+        env = fake_env_factory(self._azure_responses("diff --git a/x b/x\n+hi\n", "done", codex_rc=0))
+
+        with mock_patch(
+            "cooperbench.agents.codex.adapter._build_environment",
+            return_value=env,
+        ):
+            get_runner("codex").run(
+                task="t",
+                image="cooperbench/example:task1",
+                model_name="gpt-5.5-hao",
+                agents=["agent1", "agent2"],
+                agent_id="agent1",
+                comm_url="redis://localhost:6379#run:abc",
+                messaging_enabled=True,
+            )
+
+        cmd = next(c for c in env.executed if "codex exec" in c)
+        # Both the coop vars AND the Azure key must be exported.
+        assert "COOP_REDIS_URL" in cmd
+        assert "AZURE_OPENAI_API_KEY" in cmd
+
     def test_azure_error_status_on_nonzero_exit(self, fake_env_factory, monkeypatch):
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.setenv("AZURE_OPENAI_API_KEY", "az-key")
