@@ -744,6 +744,7 @@ class ModalSandboxContext:
             from pathlib import Path as _Path
 
             from cooperbench.team_harness import COOP_TASK_SCRIPT_PATH
+
             coop_task_path = COOP_TASK_SCRIPT_PATH
             # The CoopTaskTrackerTool definition needs to be injected
             # into the agent-server's openhands install so the agent
