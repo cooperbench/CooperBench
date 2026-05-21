@@ -113,9 +113,53 @@ class LitellmModel:
                 raise RuntimeError(msg) from e
         return {"cost": cost}
 
+    @staticmethod
+    def _serialize_transcript_for_summary(messages: list[dict]) -> str:
+        """Flatten turn-wise messages into a single text transcript.
+
+        Used by summarize_context so the conversation is presented as data to
+        summarize rather than as turns the model should continue. Without this,
+        the model can role-play as the next agent turn (emitting tool-call-like
+        text) instead of producing a summary.
+        """
+        parts = []
+        for m in messages:
+            role = m.get("role", "?")
+            content = m.get("content", "") or ""
+            if role == "assistant":
+                tool_calls = m.get("tool_calls") or []
+                tc_text = ""
+                if tool_calls:
+                    lines = []
+                    for tc in tool_calls:
+                        fn = (tc.get("function") or {}).get("name", "?")
+                        args = (tc.get("function") or {}).get("arguments", "")
+                        lines.append(f"  -> tool_call {fn}({args})")
+                    tc_text = "\n" + "\n".join(lines)
+                parts.append(f"[assistant]\n{content}{tc_text}\n")
+            elif role == "tool":
+                parts.append(f"[tool_output]\n{content}\n")
+            else:
+                parts.append(f"[{role}]\n{content}\n")
+        return "\n".join(parts)
+
     def summarize_context(self, messages: list[dict], summary_prompt: str) -> dict:
-        """Call the model to summarize conversation history for context compaction."""
-        summary_messages = self._prepare_messages_for_api(messages) + [{"role": "user", "content": summary_prompt}]
+        """Call the model to summarize conversation history for context compaction.
+
+        The prior conversation is serialized into a single user message as a
+        transcript (rather than passed as turn-wise messages). This frames the
+        model as an outside observer producing a summary, preventing mode
+        contamination where the model continues the conversation as the next
+        assistant turn.
+        """
+        prepared = self._prepare_messages_for_api(messages)
+        transcript = self._serialize_transcript_for_summary(prepared)
+        summary_messages = [
+            {
+                "role": "user",
+                "content": (f"{summary_prompt}\n\n--- BEGIN TRANSCRIPT ---\n{transcript}\n--- END TRANSCRIPT ---"),
+            }
+        ]
         for attempt in retry(logger=logger, abort_exceptions=self.abort_exceptions):
             with attempt:
                 response = litellm.completion(
