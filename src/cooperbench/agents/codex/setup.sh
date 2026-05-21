@@ -3,18 +3,36 @@
 # Same shape as the Claude Code setup script — apt + nvm/node + npm.
 set -e
 
+# TTY-less containers: force noninteractive apt so debconf doesn't fall
+# through Dialog->Readline->Teletype and trip dpkg ("Sub-process
+# /usr/bin/dpkg returned an error code (1)").  Rare for a few concurrent
+# installs (solo) but dominant under heavier concurrency (coop/team spin
+# up 2x the containers), so harden it.
+export DEBIAN_FRONTEND=noninteractive
+
+# Retry transient apt/network hiccups (mirror throttling under many
+# simultaneous installs from one host) instead of failing the whole run.
+_retry() {
+    local n=0
+    until "$@"; do
+        n=$((n + 1))
+        [ "$n" -ge 3 ] && return 1
+        sleep $((n * 3))
+    done
+}
+
 if command -v apt-get >/dev/null 2>&1; then
-    apt-get update -qq
-    apt-get install -y --no-install-recommends curl ca-certificates gnupg >/dev/null
+    _retry apt-get update -qq
+    _retry apt-get install -y --no-install-recommends curl ca-certificates gnupg >/dev/null
 elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache curl bash nodejs npm >/dev/null
+    _retry apk add --no-cache curl bash nodejs npm >/dev/null
 elif command -v yum >/dev/null 2>&1; then
-    yum install -y curl >/dev/null
+    _retry yum install -y curl >/dev/null
 fi
 
 if ! command -v npm >/dev/null 2>&1; then
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
-    apt-get install -y --no-install-recommends nodejs >/dev/null
+    _retry apt-get install -y --no-install-recommends nodejs >/dev/null
 fi
 
 VERSION="${CODEX_VERSION:-latest}"
