@@ -1,0 +1,7 @@
+name,task_list_on,scratchpad_on,mcp_on,auto_refresh_on,protocol_on,n_features_on,completed,failed,skipped,total_cost,wall_seconds,eval_passed,eval_failed,eval_errors,eval_total,pass_rate,exit_code
+ablate-flash-11111,1,1,1,1,1,5,50,0,0,0.0,3120.4,31,19,0,50,0.62,0
+ablate-flash-01111,0,1,1,1,1,4,50,0,0,0.0,4186.0,20,28,2,50,0.4166666666666667,0
+ablate-flash-10111,1,0,1,1,1,4,50,0,0,0.0,4301.1,15,31,4,50,0.32608695652173914,0
+ablate-flash-11011,1,1,0,1,1,4,50,0,0,0.0,3551.8,30,20,0,50,0.6,0
+ablate-flash-11101,1,1,1,0,1,4,50,0,0,0.0,3022.6,30,20,0,50,0.6,0
+ablate-flash-11110,1,1,1,1,0,4,50,0,0,0.0,3277.9,35,15,0,50,0.7,0

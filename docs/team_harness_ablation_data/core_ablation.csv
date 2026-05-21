@@ -1,0 +1,7 @@
+name,task_list_on,scratchpad_on,mcp_on,auto_refresh_on,protocol_on,n_features_on,completed,failed,skipped,total_cost,wall_seconds,eval_passed,eval_failed,eval_errors,eval_total,pass_rate,exit_code
+ablate-11111,1,1,1,1,1,5,10,0,0,0.0,782.6,6,4,0,10,0.6,0
+ablate-01111,0,1,1,1,1,4,10,0,0,0.0,866.6,4,6,0,10,0.4,0
+ablate-10111,1,0,1,1,1,4,10,0,0,0.0,988.1,3,7,0,10,0.3,0
+ablate-11011,1,1,0,1,1,4,10,0,0,0.0,912.0,5,5,0,10,0.5,0
+ablate-11101,1,1,1,0,1,4,10,0,0,0.0,852.3,5,5,0,10,0.5,0
+ablate-11110,1,1,1,1,0,4,10,0,0,0.0,850.5,5,5,0,10,0.5,0
