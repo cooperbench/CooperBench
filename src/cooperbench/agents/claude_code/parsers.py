@@ -136,6 +136,12 @@ def parse_session_jsonl(text: str) -> list[dict[str, str]]:
 
     Returns a list of ``{"role": ..., "content": ...}`` dicts, sorted by
     ``timestamp``.  ``content`` is always a string.
+
+    Role resolution: prefer ``message.role`` when present, otherwise fall
+    back to ``event.type``.  Recent claude-code session writers emit
+    assistant turns with ``message.role: None`` (the role is only in the
+    top-level ``type`` field), so a strict role-validation check would
+    silently drop every LLM turn.
     """
     events: list[dict[str, Any]] = list(_iter_json_lines(text))
     events.sort(key=lambda e: e.get("timestamp") or "")
@@ -145,7 +151,7 @@ def parse_session_jsonl(text: str) -> list[dict[str, str]]:
         message = event.get("message")
         if not isinstance(message, dict):
             continue
-        role = message.get("role")
+        role = message.get("role") or event.get("type")
         if role not in {"user", "assistant", "system"}:
             continue
         content_text = _content_blocks_to_text(message.get("content"))

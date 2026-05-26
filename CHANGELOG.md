@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.19] - 2026-05-25
+
+### Fixed
+
+- **`claude_code` adapter — assistant turns were being silently dropped from `agent*_traj.json`.** The session-JSONL parser (`parse_session_jsonl` in `src/cooperbench/agents/claude_code/parsers.py`) treated `message.role` as authoritative and rejected any event whose role wasn't in `{user, assistant, system}`. Recent claude-code session writers emit assistant turns with `message.role: None` — the role lives only in the top-level `event.type` — so every LLM turn (text, thinking, tool_use) got filtered out, leaving traj files that contained only `user` tool_result entries. Affected every `claude_code` run since the session-format shift (including all 0.0.17 / 0.0.18 trajectories on disk). Now falls back to `event.type` when `message.role` is missing; on a representative session (`anyhow_task/390/f1_f4/agent2_session.jsonl`) this recovers all 86 assistant events, taking the parsed trajectory from 43 messages (all user) to 129 (43 user + 86 assistant). The underlying `*_session.jsonl` and `*_stream.jsonl` files were always complete — only the derived `*_traj.json` was wrong, so historical runs can be re-parsed by calling `parse_session_jsonl` on the on-disk session file.
+
 ## [0.0.18] - 2026-05-25
 
 ### Removed
