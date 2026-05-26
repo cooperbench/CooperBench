@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.18] - 2026-05-25
+
+### Removed
+
+- **`cooperbench._proxy` module and the `--openai-base-url` / `--openai-model` CLI flags are gone.** Both existed because `claude_code` (which wraps the Anthropic CLI that only speaks `/v1/messages`) was assumed to need a LiteLLM translation layer to reach an OpenAI-compatible vLLM. That assumption was wrong: vLLM v0.17.1+ implements the Anthropic Messages API natively at the same `/v1/messages` path, so claude-code can be pointed straight at the vLLM endpoint with `--base-url`. Removing the auto-spawned LiteLLM also removes a class of bugs we kept hitting from LiteLLM version drift (`/v1/responses` auto-rewrite on `litellm>=1.82` when the inbound request has `thinking={"type":"enabled"}` — claude-code 2.1.x sends it by default; `litellm_params.stream: false` being ignored by some provider prefixes; intermittent `API Error: Content block not found` from vLLM's streaming `tool_call` extractor desynchronizing block_start / block_delta events).
+
+### Changed
+
+- **`--base-url` now points straight at a vLLM-served model.** Existing `--base-url` / `--auth-token` flags are kept and are the only knobs you need. `ANTHROPIC_BASE_URL` is forwarded into the task container; the adapter rewrites `localhost` / `127.0.0.1` → `host.docker.internal`, adds the matching `--add-host` to the container, injects a placeholder auth token if you didn't supply one, and writes `~/.claude/settings.json` with `CLAUDE_CODE_ATTRIBUTION_HEADER=0` (KV-cache perf fix on vLLM/llama.cpp). Real Anthropic runs (no `--base-url`) are unaffected.
+- **`docs/QWEN_LOCAL.md`** rewritten to show the single-command direct flow:
+  ```
+  cooperbench run --base-url https://your-vllm-host -m Qwen/Qwen3.5-9B \
+    -a claude_code --setting coop -s lite -c 2 --no-auto-eval
+  ```
+  No LiteLLM, no proxy subprocess, no extras.
+
+### Verified
+
+- Direct curl against `https://cooperbench--qwen35-9b-128k-serve.modal.run/v1/messages`: tool conversation returns proper Anthropic `tool_use` blocks with parsed `input`, `stop_reason: "tool_use"`; streaming returns proper `content_block_start` → `content_block_delta` → `content_block_stop` ordering with no missed start events.
+- End-to-end coop run with the new flow on the same `anyhow_task` pair that was failing in `0.0.17` against the older `--openai-base-url` proxy path: agents iterate over multiple tool rounds against vLLM directly. (Adapter-level behavior unchanged from `0.0.17`; only the routing layer simplified.)
+
 ## [0.0.17] - 2026-05-25
 
 ### Fixed

@@ -247,10 +247,11 @@ def main():
         "--base-url",
         default=None,
         help=(
-            "Custom Anthropic-compatible base URL for the model endpoint "
-            "(forwarded to the agent as ANTHROPIC_BASE_URL). Use this to "
-            "point at a local LiteLLM proxy or a self-hosted vLLM behind "
-            "an Anthropic-compatible translation layer."
+            "Anthropic-compatible base URL for the model endpoint "
+            "(forwarded to the agent as ANTHROPIC_BASE_URL). vLLM v0.17.1+ "
+            "exposes /v1/messages natively, so this can point straight at "
+            "a vLLM server; no proxy needed. Example: "
+            "https://your-vllm-host.example.com"
         ),
     )
     run_parser.add_argument(
@@ -260,26 +261,6 @@ def main():
             "Auth token paired with --base-url (forwarded as "
             "ANTHROPIC_AUTH_TOKEN). Use any placeholder for unauthenticated "
             "endpoints."
-        ),
-    )
-    run_parser.add_argument(
-        "--openai-base-url",
-        default=None,
-        help=(
-            "OpenAI-compatible upstream URL (e.g. a vLLM endpoint). When "
-            "set, cooperbench auto-spawns a LiteLLM proxy locally that "
-            "translates Anthropic <-> OpenAI for the run, so claude_code "
-            "and other Anthropic-only agents can hit non-Anthropic models "
-            "with no extra setup. Mutually exclusive with --base-url."
-        ),
-    )
-    run_parser.add_argument(
-        "--openai-model",
-        default=None,
-        help=(
-            "Upstream model name to send to --openai-base-url (e.g. "
-            "Qwen/Qwen3.5-9B). Defaults to the value of -m / --model when "
-            "--openai-base-url is set."
         ),
     )
 
@@ -369,19 +350,18 @@ def _config_command(args):
 
 def _run_command(args):
     """Handle the 'run' subcommand."""
-    import contextlib
-
     from cooperbench.runner import run
     from cooperbench.team_harness import TeamHarnessConfig
 
-    openai_base_url = getattr(args, "openai_base_url", None)
-    base_url = getattr(args, "base_url", None)
-    if openai_base_url and base_url:
-        sys.exit(
-            "error: --openai-base-url and --base-url are mutually exclusive "
-            "(use --openai-base-url for OpenAI-format upstreams; "
-            "use --base-url to point at an already-running Anthropic-format proxy)."
-        )
+    # Forward optional Anthropic-compatible endpoint to the agent via env
+    # vars.  vLLM v0.17.1+ exposes ``/v1/messages`` natively, so users can
+    # point ``--base-url`` straight at a vLLM server without any proxy.
+    # Older approaches that spawned a local LiteLLM proxy were removed
+    # in v0.0.18 — see CHANGELOG.
+    if getattr(args, "base_url", None):
+        os.environ["ANTHROPIC_BASE_URL"] = args.base_url
+    if getattr(args, "auth_token", None):
+        os.environ["ANTHROPIC_AUTH_TOKEN"] = args.auth_token
 
     features = None
     if args.features:
@@ -410,54 +390,28 @@ def _run_command(args):
         protocol=not args.team_no_protocol,
     )
 
-    # Compose a context manager that either auto-spawns LiteLLM (when
-    # --openai-base-url is set) or is a no-op (when --base-url is set or
-    # neither is set).  In both branches, we forward the resulting
-    # base URL / auth token into os.environ so the claude_code adapter
-    # picks them up via resolve_endpoint_overrides().
-    @contextlib.contextmanager
-    def _endpoint_env():
-        if openai_base_url:
-            from cooperbench._proxy import managed_litellm
-
-            upstream_model = getattr(args, "openai_model", None) or args.model
-            with managed_litellm(
-                openai_base_url=openai_base_url,
-                openai_model=upstream_model,
-            ) as (proxied_url, proxied_token):
-                os.environ["ANTHROPIC_BASE_URL"] = proxied_url
-                os.environ["ANTHROPIC_AUTH_TOKEN"] = proxied_token
-                yield
-        else:
-            if base_url:
-                os.environ["ANTHROPIC_BASE_URL"] = base_url
-            if getattr(args, "auth_token", None):
-                os.environ["ANTHROPIC_AUTH_TOKEN"] = args.auth_token
-            yield
-
-    with _endpoint_env():
-        run(
-            run_name=run_name,
-            subset=args.subset,
-            repo=args.repo,
-            task_id=args.task,
-            features=features,
-            model_name=args.model,
-            agent=args.agent,
-            concurrency=args.concurrency,
-            setting=args.setting,
-            redis_url=args.redis,
-            force=args.force,
-            git_enabled=args.git,
-            messaging_enabled=not args.no_messaging,
-            auto_eval=not args.no_auto_eval,
-            eval_concurrency=args.eval_concurrency,
-            backend=args.backend,
-            agent_config=args.agent_config if hasattr(args, "agent_config") else None,
-            dataset_dir=args.dataset_dir if hasattr(args, "dataset_dir") else None,
-            logs_dir=args.log_dir if hasattr(args, "log_dir") else None,
-            team_features=team_features,
-        )
+    run(
+        run_name=run_name,
+        subset=args.subset,
+        repo=args.repo,
+        task_id=args.task,
+        features=features,
+        model_name=args.model,
+        agent=args.agent,
+        concurrency=args.concurrency,
+        setting=args.setting,
+        redis_url=args.redis,
+        force=args.force,
+        git_enabled=args.git,
+        messaging_enabled=not args.no_messaging,
+        auto_eval=not args.no_auto_eval,
+        eval_concurrency=args.eval_concurrency,
+        backend=args.backend,
+        agent_config=args.agent_config if hasattr(args, "agent_config") else None,
+        dataset_dir=args.dataset_dir if hasattr(args, "dataset_dir") else None,
+        logs_dir=args.log_dir if hasattr(args, "log_dir") else None,
+        team_features=team_features,
+    )
 
 
 def _eval_command(args):
