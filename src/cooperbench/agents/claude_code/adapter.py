@@ -76,6 +76,79 @@ CONTAINER_STREAM_LOG = "/tmp/claude-stream.jsonl"
 
 DEFAULT_CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
 
+# Opt-in preset for small-context custom endpoints (Qwen, Llama, etc.).
+# Keeps Read/Edit/Write/Bash/Glob/Grep + the team-mode MCP long-poll
+# tool; strips schemas that would otherwise eat thousands of baseline
+# tokens.  Wired into ``_MODEL_PROFILES`` below; also exported so
+# callers can opt in directly via ``config["disallowed_tools"]``.
+SMALL_CONTEXT_DISALLOWED_TOOLS = [
+    "AskUserQuestion",
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "EnterPlanMode",
+    "ExitPlanMode",
+    "EnterWorktree",
+    "ExitWorktree",
+    "NotebookEdit",
+    "ScheduleWakeup",
+    "Skill",
+    "Task",
+    "TaskCreate",
+    "TaskGet",
+    "TaskList",
+    "TaskOutput",
+    "TaskStop",
+    "TaskUpdate",
+    "WebFetch",
+    "WebSearch",
+]
+
+# Per-model defaults applied when the model name (case-insensitive)
+# contains the key.  Explicit ``config`` keys passed by the caller
+# always override profile values.  Add new entries here when onboarding
+# a model that needs tighter budgets than Claude Code's stock defaults.
+_MODEL_PROFILES: dict[str, dict[str, Any]] = {
+    "qwen": {
+        "max_output_tokens": 4096,
+        "file_read_max_tokens": 4000,
+        "mcp_max_output_tokens": 2000,
+        "disallowed_tools": SMALL_CONTEXT_DISALLOWED_TOOLS,
+    },
+}
+
+
+def _lookup_model_profile(model_name: str) -> dict[str, Any]:
+    """Return the first profile whose key is a substring of the model name.
+
+    Matching is case-insensitive.  Returns an empty dict when no profile
+    applies — i.e. the caller gets stock Claude Code behavior.
+    """
+    name = model_name.lower()
+    for pattern, profile in _MODEL_PROFILES.items():
+        if pattern in name:
+            return profile
+    return {}
+
+
+def resolve_endpoint_overrides() -> dict[str, str]:
+    """Forward host-side ANTHROPIC_BASE_URL/AUTH_TOKEN into the container.
+
+    Lets a user point the in-container Claude Code CLI at a custom
+    Anthropic-compatible endpoint (e.g. a local LiteLLM proxy that
+    translates to vLLM).  ``//localhost`` and ``//127.0.0.1`` are
+    rewritten to ``//host.docker.internal`` so the URL is reachable from
+    inside the container.
+    """
+    out: dict[str, str] = {}
+    base = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+    if base:
+        out["ANTHROPIC_BASE_URL"] = rewrite_comm_url_for_container(base) or base
+    token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "").strip()
+    if token:
+        out["ANTHROPIC_AUTH_TOKEN"] = token
+    return out
+
 
 def resolve_credentials(*, credentials_path: Path | None = None) -> dict[str, str]:
     """Pick the credential to forward to the in-container Claude Code CLI.
@@ -130,14 +203,20 @@ def _build_claude_command(
     *,
     extra_flags: str = "",
     coop_env: dict[str, str] | None = None,
+    preserve_model_name: bool = False,
+    settings_path: str | None = None,
 ) -> str:
     """Compose the in-container shell command that invokes Claude Code.
 
     We read the prompt from a file (rather than inlining via ``-p``) so
     long instructions don't blow past argv limits and don't need
     shell-escaping.
+
+    ``preserve_model_name`` skips the provider-prefix strip — set this
+    when ANTHROPIC_BASE_URL points at a custom endpoint, since the user
+    controls model names on that endpoint.
     """
-    model = _strip_provider_prefix(model_name)
+    model = model_name if preserve_model_name else _strip_provider_prefix(model_name)
     coop_exports = ""
     if coop_env:
         coop_exports = "".join(f"export {k}={shlex.quote(v)}; " for k, v in coop_env.items())
@@ -157,10 +236,70 @@ def _build_claude_command(
         f"cd {CONTAINER_REPO_PATH} && "
         "claude --verbose --output-format=stream-json "
         "--permission-mode=bypassPermissions "
-        f"{extra_flags}"
+        + (f"--settings {shlex.quote(settings_path)} " if settings_path else "")
+        + f"{extra_flags}"
         f'--print -- "$(cat {shlex.quote(instruction_path)})" '
         f"2>&1 | tee {shlex.quote(stream_log_path)}"
     )
+
+
+# Config keys → env var names that Claude Code reads from settings.json's
+# ``env`` block.  All opt-in; absent keys leave Claude Code's stock
+# behavior in place.  Used for small-context models (Qwen, Llama) where
+# the default Read / MCP / output budgets are too generous.
+_BUDGET_CONFIG_KEYS: tuple[tuple[str, str], ...] = (
+    ("max_output_tokens", "CLAUDE_CODE_MAX_OUTPUT_TOKENS"),
+    ("file_read_max_tokens", "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS"),
+    ("mcp_max_output_tokens", "MAX_MCP_OUTPUT_TOKENS"),
+)
+
+
+def _resolve_runtime_limits(
+    model_name: str,
+    config: dict[str, Any],
+    *,
+    endpoint_overrides: dict[str, str],
+) -> tuple[dict[str, str], list[str] | None]:
+    """Compute ``(settings_env, disallowed_tools)`` for the in-container CLI.
+
+    Resolution order, lowest to highest precedence:
+
+    1. Stock Claude Code defaults (the empty case).
+    2. Profile from ``_MODEL_PROFILES`` matched by model-name substring.
+    3. Explicit ``config`` keys passed by the caller.
+
+    Returned ``settings_env`` lands in ``settings.json``'s ``env`` block,
+    which Claude Code reads even when routing through ``ANTHROPIC_BASE_URL``
+    (shell exports are ignored in that path).
+
+    The one auto-applied setting (independent of model / config) is
+    ``CLAUDE_CODE_ATTRIBUTION_HEADER=0`` when an endpoint override is in
+    play — that header invalidates the KV cache on llama.cpp / vLLM
+    backends (~90% slowdown) and is meaningless off real Anthropic.
+
+    Recognized config / profile keys (all optional, all int unless noted):
+
+    - ``max_output_tokens``: caps a single response.
+    - ``file_read_max_tokens``: caps the Read tool's per-file output
+      (default 25000 alone eats most of a small-context window).
+    - ``mcp_max_output_tokens``: caps MCP tool output.
+    - ``disallowed_tools`` (list[str]): forwarded as ``--disallowedTools``.
+      See ``SMALL_CONTEXT_DISALLOWED_TOOLS`` for a ready-made preset.
+    """
+    effective: dict[str, Any] = {**_lookup_model_profile(model_name), **config}
+
+    settings_env: dict[str, str] = {}
+
+    if endpoint_overrides:
+        settings_env["CLAUDE_CODE_ATTRIBUTION_HEADER"] = "0"
+
+    for cfg_key, env_key in _BUDGET_CONFIG_KEYS:
+        value = effective.get(cfg_key)
+        if value:
+            settings_env[env_key] = str(int(value))
+
+    disallowed_tools = effective.get("disallowed_tools")
+    return settings_env, disallowed_tools
 
 
 def _find_session_jsonl(env: ContainerEnv) -> str:
@@ -215,7 +354,16 @@ class ClaudeCodeRunner:
         config = config or {}
 
         credentials = resolve_credentials()
-        if not credentials:
+        endpoint_overrides = resolve_endpoint_overrides()
+        if endpoint_overrides:
+            # No real auth needed for a self-hosted endpoint, but the CLI
+            # requires *some* credential env var to be set.  Inject a
+            # placeholder if the host hasn't provided one.
+            if not credentials and "ANTHROPIC_AUTH_TOKEN" not in endpoint_overrides:
+                endpoint_overrides["ANTHROPIC_AUTH_TOKEN"] = "sk-placeholder"
+            if not credentials:
+                credentials = {}
+        if not credentials and not endpoint_overrides:
             logger.warning(
                 "No Claude Code credentials found (checked ANTHROPIC_API_KEY, "
                 "CLAUDE_CODE_OAUTH_TOKEN, and ~/.claude/.credentials.json). "
@@ -273,6 +421,8 @@ class ClaudeCodeRunner:
                 "COOP_LOG_PATH": CONTAINER_COOP_SEND_LOG,
             }
             extra_run_args.append("--add-host=host.docker.internal:host-gateway")
+        if endpoint_overrides and "--add-host=host.docker.internal:host-gateway" not in extra_run_args:
+            extra_run_args.append("--add-host=host.docker.internal:host-gateway")
         if team_session is not None:
             coop_env.update(team_session.env_for(agent_id))
             extra_run_args.extend(team_session.scratchpad_mount_args())
@@ -283,6 +433,14 @@ class ClaudeCodeRunner:
         extra_flags = ""
         if max_turns:
             extra_flags = f"--max-turns {int(max_turns)} "
+
+        settings_env, disallowed_tools = _resolve_runtime_limits(
+            model_name,
+            config,
+            endpoint_overrides=endpoint_overrides,
+        )
+        if disallowed_tools:
+            extra_flags += f"--disallowedTools {shlex.quote(','.join(disallowed_tools))} "
 
         network = config.get("git_network") if isinstance(config, dict) else None
         backend = config.get("backend", "docker") if isinstance(config, dict) else "docker"
@@ -329,6 +487,20 @@ class ClaudeCodeRunner:
                     json.dumps(mcp_config, indent=2),
                 )
 
+            # 1b. Write settings.json with env vars that Claude Code
+            #     only honors via settings (not shell export) when
+            #     routing through ANTHROPIC_BASE_URL.
+            if settings_env:
+                env.execute(
+                    {"command": f"mkdir -p {shlex.quote(CONTAINER_CLAUDE_CONFIG_DIR)}"},
+                    timeout=30,
+                )
+                write_file_in_container(
+                    env,
+                    f"{CONTAINER_CLAUDE_CONFIG_DIR}/settings.json",
+                    json.dumps({"env": settings_env}, indent=2),
+                )
+
             # 2. Install claude-code in the container.
             write_file_in_container(env, CONTAINER_SETUP_PATH, setup_script)
             install = env.execute(
@@ -354,13 +526,16 @@ class ClaudeCodeRunner:
 
             # 3. Write the instruction to a file and invoke claude.
             write_file_in_container(env, CONTAINER_INSTRUCTION_PATH, instruction)
-            cred_exports = "".join(f"export {k}={shlex.quote(v)}; " for k, v in credentials.items())
+            cred_env = {**credentials, **endpoint_overrides}
+            cred_exports = "".join(f"export {k}={shlex.quote(v)}; " for k, v in cred_env.items())
             invoke_cmd = cred_exports + _build_claude_command(
                 CONTAINER_INSTRUCTION_PATH,
                 model_name,
                 CONTAINER_STREAM_LOG,
                 extra_flags=extra_flags,
                 coop_env=coop_env or None,
+                preserve_model_name=bool(endpoint_overrides),
+                settings_path=(f"{CONTAINER_CLAUDE_CONFIG_DIR}/settings.json" if settings_env else None),
             )
             env.execute({"command": invoke_cmd}, timeout=7200)
 
