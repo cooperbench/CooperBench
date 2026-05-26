@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.17] - 2026-05-25
+
+### Fixed
+
+- **Auto-proxy now forces non-streaming upstream — fixes `API Error: Content block not found` aborts mid-task for `claude_code` against vLLM-served Qwen3.x.** `cooperbench._proxy.managed_litellm` previously spawned LiteLLM with inline `--model` flags, which left the upstream `stream` parameter pass-through. vLLM 0.19.0's `qwen3_coder` / `qwen3_xml` streaming tool-call extractors intermittently forward `content_block_delta` events without first emitting a matching `content_block_start` for the synthesized `tool_use` block; claude-code's stream parser then raises `Content block not found` and the agent loop aborts. The fix switches to a temp YAML config that sets `litellm_params.stream: false`, so LiteLLM buffers the full upstream response and re-emits well-formed Anthropic SSE (with proper `content_block_start` → `content_block_delta` → `content_block_stop` ordering) to claude-code. Empirically on Qwen3.5-9B at 128k against a 4-pair dspy_task batch: 4/6 agents Submitted with 8 occurrences of `Content block not found` (streaming upstream) → **8/8 Submitted with 0 errors** (non-streaming upstream); patch sizes 30/102/72/76/70/48/186/47 lines, real multi-turn iteration (up to 35 steps). Confirmed end-to-end through the auto-proxy with a fresh `cooperbench run --openai-base-url ...`: 0 errors, both agents produced sensible diffs. Tracking upstream as [vllm-project/vllm#39056](https://github.com/vllm-project/vllm/issues/39056).
+
 ## [0.0.16] - 2026-05-25
 
 ### Fixed
