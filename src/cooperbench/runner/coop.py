@@ -80,135 +80,50 @@ def execute_coop(
         if not agents_had_error:
             return {"skipped": True, **prev_result}
 
-    namespaced_redis = f"{redis_url}#run:{run_id}"
-
-    # Create git server if enabled.
-    # openhands_sdk self-manages its git server on the Modal backend (because
-    # Modal sandboxes can't reach a host-side git daemon). On the docker
-    # backend it uses the shared DockerGitServer like every other adapter.
-    git_server = None
-    git_server_url = None
-    git_network = None
-    if git_enabled and not (agent_name == "openhands_sdk" and backend == "modal"):
-        if not quiet:
-            console.print("  [dim]git[/dim] creating shared server...")
-        app = modal.App.lookup("cooperbench", create_if_missing=True) if backend == "modal" else None
-
-        # Build git server kwargs based on backend
-        git_server_kwargs = {"backend": backend, "run_id": run_id, "app": app}
-        if backend == "gcp":
-            config = ConfigManager()
-            if project_id := config.get("gcp_project_id"):
-                git_server_kwargs["project_id"] = project_id
-            if zone := config.get("gcp_zone"):
-                git_server_kwargs["zone"] = zone
-
-        git_server = create_git_server(**git_server_kwargs)
-        git_server_url = git_server.url
-        git_network = getattr(git_server, "network_name", None)
-        if not quiet:
-            console.print(f"  [dim]git[/dim] [green]ready[/green] {git_server_url}")
-
-    results = {}
-    threads = []
-
-    def run_thread(agent_id: str, feature_id: int):
-        try:
-            results[agent_id] = _spawn_agent(
-                repo_name=repo_name,
-                task_id=task_id,
-                feature_id=feature_id,
-                agent_name=agent_name,
-                model_name=model_name,
-                agent_id=agent_id,
-                agents=agents,
-                redis_url=namespaced_redis if messaging_enabled and n_agents > 1 else None,
-                git_server_url=git_server_url,
-                git_enabled=git_enabled,
-                git_network=git_network,
-                messaging_enabled=messaging_enabled,
-                quiet=quiet,
-                backend=backend,
-                agent_config=agent_config,
-                run_name=run_name,
-                features=features,
-                dataset_dir=dataset_dir,
-                logs_dir=logs_dir,
-            )
-        except Exception as e:
-            results[agent_id] = {
-                "feature_id": feature_id,
-                "agent_id": agent_id,
-                "status": "Error",
-                "patch": "",
-                "cost": 0,
-                "steps": 0,
-                "messages": [],
-                "error": str(e),
-            }
+    namespaced_redis, git_server, git_server_url, git_network = setup_pair_infra(
+        redis_url=redis_url,
+        run_id=run_id,
+        agent_name=agent_name,
+        backend=backend,
+        git_enabled=git_enabled,
+        quiet=quiet,
+    )
 
     try:
-        # Sort features to ensure agent assignment matches sorted directory name
-        sorted_features = sorted(features)
-        for agent_id, feature_id in zip(agents, sorted_features):
-            t = threading.Thread(target=run_thread, args=(agent_id, feature_id))
-            threads.append(t)
-            t.start()
-
-        for t in threads:
-            t.join()
+        phase = _run_pair_phase(
+            repo_name=repo_name,
+            task_id=task_id,
+            features=features,
+            agents=agents,
+            agent_name=agent_name,
+            model_name=model_name,
+            redis_url=namespaced_redis,
+            git_server_url=git_server_url,
+            git_enabled=git_enabled,
+            git_network=git_network,
+            messaging_enabled=messaging_enabled,
+            backend=backend,
+            agent_config=agent_config,
+            run_name=run_name,
+            dataset_dir=dataset_dir,
+            logs_dir=logs_dir,
+            log_dir=log_dir,
+            quiet=quiet,
+            artifact_suffix="patch",
+        )
     finally:
-        # Cleanup git server
         if git_server:
             git_server.cleanup()
+
+    results = phase["results"]
+    sent_msgs = phase["conversation"]
+    total_cost = phase["total_cost"]
+    total_steps = phase["total_steps"]
 
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
 
-    total_cost = sum(r.get("cost", 0) for r in results.values())
-    total_steps = sum(r.get("steps", 0) for r in results.values())
-
-    # Save files
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Extract conversation (inter-agent messages)
-    conversation = _extract_conversation(results, agents)
-
-    # Sort by timestamp and dedupe (keep only sent messages, not received).
-    # See ``_message_timestamp_key`` for why coercion is needed.
-    sent_msgs = [m for m in conversation if not m.get("received")]
-    sent_msgs.sort(key=_message_timestamp_key)
-
-    # Save conversation
-    with open(log_dir / "conversation.json", "w") as f:
-        json.dump(sent_msgs, f, indent=2, default=str)
-
-    for agent_id in agents:
-        r = results[agent_id]
-        fid = r["feature_id"]
-
-        patch_file = log_dir / f"agent{fid}.patch"
-        patch_file.write_text(r.get("patch", ""))
-
-        traj_file = log_dir / f"agent{fid}_traj.json"
-        with open(traj_file, "w") as f:
-            json.dump(
-                {
-                    "repo": repo_name,
-                    "task_id": task_id,
-                    "feature_id": fid,
-                    "agent_id": agent_id,
-                    "model": model_name,
-                    "status": r.get("status"),
-                    "cost": r.get("cost"),
-                    "steps": r.get("steps"),
-                    "messages": r.get("messages", []),
-                },
-                f,
-                indent=2,
-                default=str,
-            )
-
+    sorted_features = sorted(features)
     result_data = {
         "repo": repo_name,
         "task_id": task_id,
@@ -275,6 +190,11 @@ def _spawn_agent(
     features: list[int] | None = None,
     dataset_dir: Path | str | None = None,
     logs_dir: Path | str | None = None,
+    *,
+    task_override: str | None = None,
+    extra_config: dict | None = None,
+    log_dir_override: str | None = None,
+    setting_subdir: str = "coop",
 ) -> dict:
     """Spawn a single agent on a feature using the agent framework adapter.
 
@@ -282,23 +202,40 @@ def _spawn_agent(
         agent_config: Path to agent-specific configuration file (optional)
         dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
         logs_dir: Root to write run logs under.  Defaults to ``./logs``.
+        task_override: If set, use this string as the task message instead
+            of reading ``feature.md``. Used by ``plan_execute``'s Phase 2
+            where the task is the agent's own ``plan.txt`` content.
+        extra_config: Optional dict merged into the ``config`` passed to the
+            adapter (e.g. ``submission_template`` / ``submission_artifact``
+            overrides for ``plan_execute``).
+        log_dir_override: Optional explicit log directory string to pass to
+            the adapter (skips the default ``logs/<run>/<setting>/...`` path
+            computation). Used to point Phase 1 at a ``phase1/`` subdir.
+        setting_subdir: First subdir under ``logs/<run>/`` (default
+            ``"coop"``; ``"plan_execute"`` for the plan_execute setting).
     """
     root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
     task_dir = root / repo_name / f"task{task_id}"
     logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
-    feature_file = task_dir / f"feature{feature_id}" / "feature.md"
 
-    if not feature_file.exists():
-        raise FileNotFoundError(f"Feature file not found: {feature_file}")
+    if task_override is not None:
+        task = task_override
+    else:
+        feature_file = task_dir / f"feature{feature_id}" / "feature.md"
+        if not feature_file.exists():
+            raise FileNotFoundError(f"Feature file not found: {feature_file}")
+        task = feature_file.read_text()
 
-    task = feature_file.read_text()
     image = get_image_name(repo_name, task_id)
 
     # Compute log directory path
-    log_dir_path = None
-    if run_name and features:
+    if log_dir_override is not None:
+        log_dir_path: str | None = log_dir_override
+    elif run_name and features:
         feature_str = "_".join(f"f{f}" for f in sorted(features))
-        log_dir_path = str(logs_root / run_name / "coop" / repo_name / str(task_id) / feature_str)
+        log_dir_path = str(logs_root / run_name / setting_subdir / repo_name / str(task_id) / feature_str)
+    else:
+        log_dir_path = None
 
     if not quiet:
         console.print(f"  [dim]{agent_id}[/dim] starting...")
@@ -317,6 +254,8 @@ def _spawn_agent(
                     config.update(agent_config_dict)
         else:
             raise FileNotFoundError(f"Agent config file not found: {agent_config}")
+    if extra_config:
+        config.update(extra_config)
 
     # Use the agent framework adapter
     runner = get_runner(agent_name)
@@ -423,3 +362,171 @@ def _extract_conversation(results: dict, agents: list[str]) -> list[dict]:
                     )
 
     return conversation
+
+
+def _run_pair_phase(
+    *,
+    repo_name: str,
+    task_id: int,
+    features: list[int],
+    agents: list[str],
+    agent_name: str,
+    model_name: str,
+    redis_url: str | None,
+    git_server_url: str | None,
+    git_enabled: bool,
+    git_network: str | None,
+    messaging_enabled: bool,
+    backend: str,
+    agent_config: str | None,
+    run_name: str,
+    dataset_dir: Path | str | None,
+    logs_dir: Path | str | None,
+    log_dir: Path,
+    quiet: bool = False,
+    task_override_per_agent: dict[str, str] | None = None,
+    extra_config: dict | None = None,
+    artifact_suffix: str = "patch",
+) -> dict:
+    """Run one phase of a pair: thread N agents through ``_spawn_agent`` and
+    persist per-agent artifacts to ``log_dir``.
+
+    Shared by ``execute_coop`` (single phase, artifact_suffix='patch') and
+    ``execute_plan_execute`` (two phases: 'plan' then 'patch'). Does NOT
+    write ``result.json`` — the caller owns that, so it can roll up multiple
+    phases into one result file.
+
+    Returns a dict with ``results`` (per-agent), ``conversation``,
+    ``total_cost``, ``total_steps``.
+    """
+    n_agents = len(features)
+    sorted_features = sorted(features)
+    results: dict = {}
+    threads: list[threading.Thread] = []
+
+    def run_thread(agent_id: str, feature_id: int):
+        try:
+            results[agent_id] = _spawn_agent(
+                repo_name=repo_name,
+                task_id=task_id,
+                feature_id=feature_id,
+                agent_name=agent_name,
+                model_name=model_name,
+                agent_id=agent_id,
+                agents=agents,
+                redis_url=redis_url if messaging_enabled and n_agents > 1 else None,
+                git_server_url=git_server_url,
+                git_enabled=git_enabled,
+                git_network=git_network,
+                messaging_enabled=messaging_enabled,
+                quiet=quiet,
+                backend=backend,
+                agent_config=agent_config,
+                run_name=run_name,
+                features=features,
+                dataset_dir=dataset_dir,
+                logs_dir=logs_dir,
+                task_override=(task_override_per_agent or {}).get(agent_id),
+                extra_config=extra_config,
+                log_dir_override=str(log_dir),
+            )
+        except Exception as e:
+            results[agent_id] = {
+                "feature_id": feature_id,
+                "agent_id": agent_id,
+                "status": "Error",
+                "patch": "",
+                "cost": 0,
+                "steps": 0,
+                "messages": [],
+                "error": str(e),
+            }
+
+    for agent_id, feature_id in zip(agents, sorted_features):
+        t = threading.Thread(target=run_thread, args=(agent_id, feature_id))
+        threads.append(t)
+        t.start()
+    for t in threads:
+        t.join()
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    conversation = _extract_conversation(results, agents)
+    sent_msgs = [m for m in conversation if not m.get("received")]
+    sent_msgs.sort(key=_message_timestamp_key)
+    with open(log_dir / "conversation.json", "w") as f:
+        json.dump(sent_msgs, f, indent=2, default=str)
+
+    for agent_id in agents:
+        r = results[agent_id]
+        fid = r["feature_id"]
+        artifact_file = log_dir / f"agent{fid}.{artifact_suffix}"
+        artifact_file.write_text(r.get("patch", ""))
+        traj_file = log_dir / f"agent{fid}_traj.json"
+        with open(traj_file, "w") as f:
+            json.dump(
+                {
+                    "repo": repo_name,
+                    "task_id": task_id,
+                    "feature_id": fid,
+                    "agent_id": agent_id,
+                    "model": model_name,
+                    "status": r.get("status"),
+                    "cost": r.get("cost"),
+                    "steps": r.get("steps"),
+                    "messages": r.get("messages", []),
+                },
+                f,
+                indent=2,
+                default=str,
+            )
+
+    total_cost = sum(r.get("cost", 0) for r in results.values())
+    total_steps = sum(r.get("steps", 0) for r in results.values())
+
+    return {
+        "results": results,
+        "conversation": sent_msgs,
+        "total_cost": total_cost,
+        "total_steps": total_steps,
+    }
+
+
+def setup_pair_infra(
+    *,
+    redis_url: str,
+    run_id: str,
+    agent_name: str,
+    backend: str,
+    git_enabled: bool,
+    quiet: bool = False,
+) -> tuple[str, object | None, str | None, str | None]:
+    """Create the per-pair shared infra: namespaced Redis URL, git server.
+
+    Returns ``(namespaced_redis, git_server, git_server_url, git_network)``.
+    Caller is responsible for ``git_server.cleanup()`` in a finally block.
+    Mirrors the body of ``execute_coop`` lines 83-110 so ``execute_coop``
+    and ``execute_plan_execute`` share the exact same setup.
+    """
+    namespaced_redis = f"{redis_url}#run:{run_id}"
+
+    git_server = None
+    git_server_url: str | None = None
+    git_network: str | None = None
+    if git_enabled and not (agent_name == "openhands_sdk" and backend == "modal"):
+        if not quiet:
+            console.print("  [dim]git[/dim] creating shared server...")
+        app = modal.App.lookup("cooperbench", create_if_missing=True) if backend == "modal" else None
+        git_server_kwargs: dict = {"backend": backend, "run_id": run_id, "app": app}
+        if backend == "gcp":
+            cfg = ConfigManager()
+            if project_id := cfg.get("gcp_project_id"):
+                git_server_kwargs["project_id"] = project_id
+            if zone := cfg.get("gcp_zone"):
+                git_server_kwargs["zone"] = zone
+        git_server = create_git_server(**git_server_kwargs)
+        git_server_url = git_server.url
+        git_network = getattr(git_server, "network_name", None)
+        if not quiet:
+            console.print(f"  [dim]git[/dim] [green]ready[/green] {git_server_url}")
+
+    return namespaced_redis, git_server, git_server_url, git_network

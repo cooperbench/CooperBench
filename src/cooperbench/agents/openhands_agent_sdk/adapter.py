@@ -246,6 +246,56 @@ def _submission_instructions(*, is_coop: bool) -> str:
     )
 
 
+def _plan_submission_instructions(*, is_coop: bool) -> str:
+    """Submission block for the **plan** phase of the ``plan_execute`` setting.
+
+    The agent writes a free-form plan to ``plan.txt`` and finishes. No code
+    is edited. In coop, the agent can coordinate over messaging/git but the
+    plan content itself is the only artifact carried to the execute phase.
+    """
+    coop_goal = (
+        "\n## Why two phases\n\n"
+        "You are in the PLAN phase of a two-phase workflow with your teammate.\n"
+        "In the next phase, you and your teammate will each write a patch.\n"
+        "Those patches are merged automatically — **if your patch and your\n"
+        "teammate's patch touch any of the same lines, BOTH patches are\n"
+        "thrown away.**\n\n"
+        "The whole point of this planning phase is to *prevent that*: use the\n"
+        "messaging / git tools NOW to agree on who owns which files, functions,\n"
+        "and regions, so your eventual patches are line-disjoint. Discuss\n"
+        "scope, edge cases, and any shared helpers you'd both want to change.\n"
+        "Do not skip the coordination — a great solo plan that conflicts with\n"
+        "your teammate's plan is worth nothing.\n"
+        if is_coop
+        else ""
+    )
+    return (
+        "\n\n## Planning task\n"
+        f"{coop_goal}"
+        "\n## What to do\n\n"
+        "**Do NOT edit any source files. Do NOT write a patch.** Your only\n"
+        "job in this phase is to produce a plan and save it to ``plan.txt``\n"
+        "at the repo root (``/workspace/repo/plan.txt``).\n\n"
+        "Explore the codebase first. Then write a plan that captures:\n\n"
+        "- which files you will modify\n"
+        "- which functions / classes / regions inside those files\n"
+        "- the approach (what change, in what order, why)\n"
+        "- anything you discovered during exploration that the executor\n"
+        "  will need to know (constraints, gotchas, neighbouring tests)\n\n"
+        "Write the plan free-form — whatever shape best captures the work.\n"
+        "It will be passed **verbatim** to a separate executor agent that has\n"
+        "**no other context** (no feature spec, no teammate plan, no logs\n"
+        "from this conversation). Make sure the plan is self-contained.\n\n"
+        "```bash\n"
+        "cat > plan.txt <<'PLAN'\n"
+        "<your plan here>\n"
+        "PLAN\n"
+        "```\n\n"
+        "Once ``plan.txt`` is written and you're confident it's complete,\n"
+        "finish the task. Do not write code in this phase.\n"
+    )
+
+
 def _collect_sandbox_credentials(
     coop_info: dict | None,
     *,
@@ -481,6 +531,11 @@ class OpenHandsSDKRunner:
         
         config = config or {}
         backend = config.get("backend", "docker")
+        # plan_execute overrides: the runner can replace the default
+        # patch.txt submission template + extracted artifact so the same
+        # adapter handles both the "plan" and "execute" phases.
+        submission_template_override: str | None = config.get("submission_template")
+        submission_artifact: str = config.get("submission_artifact", "patch.txt")
 
         # Determine if this is a coop run
         is_coop = (messaging_enabled or git_enabled) and agents and len(agents) > 1
@@ -655,12 +710,20 @@ class OpenHandsSDKRunner:
                     visualizer=None,
                 )
 
-                # Send task and run the conversation. Append the patch.txt
-                # submission instructions so the agent writes its diff to a
-                # known file before finishing (matches mini_swe_agent's flow).
+                # Send task and run the conversation. Append the submission
+                # instructions so the agent writes its artifact to a known
+                # file before finishing (matches mini_swe_agent's flow). The
+                # runner can override the appended block via
+                # ``config["submission_template"]`` — used by plan_execute
+                # to swap in plan-phase instructions.
                 # Message checking for coop mode happens inside the agent loop
                 # (in LocalConversation._check_inbox_messages before each step)
-                conversation.send_message(task + _submission_instructions(is_coop=is_coop))
+                submission_block = (
+                    submission_template_override
+                    if submission_template_override is not None
+                    else _submission_instructions(is_coop=is_coop)
+                )
+                conversation.send_message(task + submission_block)
                 try:
                     conversation.run(blocking=True, timeout=float(self.timeout))
                     status = "Submitted"
@@ -675,14 +738,17 @@ class OpenHandsSDKRunner:
                         error = error_str
                         status = "Error"
 
-                # Read patch.txt that the agent wrote during submission.
+                # Read the submission artifact the agent wrote.
                 # Mirrors mini_swe_agent_v2's submission flow (see config/coop.yaml):
-                # the agent is prompted to write its diff to patch.txt before
-                # finishing, and we extract that file as-is.
+                # the agent is prompted to write its artifact to a known file
+                # before finishing, and we extract that file as-is. The
+                # runner can override the filename via
+                # ``config["submission_artifact"]`` — used by plan_execute
+                # to extract plan.txt during the plan phase.
                 patch = ""
                 try:
                     patch_result = workspace.execute_command(
-                        "cat patch.txt 2>/dev/null",
+                        f"cat {submission_artifact} 2>/dev/null",
                         cwd="/workspace/repo",
                         timeout=30.0,
                     )
@@ -690,7 +756,7 @@ class OpenHandsSDKRunner:
                         from cooperbench.agents._coop.runtime import normalize_patch
                         patch = normalize_patch(patch_result.stdout or "")
                 except Exception as e:
-                    logger.warning(f"Failed to read patch.txt: {e}")
+                    logger.warning(f"Failed to read {submission_artifact}: {e}")
 
                 # Get cost and token usage from conversation stats
                 try:

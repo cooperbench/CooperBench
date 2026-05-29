@@ -266,7 +266,7 @@ def _run_gcp_batch(
                 "status": batch_result.merge_status,
                 "strategy": batch_result.merge_strategy,
             }
-            if batch_result.setting == "coop"
+            if batch_result.setting in ("coop", "plan_execute")
             else None,
             "feature1": {
                 "passed": batch_result.feature1_passed,
@@ -377,7 +377,7 @@ def _evaluate_single(
             "repo": repo,
             "task_id": task_id,
             "features": features,
-            "setting": "coop",
+            "setting": setting,
             "apply_status": result.get("apply_status"),
             "merge": result.get("merge", {}),
             "feature1": result.get("feature1", {}),

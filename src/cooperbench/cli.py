@@ -157,11 +157,13 @@ def main():
     )
     run_parser.add_argument(
         "--setting",
-        choices=["coop", "solo", "team"],
+        choices=["coop", "solo", "team", "plan_execute"],
         default="coop",
-        help="Benchmark setting: coop (N peers), solo (1 agent), or team "
+        help="Benchmark setting: coop (N peers), solo (1 agent), team "
         "(N agents with shared task list, lead/member roles, shared "
-        "scratchpad) (default: coop)",
+        "scratchpad), or plan_execute (two-phase: agents plan first, then "
+        "fresh containers execute against their own plan; openhands_sdk "
+        "only). (default: coop)",
     )
     # Per-feature toggles for the team harness — flip any of these off
     # to ablate that coordination mechanism while keeping the others on.

@@ -21,6 +21,7 @@ from rich.table import Table
 
 from cooperbench.infra.redis import ensure_redis
 from cooperbench.runner.coop import execute_coop
+from cooperbench.runner.plan_execute import execute_plan_execute
 from cooperbench.runner.solo import execute_solo
 from cooperbench.runner.tasks import discover_tasks
 from cooperbench.runner.team import execute_team
@@ -100,6 +101,7 @@ def run(
     is_single = len(tasks) == 1
     is_solo = setting == "solo"
     is_team = setting == "team"
+    is_plan_execute = setting == "plan_execute"
 
     _print_header(
         run_name, setting, tasks, agent, model_name, concurrency, is_single, is_solo, git_enabled, messaging_enabled
@@ -135,6 +137,24 @@ def run(
                 model_name=model_name,
                 force=force,
                 quiet=not is_single,
+                backend=backend,
+                agent_config=agent_config,
+                dataset_dir=dataset_dir,
+                logs_dir=logs_dir,
+            )
+        elif is_plan_execute:
+            return execute_plan_execute(
+                repo_name=task_info["repo"],
+                task_id=task_info["task_id"],
+                features=task_info["features"],
+                run_name=run_name,
+                agent_name=agent,
+                model_name=model_name,
+                redis_url=redis_url,
+                force=force,
+                quiet=not is_single,
+                git_enabled=git_enabled,
+                messaging_enabled=messaging_enabled,
                 backend=backend,
                 agent_config=agent_config,
                 dataset_dir=dataset_dir,
