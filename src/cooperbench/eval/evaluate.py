@@ -9,7 +9,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 
 from cooperbench.eval.runs import discover_runs
-from cooperbench.eval.sandbox import _sanitize_patch, test_merged, test_solo
+from cooperbench.eval.sandbox import _sanitize_patch, test_merged, test_merged_n, test_solo
 from cooperbench.runner.tasks import DEFAULT_DATASET_DIR, DEFAULT_LOGS_DIR
 from cooperbench.utils import console
 
@@ -124,14 +124,22 @@ def evaluate(
                 elif result.get("error"):
                     errors = 1
                     console.print(f"[red]✗ error[/red]: {result['error']}")
-                elif result.get("both_passed"):
+                elif result.get("both_passed") or result.get("all_passed"):
                     passed = 1
-                    console.print("[green]✓ pass[/green] both features")
+                    console.print("[green]✓ pass[/green] all features")
                 else:
                     failed = 1
-                    f1 = "[green]✓[/green]" if result.get("feature1", {}).get("passed") else "[red]✗[/red]"
-                    f2 = "[green]✓[/green]" if result.get("feature2", {}).get("passed") else "[red]✗[/red]"
-                    console.print(f"[yellow]✗ partial[/yellow] f1:{f1} f2:{f2}")
+                    # Support both legacy feature1/feature2 and new features_result dict
+                    if result.get("features_result"):
+                        parts = []
+                        for fid, fr in result["features_result"].items():
+                            icon = "[green]✓[/green]" if fr.get("passed") else "[red]✗[/red]"
+                            parts.append(f"f{fid}:{icon}")
+                        console.print(f"[yellow]✗ partial[/yellow] {' '.join(parts)}")
+                    else:
+                        f1 = "[green]✓[/green]" if result.get("feature1", {}).get("passed") else "[red]✗[/red]"
+                        f2 = "[green]✓[/green]" if result.get("feature2", {}).get("passed") else "[red]✗[/red]"
+                        console.print(f"[yellow]✗ partial[/yellow] f1:{f1} f2:{f2}")
         else:
             # Multiple runs - show progress
             passed, failed, errors, skipped, results = _run_with_progress(runs, eval_run, concurrency)
@@ -186,6 +194,14 @@ def _run_gcp_batch(
 
         setting = run_info["setting"]
         log_dir = run_info["log_dir"]
+
+        # GCP batch does not yet support N>2 team runs
+        if setting == "team" and len(run_info["features"]) > 2:
+            console.print(
+                f"[yellow]skip[/yellow] {run_info['repo']}/{run_info['task_id']} "
+                f"— GCP batch eval not supported for team runs with >2 agents"
+            )
+            continue
 
         if setting == "solo":
             # Solo mode: single patch for both features
@@ -354,6 +370,39 @@ def _evaluate_single(
             "error": result.get("error"),
             "evaluated_at": datetime.now().isoformat(),
         }
+    elif setting == "team":
+        # Team evaluation — N agents, one patch per feature
+        team_patches = []
+        for fid in features:
+            pf = log_dir / f"agent{fid}.patch"
+            team_patches.append(pf.read_text() if pf.exists() else "")
+
+        result = test_merged_n(
+            repo_name=repo,
+            task_id=task_id,
+            feature_ids=features,
+            patches=team_patches,
+            backend=backend,
+            dataset_dir=dataset_dir,
+        )
+
+        eval_result = {
+            "repo": repo,
+            "task_id": task_id,
+            "features": features,
+            "setting": "team",
+            "apply_status": result.get("apply_status"),
+            "merge": result.get("merge", {}),
+            "features_result": result.get("features", {}),
+            "all_passed": result.get("all_passed", False),
+            "error": result.get("error"),
+            "evaluated_at": datetime.now().isoformat(),
+        }
+        # Dual-write legacy keys for 2-agent team runs
+        if len(features) == 2:
+            eval_result["feature1"] = result.get("feature1", {})
+            eval_result["feature2"] = result.get("feature2", {})
+            eval_result["both_passed"] = result.get("both_passed", False)
     else:
         # Coop evaluation - merge two agent patches
         patch1_file = log_dir / f"agent{f1}.patch"

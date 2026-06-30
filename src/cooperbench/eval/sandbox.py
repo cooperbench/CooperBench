@@ -393,6 +393,345 @@ def test_solo(
         sb.terminate()
 
 
+def test_merged_n(
+    repo_name: str,
+    task_id: int,
+    feature_ids: list[int],
+    patches: list[str | Path | None],
+    timeout: int = 600,
+    backend: str = "docker",
+    dataset_dir: Path | str | None = None,
+) -> dict:
+    """Test merged patches from N agents (team mode).
+
+    Creates N git branches (one per agent), applies each agent's patch, then
+    folds them together with a sequential left-to-right merge (agent2 into
+    agent1, then agent3, etc.).  Falls back to the lead's patch alone when
+    the fold produces conflicts.
+
+    Returns a dict with:
+      - apply_status: per-agent apply result
+      - merge: {status, strategy, steps, diff}
+      - features: {str(fid): {feature_id, passed, ...}} for all N features
+      - all_passed: bool
+      - feature1/feature2/both_passed (only when N == 2, for backward compat)
+      - error
+    """
+    if len(feature_ids) != len(patches):
+        return _merged_n_error_result("feature_ids and patches must have the same length", feature_ids)
+    if len(feature_ids) < 2:
+        return _merged_n_error_result("test_merged_n requires at least 2 features", feature_ids)
+
+    n = len(feature_ids)
+    root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
+    task_dir = root / repo_name / f"task{task_id}"
+
+    # Load tests patches
+    tests_paths = [task_dir / f"feature{fid}" / "tests.patch" for fid in feature_ids]
+    for fid, tp in zip(feature_ids, tests_paths):
+        if not tp.exists():
+            return _merged_n_error_result(f"Tests patch not found: {tp}", feature_ids)
+
+    # Load and filter agent patches
+    patch_contents = []
+    for p in patches:
+        content = _load_patch(p) or ""
+        content = _filter_test_files(content)
+        patch_contents.append(content)
+
+    tests_contents = [tp.read_text() for tp in tests_paths]
+
+    image = get_image_name(repo_name, task_id)
+    eval_backend = get_backend(backend)
+    sb = eval_backend.create_sandbox(image, timeout)
+
+    try:
+        # Write all patches: patch1.patch..patchN.patch and tests1.patch..testsN.patch
+        for i, (pc, tc) in enumerate(zip(patch_contents, tests_contents), start=1):
+            _write_patch(sb, f"patch{i}.patch", pc)
+            _write_patch(sb, f"tests{i}.patch", tc)
+
+        # Set up N branches
+        setup_result = _setup_branches_n(sb, n)
+        if setup_result.get("error"):
+            return _merged_n_error_result(setup_result["error"], feature_ids)
+
+        base_sha = setup_result.get("base_sha")
+        if not base_sha:
+            return _merged_n_error_result("Failed to get base commit SHA", feature_ids)
+
+        apply_status = setup_result.get("apply_status", {f"agent{i}": "unknown" for i in range(1, n + 1)})
+        any_apply_failed = "failed" in apply_status.values()
+
+        # Identical-patch short-circuit: all patches equal → skip merge dance
+        non_empty = [pc for pc in patch_contents if pc]
+        if non_empty and len(set(non_empty)) == 1 and len(non_empty) == n:
+            normalize = """
+cd /workspace/repo
+git checkout $BASE_SHA 2>&1 >/dev/null
+git checkout -b identical-merge 2>&1 >/dev/null
+if git apply /patches/patch1.patch 2>/dev/null \\
+   || git apply --recount /patches/patch1.patch 2>/dev/null; then
+    git add -A
+    git commit -m 'merged' --allow-empty >/dev/null 2>&1
+    git diff $BASE_SHA HEAD > /patches/merged.patch
+    echo "NORMALIZED"
+else
+    cp /patches/patch1.patch /patches/merged.patch
+    echo "RAW"
+fi
+"""
+            sb.exec("bash", "-c", f"export BASE_SHA={base_sha}\n{normalize}")
+            test_results = {}
+            for i, fid in enumerate(feature_ids, start=1):
+                test_results[str(fid)] = _run_tests(sb, f"tests{i}.patch", "merged.patch", base_sha)
+            return _build_merged_n_result(
+                feature_ids=feature_ids,
+                apply_status={f"agent{i}": "applied" for i in range(1, n + 1)},
+                merge_payload={
+                    "status": "identical",
+                    "strategy": "skip-merge-identical",
+                    "steps": [],
+                    "diff": patch_contents[0][:5000],
+                },
+                test_results=test_results,
+                error=None,
+            )
+
+        # Sequential fold merge
+        fold_result = _merge_fold(sb, base_sha, n)
+
+        if any_apply_failed:
+            merge_status = "missing_input"
+        elif fold_result["conflict"]:
+            merge_status = "conflicts"
+        else:
+            merge_status = "clean"
+
+        if merge_status == "clean":
+            sb.exec("cp", "/patches/fold_diff.patch", "/patches/merged.patch")
+            verify = sb.exec("test", "-f", "/patches/merged.patch")
+            if verify.returncode != 0:
+                return _merged_n_error_result("Failed to create merged.patch after fold", feature_ids)
+            test_results = {}
+            for i, fid in enumerate(feature_ids, start=1):
+                test_results[str(fid)] = _run_tests(sb, f"tests{i}.patch", "merged.patch", base_sha)
+            winning_solo: str | None = None
+        else:
+            test_results = {
+                str(fid): {"passed": False, "exit_code": None, "tests_passed": 0, "tests_failed": 0, "output": ""}
+                for fid in feature_ids
+            }
+            winning_solo = None
+            # Lead-alone fallback: test agent1's patch against all feature suites
+            if apply_status.get("agent1") == "applied":
+                solo_results = {}
+                all_solo_passed = True
+                for i, fid in enumerate(feature_ids, start=1):
+                    r = _run_tests(sb, f"tests{i}.patch", "patch1.patch", base_sha)
+                    solo_results[str(fid)] = r
+                    if not r["passed"]:
+                        all_solo_passed = False
+                        break
+                if all_solo_passed:
+                    test_results = solo_results
+                    winning_solo = "agent1"
+
+        merge_payload = {
+            "status": merge_status,
+            "strategy": "sequential-fold" if winning_solo is None else f"solo-{winning_solo}",
+            "steps": fold_result.get("steps", []),
+            "diff": (fold_result.get("diff") or "")[:5000],
+        }
+
+        return _build_merged_n_result(
+            feature_ids=feature_ids,
+            apply_status=apply_status,
+            merge_payload=merge_payload,
+            test_results=test_results,
+            error=None,
+        )
+
+    except Exception as e:
+        return _merged_n_error_result(str(e), feature_ids)
+    finally:
+        sb.terminate()
+
+
+def _setup_branches_n(sb: Sandbox, n: int) -> dict:
+    """Set up N git branches for merge testing (generalisation of _setup_branches)."""
+    branch_cmds = "\n".join(
+        f"""
+git checkout $BASE_SHA 2>&1
+git checkout -b agent{i} 2>&1
+apply_patch {i}
+git add -A
+git commit -m "Agent {i} changes" --allow-empty 2>&1"""
+        for i in range(1, n + 1)
+    )
+    commands = f"""
+cd /workspace/repo
+git config user.email "eval@cooperbench.local"
+git config user.name "CooperBench Eval"
+
+BASE_SHA=$(git rev-parse HEAD)
+echo "BASE_SHA=$BASE_SHA"
+
+apply_patch() {{
+    local n=$1
+    if [ -s /patches/patch${{n}}.patch ]; then
+        if git apply /patches/patch${{n}}.patch 2>&1; then
+            echo "PATCH${{n}}_APPLIED"
+        elif git apply --3way /patches/patch${{n}}.patch 2>&1; then
+            echo "PATCH${{n}}_APPLIED"
+        else
+            echo "PATCH${{n}}_FAILED"
+        fi
+    else
+        echo "PATCH${{n}}_SKIPPED"
+    fi
+}}
+{branch_cmds}
+
+echo "SETUP_COMPLETE"
+"""
+    result = sb.exec("bash", "-c", commands)
+    output = result.stdout_read() + result.stderr_read()
+
+    if "SETUP_COMPLETE" not in output:
+        return {"error": f"Branch setup failed: {output}"}
+
+    base_sha = None
+    for line in output.split("\n"):
+        if line.startswith("BASE_SHA="):
+            base_sha = line.split("=")[1].strip()
+            break
+
+    def _status(i: int) -> str:
+        if f"PATCH{i}_APPLIED" in output:
+            return "applied"
+        if f"PATCH{i}_SKIPPED" in output:
+            return "skipped"
+        return "failed"
+
+    return {
+        "output": output,
+        "error": None,
+        "base_sha": base_sha,
+        "apply_status": {f"agent{i}": _status(i) for i in range(1, n + 1)},
+    }
+
+
+def _merge_fold(sb: Sandbox, base_sha: str, n: int) -> dict:
+    """Sequential fold: merge agent2..agentN into agent1 one at a time."""
+    steps = []
+    # Build bash: start on agent1, fold in agent2..agentN
+    merge_cmds_parts = []
+    for i in range(2, n + 1):
+        merge_cmds_parts.append(f"""
+if git merge agent{i} --no-commit --no-ff 2>&1; then
+    git commit -m "Fold agent{i}" 2>&1
+    echo "STEP_{i}=clean"
+else
+    echo "STEP_{i}=conflicts"
+    git merge --abort 2>/dev/null || true
+    echo "FOLD_STOPPED"
+fi
+if [ -f /tmp/fold_stopped ]; then exit 0; fi
+""")
+    merge_cmds = "\n".join(merge_cmds_parts)
+    commands = f"""
+cd /workspace/repo
+git checkout agent1 2>&1
+{merge_cmds}
+git diff {base_sha} HEAD > /patches/fold_diff.patch
+echo "FOLD_DONE"
+"""
+    result = sb.exec("bash", "-c", commands)
+    output = result.stdout_read() + result.stderr_read()
+
+    conflict = False
+    for i in range(2, n + 1):
+        if f"STEP_{i}=clean" in output:
+            steps.append({"step": i - 1, "branch": f"agent{i}", "status": "clean"})
+        elif f"STEP_{i}=conflicts" in output:
+            steps.append({"step": i - 1, "branch": f"agent{i}", "status": "conflicts"})
+            conflict = True
+            break
+
+    diff = ""
+    if not conflict and "FOLD_DONE" in output:
+        diff_result = sb.exec("cat", "/patches/fold_diff.patch")
+        diff = diff_result.stdout_read()
+
+    return {"conflict": conflict, "steps": steps, "diff": diff, "output": output}
+
+
+def _build_merged_n_result(
+    feature_ids: list[int],
+    apply_status: dict,
+    merge_payload: dict,
+    test_results: dict,
+    error: str | None,
+) -> dict:
+    """Assemble the return dict for test_merged_n."""
+    features_out = {
+        str(fid): {
+            "feature_id": fid,
+            "passed": test_results[str(fid)]["passed"],
+            "exit_code": test_results[str(fid)].get("exit_code"),
+            "tests_passed": test_results[str(fid)].get("tests_passed", 0),
+            "tests_failed": test_results[str(fid)].get("tests_failed", 0),
+            "test_output": test_results[str(fid)].get("output", ""),
+        }
+        for fid in feature_ids
+    }
+    all_passed = all(v["passed"] for v in features_out.values())
+    result: dict = {
+        "apply_status": apply_status,
+        "merge": merge_payload,
+        "features": features_out,
+        "all_passed": all_passed,
+        "error": error,
+    }
+    # Dual-write legacy keys for 2-agent runs
+    if len(feature_ids) == 2:
+        f1, f2 = feature_ids
+        result["feature1"] = features_out[str(f1)]
+        result["feature2"] = features_out[str(f2)]
+        result["both_passed"] = all_passed
+    return result
+
+
+def _merged_n_error_result(error: str, feature_ids: list[int]) -> dict:
+    """Error result for test_merged_n with N-agent schema."""
+    n = len(feature_ids)
+    features_out = {
+        str(fid): {
+            "feature_id": fid,
+            "passed": False,
+            "exit_code": None,
+            "tests_passed": 0,
+            "tests_failed": 0,
+            "test_output": "",
+        }
+        for fid in feature_ids
+    }
+    result: dict = {
+        "apply_status": {f"agent{i + 1}": "unknown" for i in range(n)},
+        "merge": {"status": "error", "strategy": None, "steps": [], "diff": ""},
+        "features": features_out,
+        "all_passed": False,
+        "error": error,
+    }
+    if len(feature_ids) == 2:
+        f1, f2 = feature_ids
+        result["feature1"] = features_out[str(f1)]
+        result["feature2"] = features_out[str(f2)]
+        result["both_passed"] = False
+    return result
+
+
 # Alias for training compatibility
 def evaluate_merge(
     repo_name: str,

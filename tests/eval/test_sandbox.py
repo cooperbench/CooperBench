@@ -13,9 +13,12 @@ from cooperbench.eval.sandbox import (
     _error_result,
     _filter_test_files,
     _load_patch,
+    _merge_fold,
     _merged_error_result,
+    _merged_n_error_result,
     _parse_results,
     _sanitize_patch,
+    _setup_branches_n,
     _solo_error_result,
 )
 
@@ -418,3 +421,82 @@ class TestErrorResults:
         assert result["feature2"]["passed"] is False
         assert result["both_passed"] is False
         assert result["error"] == "Solo agent failed"
+
+
+class TestMergedNErrorResult:
+    """Tests for _merged_n_error_result helper."""
+
+    def test_two_feature_ids_includes_legacy_keys(self):
+        """2-agent error result must include legacy feature1/feature2/both_passed."""
+        result = _merged_n_error_result("boom", [3, 7])
+        assert result["error"] == "boom"
+        assert result["all_passed"] is False
+        assert "feature1" in result
+        assert "feature2" in result
+        assert result["both_passed"] is False
+        assert result["features"]["3"]["passed"] is False
+        assert result["features"]["7"]["passed"] is False
+
+    def test_three_feature_ids_no_legacy_keys(self):
+        """3-agent error result must NOT include feature1/feature2/both_passed."""
+        result = _merged_n_error_result("boom", [1, 2, 3])
+        assert result["error"] == "boom"
+        assert result["all_passed"] is False
+        assert "feature1" not in result
+        assert "feature2" not in result
+        assert "both_passed" not in result
+        assert len(result["features"]) == 3
+
+    def test_apply_status_keys_match_agent_count(self):
+        result = _merged_n_error_result("err", [1, 2, 4])
+        assert set(result["apply_status"].keys()) == {"agent1", "agent2", "agent3"}
+
+    def test_merge_steps_is_empty_list(self):
+        result = _merged_n_error_result("err", [1, 2])
+        assert result["merge"]["steps"] == []
+
+
+class TestTestMergedNSignature:
+    """Verify test_merged_n has the expected signature and source-level invariants."""
+
+    def test_function_exists_and_is_callable(self):
+        assert callable(_sandbox_module.test_merged_n)
+
+    def test_signature_has_feature_ids_and_patches(self):
+        import inspect
+
+        sig = inspect.signature(_sandbox_module.test_merged_n)
+        params = list(sig.parameters)
+        assert "feature_ids" in params
+        assert "patches" in params
+        assert "repo_name" in params
+        assert "task_id" in params
+
+    def test_source_contains_sequential_fold(self):
+        src = inspect.getsource(_sandbox_module.test_merged_n)
+        assert "sequential-fold" in src, "test_merged_n must record sequential-fold strategy"
+
+    def test_source_contains_identical_shortcircuit(self):
+        src = inspect.getsource(_sandbox_module.test_merged_n)
+        assert "identical" in src, "test_merged_n must short-circuit on identical patches"
+
+    def test_source_contains_lead_fallback(self):
+        src = inspect.getsource(_sandbox_module.test_merged_n)
+        assert "agent1" in src and "fallback" in src.lower() or "solo-agent1" in src, (
+            "test_merged_n must implement lead-alone fallback"
+        )
+
+    def test_setup_branches_n_source_uses_loop(self):
+        src = inspect.getsource(_setup_branches_n)
+        assert "range(1, n + 1)" in src, "_setup_branches_n must generate N branches via a loop"
+
+    def test_merge_fold_source_contains_loop(self):
+        src = inspect.getsource(_merge_fold)
+        assert "range(2, n + 1)" in src, "_merge_fold must fold agents 2..N via a loop"
+
+    def test_dual_write_legacy_keys_for_two_agents(self):
+        """test_merged_n source must dual-write feature1/feature2/both_passed for N==2."""
+        src = inspect.getsource(_sandbox_module.test_merged_n)
+        assert "feature1" in src
+        assert "feature2" in src
+        assert "both_passed" in src

@@ -332,7 +332,7 @@ def _process_eval_result(eval_result: dict | None, task_info: dict) -> tuple | N
 
     if eval_result.get("error"):
         return (0, 0, 1, 0)
-    elif eval_result.get("both_passed"):
+    elif eval_result.get("all_passed") or eval_result.get("both_passed"):
         return (1, 0, 0, 1 if is_skipped else 0)
     else:
         return (0, 1, 0, 1 if is_skipped else 0)
@@ -502,7 +502,7 @@ def _run_with_progress(
                                             {
                                                 "task": f"{task_name}/{feat_str}",
                                                 "status": "pass"
-                                                if eval_result.get("both_passed")
+                                                if eval_result.get("all_passed") or eval_result.get("both_passed")
                                                 else "fail"
                                                 if not eval_result.get("error")
                                                 else "error",
@@ -514,7 +514,7 @@ def _run_with_progress(
                                         is_skipped = eval_result.get("skipped", False)
                                         if eval_result.get("error"):
                                             eval_status = "[yellow]✗ error[/yellow]"
-                                        elif eval_result.get("both_passed"):
+                                        elif eval_result.get("all_passed") or eval_result.get("both_passed"):
                                             eval_status = "[dim]→ pass[/dim]" if is_skipped else "[green]✓ pass[/green]"
                                         else:
                                             eval_status = "[dim]→ fail[/dim]" if is_skipped else "[red]✗ fail[/red]"
@@ -550,7 +550,7 @@ def _run_with_progress(
                                 {
                                     "task": f"{task_name}/{feat_str}",
                                     "status": "pass"
-                                    if eval_result.get("both_passed")
+                                    if eval_result.get("all_passed") or eval_result.get("both_passed")
                                     else "fail"
                                     if not eval_result.get("error")
                                     else "error",
@@ -561,7 +561,7 @@ def _run_with_progress(
                             is_skipped = eval_result.get("skipped", False)
                             if eval_result.get("error"):
                                 eval_status = "[yellow]✗ error[/yellow]"
-                            elif eval_result.get("both_passed"):
+                            elif eval_result.get("all_passed") or eval_result.get("both_passed"):
                                 eval_status = "[dim]→ pass[/dim]" if is_skipped else "[green]✓ pass[/green]"
                             else:
                                 eval_status = "[dim]→ fail[/dim]" if is_skipped else "[red]✗ fail[/red]"

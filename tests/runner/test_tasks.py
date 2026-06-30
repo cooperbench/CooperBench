@@ -305,3 +305,96 @@ class TestDiscoverTasksWithMockDataset:
             features_filter=[1, 99],
         )
         assert len(tasks) == 0
+
+
+class TestGroupsSubsetKey:
+    """Tests for 'groups' key support in load_subset and discover_tasks."""
+
+    def test_load_subset_reads_groups_key(self, tmp_path):
+        """load_subset stores N-element tuples from 'groups' key."""
+        import json
+
+        subset_dir = tmp_path / "dataset" / "subsets"
+        subset_dir.mkdir(parents=True)
+        subset_data = {
+            "tasks": [
+                {
+                    "repo": "test_repo_task",
+                    "task_id": 1,
+                    "groups": [[1, 2, 3], [1, 2, 4]],
+                }
+            ]
+        }
+        (subset_dir / "team3.json").write_text(json.dumps(subset_data))
+
+        result = load_subset("team3", dataset_dir=tmp_path / "dataset")
+        assert ("test_repo_task", 1) in result["tasks"]
+        groups = result["pairs"][("test_repo_task", 1)]
+        assert (1, 2, 3) in groups
+        assert (1, 2, 4) in groups
+
+    def test_groups_key_takes_precedence_over_pairs(self, tmp_path):
+        """When both 'pairs' and 'groups' are present, 'groups' wins."""
+        import json
+
+        subset_dir = tmp_path / "dataset" / "subsets"
+        subset_dir.mkdir(parents=True)
+        subset_data = {
+            "tasks": [
+                {
+                    "repo": "test_repo_task",
+                    "task_id": 1,
+                    "pairs": [[1, 2]],
+                    "groups": [[1, 2, 3]],
+                }
+            ]
+        }
+        (subset_dir / "both.json").write_text(json.dumps(subset_data))
+
+        result = load_subset("both", dataset_dir=tmp_path / "dataset")
+        groups = result["pairs"][("test_repo_task", 1)]
+        # groups key overwrites pairs key
+        assert (1, 2, 3) in groups
+        assert (1, 2) not in groups
+
+    def test_discover_tasks_emits_n_element_features_from_groups(self, tmp_path):
+        """discover_tasks produces N-element features lists when subset uses 'groups'."""
+        import json
+
+        os.chdir(tmp_path)
+        dataset = tmp_path / "dataset"
+        repo = dataset / "test_repo_task" / "task1"
+        for fid in [1, 2, 3]:
+            (repo / f"feature{fid}").mkdir(parents=True)
+
+        subset_dir = dataset / "subsets"
+        subset_dir.mkdir(parents=True)
+        subset_data = {
+            "tasks": [{"repo": "test_repo_task", "task_id": 1, "groups": [[1, 2, 3]]}]
+        }
+        (subset_dir / "team3.json").write_text(json.dumps(subset_data))
+
+        tasks = discover_tasks(subset="team3", dataset_dir=dataset)
+        assert len(tasks) == 1
+        assert tasks[0]["features"] == [1, 2, 3]
+
+    def test_discover_tasks_pairs_key_still_works(self, tmp_path):
+        """Existing 'pairs' key continues to work unchanged."""
+        import json
+
+        os.chdir(tmp_path)
+        dataset = tmp_path / "dataset"
+        repo = dataset / "test_repo_task" / "task1"
+        for fid in [1, 2]:
+            (repo / f"feature{fid}").mkdir(parents=True)
+
+        subset_dir = dataset / "subsets"
+        subset_dir.mkdir(parents=True)
+        subset_data = {
+            "tasks": [{"repo": "test_repo_task", "task_id": 1, "pairs": [[1, 2]]}]
+        }
+        (subset_dir / "coop2.json").write_text(json.dumps(subset_data))
+
+        tasks = discover_tasks(subset="coop2", dataset_dir=dataset)
+        assert len(tasks) == 1
+        assert tasks[0]["features"] == [1, 2]

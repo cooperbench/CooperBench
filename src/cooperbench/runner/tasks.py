@@ -36,6 +36,9 @@ def load_subset(subset_name: str, dataset_dir: Path | str | None = None) -> dict
         # If pairs are specified, store them
         if "pairs" in t:
             pairs[key] = [tuple(p) for p in t["pairs"]]
+        # "groups" supports N-element tuples for team-mode tasks
+        if "groups" in t:
+            pairs[key] = [tuple(g) for g in t["groups"]]
 
     return {"tasks": tasks, "pairs": pairs}
 
@@ -106,15 +109,15 @@ def discover_tasks(
                         }
                     )
             elif subset_data and task_key in subset_data["pairs"]:
-                # Use specific pairs from subset
-                for pair in subset_data["pairs"][task_key]:
-                    f1, f2 = pair
-                    if f1 in feature_ids and f2 in feature_ids:
+                # Use specific groups/pairs from subset (supports N-element groups)
+                for group in subset_data["pairs"][task_key]:
+                    group_list = list(group)
+                    if all(f in feature_ids for f in group_list):
                         tasks.append(
                             {
                                 "repo": repo_dir.name,
                                 "task_id": task_id,
-                                "features": [f1, f2],
+                                "features": group_list,
                             }
                         )
             else:
