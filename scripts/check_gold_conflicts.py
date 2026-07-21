@@ -11,6 +11,8 @@ Usage:
     python scripts/check_gold_conflicts.py --max-workers 75
     python scripts/check_gold_conflicts.py --group-size 3
     python scripts/check_gold_conflicts.py --group-size 3 --output-subset dataset/subsets/triples_clean.json
+    python scripts/check_gold_conflicts.py --group-size 3 --output-slight dataset/subsets/triples_slight.json
+    python scripts/check_gold_conflicts.py --group-size 3 --output-slight dataset/subsets/triples_slight.json --slight-n 30
 """
 
 import argparse
@@ -160,6 +162,10 @@ def _build_merge_script(n: int, features: list[int]) -> str:
         MERGE_RESULT=clean
         MERGE_RESULT=conflict   (first step that fails, then exits)
     Also outputs PATCH{i}_APPLY_FAILED for each patch that could not be applied.
+    When a conflict is detected, also outputs:
+        CONFLICT_HUNKS=<int>   number of conflict marker blocks
+        CONFLICT_LINES=<int>   number of lines between <<<<<<< and >>>>>>> markers
+        CONFLICT_FILES=<int>   number of files with conflicts
     """
     # Build branch-setup block: one stanza per agent (uses index i, not feature ID)
     branch_setup_parts = []
@@ -178,6 +184,7 @@ git commit -m "Feature {fid}" --allow-empty 2>&1
     branch_setup = "\n".join(branch_setup_parts)
 
     # Build sequential fold block: merge agent2..agentN into agent1
+    # On conflict, measure size before aborting (only first conflict matters).
     fold_parts = []
     for i in range(2, n + 1):
         fold_parts.append(f"""\
@@ -185,6 +192,13 @@ if git merge agent{i} --no-commit --no-ff 2>&1; then
     git commit -m "Fold agent{i}" --allow-empty 2>&1
 else
     echo "MERGE_RESULT=conflict"
+    git diff HEAD > /tmp/conflict_diff.txt 2>/dev/null
+    HUNKS=$(grep -c '^<<<<<<< ' /tmp/conflict_diff.txt 2>/dev/null || echo 0)
+    LINES=$(grep -c '^\\+' /tmp/conflict_diff.txt 2>/dev/null || echo 0)
+    FILES=$(grep -c '^diff --git' /tmp/conflict_diff.txt 2>/dev/null || echo 0)
+    echo "CONFLICT_HUNKS=$HUNKS"
+    echo "CONFLICT_LINES=$LINES"
+    echo "CONFLICT_FILES=$FILES"
     git merge --abort 2>/dev/null || true
     exit 0
 fi
@@ -220,6 +234,9 @@ def check_one_group(group: dict, timeout: int = 300) -> dict:
     Supports any group size >= 2.  For group_size == 2 the returned dict
     also carries 'f1', 'f2', 'patch1_apply_failed', 'patch2_apply_failed'
     so callers using the old schema continue to work without modification.
+
+    The returned dict always includes 'conflict_hunks', 'conflict_lines', and
+    'conflict_files' (all 0 when has_conflict=False or an error occurred).
     """
     repo = group["repo"]
     task_id = group["task_id"]
@@ -262,12 +279,37 @@ def check_one_group(group: dict, timeout: int = 300) -> dict:
         has_conflict = "MERGE_RESULT=conflict" in output
         patch_apply_failed = [f"PATCH{i}_APPLY_FAILED" in output for i in range(1, n + 1)]
 
+        # Parse conflict size metrics (present only when has_conflict=True)
+        conflict_hunks = 0
+        conflict_lines = 0
+        conflict_files = 0
+        for line in output.split("\n"):
+            line = line.strip()
+            if line.startswith("CONFLICT_HUNKS="):
+                try:
+                    conflict_hunks = int(line.split("=", 1)[1] or "0")
+                except ValueError:
+                    conflict_hunks = 0
+            elif line.startswith("CONFLICT_LINES="):
+                try:
+                    conflict_lines = int(line.split("=", 1)[1] or "0")
+                except ValueError:
+                    conflict_lines = 0
+            elif line.startswith("CONFLICT_FILES="):
+                try:
+                    conflict_files = int(line.split("=", 1)[1] or "0")
+                except ValueError:
+                    conflict_files = 0
+
         result = {
             "repo": repo,
             "task_id": task_id,
             "features": features,
             "has_conflict": has_conflict,
             "patch_apply_failed": patch_apply_failed,  # list, index i-1 -> patch i
+            "conflict_hunks": conflict_hunks,
+            "conflict_lines": conflict_lines,
+            "conflict_files": conflict_files,
             "error": None,
         }
         # Backwards compat keys for group_size == 2
@@ -285,6 +327,9 @@ def check_one_group(group: dict, timeout: int = 300) -> dict:
             "features": features,
             "has_conflict": None,
             "patch_apply_failed": None,
+            "conflict_hunks": 0,
+            "conflict_lines": 0,
+            "conflict_files": 0,
             "error": str(e),
         }
         if n == 2:
@@ -405,6 +450,88 @@ def write_subset_json(clean_results: list[dict], group_size: int, output_path: P
     output_path.write_text(json.dumps(subset, indent=2) + "\n")
 
 
+def write_slight_subset_json(
+    conflict_results: list[dict],
+    group_size: int,
+    output_path: Path,
+    top_n: int,
+) -> None:
+    """Write a dataset/subsets-compatible JSON for the N smallest conflicts.
+
+    Only includes triples where has_conflict=True AND conflict_lines > 0.
+    Entries with conflict_lines == 0 (measurement failed) are excluded entirely
+    rather than ranked last, since their true size is unknown.
+
+    Sorted ascending by (conflict_lines, conflict_hunks). The top_n entries
+    are written. Each task entry carries a 'group_conflict_info' dict keyed by
+    the string representation of the feature list, e.g. "[1, 2, 3]".
+    """
+    # Filter: must have has_conflict=True and a measurable conflict_lines > 0
+    measurable = [
+        r for r in conflict_results
+        if r.get("has_conflict") is True and r.get("conflict_lines", 0) > 0
+    ]
+
+    # Sort ascending by (conflict_lines, conflict_hunks)
+    measurable.sort(key=lambda r: (r.get("conflict_lines", 0), r.get("conflict_hunks", 0)))
+
+    selected = measurable[:top_n]
+
+    # Aggregate by (repo, task_id), preserving sort order for group list
+    # Use an ordered structure: track insertion order via a list of keys.
+    by_task: dict[tuple[str, int], dict] = {}
+    task_key_order: list[tuple[str, int]] = []
+    for r in selected:
+        key = (r["repo"], r["task_id"])
+        if key not in by_task:
+            by_task[key] = {"groups": [], "group_conflict_info": {}}
+            task_key_order.append(key)
+        features_sorted = sorted(r["features"])
+        by_task[key]["groups"].append(features_sorted)
+        info_key = str(features_sorted)
+        by_task[key]["group_conflict_info"][info_key] = {
+            "conflict_lines": r.get("conflict_lines", 0),
+            "conflict_hunks": r.get("conflict_hunks", 0),
+            "conflict_files": r.get("conflict_files", 0),
+        }
+
+    tasks_out = []
+    for repo, task_id in task_key_order:
+        entry = by_task[(repo, task_id)]
+        tasks_out.append(
+            {
+                "repo": repo,
+                "task_id": task_id,
+                "groups": entry["groups"],
+                "group_conflict_info": entry["group_conflict_info"],
+            }
+        )
+
+    total_groups = sum(len(t["groups"]) for t in tasks_out)
+    repos = len({t["repo"] for t in tasks_out})
+    max_conflict_lines = max((r.get("conflict_lines", 0) for r in selected), default=0)
+
+    subset = {
+        "name": output_path.stem,
+        "description": (
+            f"Smallest-conflict {group_size}-tuple groups from gold conflict check "
+            f"(top {top_n} by conflict_lines). "
+            f"{total_groups} groups across {len(tasks_out)} tasks."
+        ),
+        "stats": {
+            "tasks": len(tasks_out),
+            "groups": total_groups,
+            "group_size": group_size,
+            "repos": repos,
+            "max_conflict_lines": max_conflict_lines,
+        },
+        "tasks": tasks_out,
+    }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(subset, indent=2) + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Check gold patch merge conflicts")
     parser.add_argument("--repo", type=str, default=None, help="Filter by repo name")
@@ -432,12 +559,35 @@ def main():
             "containing only clean (conflict-free) groups to this path."
         ),
     )
+    parser.add_argument(
+        "--output-slight",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "When --group-size > 2, write a dataset/subsets-compatible JSON "
+            "containing the --slight-n triples with the smallest conflicts "
+            "(has_conflict=True, ranked by conflict_lines ASC then conflict_hunks ASC) "
+            "to this path."
+        ),
+    )
+    parser.add_argument(
+        "--slight-n",
+        type=int,
+        default=50,
+        metavar="N",
+        help="Number of slight-conflict triples to select for --output-slight (default: 50)",
+    )
     args = parser.parse_args()
 
     if args.group_size < 2:
         parser.error("--group-size must be >= 2")
     if args.output_subset and args.group_size == 2:
         parser.error("--output-subset is only valid when --group-size > 2")
+    if args.output_slight and args.group_size == 2:
+        parser.error("--output-slight is only valid when --group-size > 2")
+    if args.slight_n < 1:
+        parser.error("--slight-n must be >= 1")
 
     noun = "pairs" if args.group_size == 2 else f"{args.group_size}-tuples"
     print(f"Discovering {noun}...")
@@ -464,6 +614,12 @@ def main():
                 result = future.result()
                 all_results.append(result)
                 status = "CONFLICT" if result["has_conflict"] else "clean"
+                if result["has_conflict"] and result.get("conflict_lines", 0) > 0:
+                    status = (
+                        f"CONFLICT (lines={result['conflict_lines']} "
+                        f"hunks={result['conflict_hunks']} "
+                        f"files={result['conflict_files']})"
+                    )
                 if result["error"]:
                     status = f"ERROR: {result['error'][:60]}"
                 print(f"  [{done_count}/{len(groups)}] {g['repo']}/task{g['task_id']} {features_str}: {status}")
@@ -519,6 +675,12 @@ def main():
         clean_results = [r for r in all_results if r.get("has_conflict") is False]
         write_subset_json(clean_results, args.group_size, Path(args.output_subset))
         print(f"Clean-groups subset saved to: {args.output_subset}")
+
+    # Optional subset JSON for slight (smallest) conflicts (only valid with --group-size > 2)
+    if args.output_slight:
+        conflict_results = [r for r in all_results if r.get("has_conflict") is True]
+        write_slight_subset_json(conflict_results, args.group_size, Path(args.output_slight), args.slight_n)
+        print(f"Slight-conflicts subset saved to: {args.output_slight}")
 
 
 if __name__ == "__main__":
