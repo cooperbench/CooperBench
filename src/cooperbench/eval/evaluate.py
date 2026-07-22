@@ -343,7 +343,13 @@ def _evaluate_single(
     features = run_info["features"]
     f1, f2 = features[0], features[1]
 
-    if setting == "solo":
+    # Map oracle settings to their underlying evaluation strategy.
+    oracle_settings = {"oracle_coop", "oracle_coop_full", "oracle_solo"}
+    eval_setting = setting
+    if setting in oracle_settings:
+        eval_setting = "solo" if setting == "oracle_solo" else "coop"
+
+    if setting == "solo" or eval_setting == "solo":
         # Solo evaluation
         patch_file = log_dir / "solo.patch"
         patch = patch_file.read_text() if patch_file.exists() else ""
@@ -362,7 +368,7 @@ def _evaluate_single(
             "repo": repo,
             "task_id": task_id,
             "features": features,
-            "setting": "solo",
+            "setting": setting,
             "merge": None,
             "feature1": result.get("feature1", {}),
             "feature2": result.get("feature2", {}),
@@ -404,7 +410,7 @@ def _evaluate_single(
             eval_result["feature2"] = result.get("feature2", {})
             eval_result["both_passed"] = result.get("both_passed", False)
     else:
-        # Coop evaluation - merge two agent patches
+        # Coop / oracle_coop / oracle_coop_full evaluation — merge two agent patches
         patch1_file = log_dir / f"agent{f1}.patch"
         patch2_file = log_dir / f"agent{f2}.patch"
 
@@ -426,7 +432,7 @@ def _evaluate_single(
             "repo": repo,
             "task_id": task_id,
             "features": features,
-            "setting": "coop",
+            "setting": setting,
             "apply_status": result.get("apply_status"),
             "merge": result.get("merge", {}),
             "feature1": result.get("feature1", {}),
@@ -439,6 +445,28 @@ def _evaluate_single(
     # Save result
     with open(eval_file, "w") as f:
         json.dump(eval_result, f, indent=2)
+
+    # For oracle settings, also compute and save faithfulness metrics.
+    if setting in {"oracle_coop", "oracle_coop_full", "oracle_solo"}:
+        try:
+            from cooperbench.oracle.metrics import compute_faithfulness
+
+            root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
+            faithfulness = compute_faithfulness(
+                log_dir=log_dir,
+                dataset_dir=root,
+                repo_name=repo,
+                task_id=task_id,
+                features=features,
+                setting=setting,
+            )
+            if faithfulness is not None:
+                oracle_eval_file = log_dir / "oracle_eval.json"
+                with open(oracle_eval_file, "w") as f:
+                    json.dump(faithfulness.to_dict(), f, indent=2)
+                eval_result["faithfulness"] = faithfulness.to_dict()
+        except Exception:
+            pass
 
     return eval_result
 

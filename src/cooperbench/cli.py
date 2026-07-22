@@ -157,11 +157,21 @@ def main():
     )
     run_parser.add_argument(
         "--setting",
-        choices=["coop", "solo", "team"],
+        choices=["coop", "solo", "team", "oracle_coop", "oracle_coop_full", "oracle_solo"],
         default="coop",
-        help="Benchmark setting: coop (N peers), solo (1 agent), or team "
+        help="Benchmark setting: coop (N peers), solo (1 agent), team "
         "(N agents with shared task list, lead/member roles, shared "
-        "scratchpad) (default: coop)",
+        "scratchpad), oracle_coop (N peers, each receives own ground-truth "
+        "solution), oracle_coop_full (N peers, each receives ALL solutions), "
+        "or oracle_solo (1 agent receives all solutions) (default: coop)",
+    )
+    run_parser.add_argument(
+        "--oracle-mode",
+        choices=["patch", "code", "intent"],
+        default="patch",
+        help="(oracle settings only) How the ground-truth solution is presented: "
+        "patch (raw unified diff), code (post-patch file contents), "
+        "or intent (diff + feature description) (default: patch)",
     )
     # Per-feature toggles for the team harness — flip any of these off
     # to ablate that coordination mechanism while keeping the others on.
@@ -411,6 +421,7 @@ def _run_command(args):
         dataset_dir=args.dataset_dir if hasattr(args, "dataset_dir") else None,
         logs_dir=args.log_dir if hasattr(args, "log_dir") else None,
         team_features=team_features,
+        oracle_mode=getattr(args, "oracle_mode", "patch") or "patch",
     )
 
 

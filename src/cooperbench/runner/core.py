@@ -20,12 +20,16 @@ from rich.progress import (
 from rich.table import Table
 
 from cooperbench.infra.redis import ensure_redis
+from cooperbench.oracle.prompt import OracleMode
+from cooperbench.oracle.runner import execute_oracle_coop, execute_oracle_solo
 from cooperbench.runner.coop import execute_coop
 from cooperbench.runner.solo import execute_solo
 from cooperbench.runner.tasks import discover_tasks
 from cooperbench.runner.team import execute_team
 from cooperbench.team_harness import TeamHarnessConfig
 from cooperbench.utils import console
+
+ORACLE_SETTINGS = {"oracle_coop", "oracle_coop_full", "oracle_solo"}
 
 install_cleanup_handler = None
 
@@ -56,6 +60,7 @@ def run(
     dataset_dir: str | None = None,
     logs_dir: str | None = None,
     team_features: TeamHarnessConfig | None = None,
+    oracle_mode: str = "patch",
 ) -> None:
     """Run benchmark tasks.
 
@@ -79,6 +84,8 @@ def run(
         agent_config: Path to agent-specific configuration file (optional)
         dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
         logs_dir: Root to write run logs under.  Defaults to ``./logs``.
+        oracle_mode: How to present the ground-truth solution (patch / code / intent).
+                     Only used for oracle_coop, oracle_coop_full, and oracle_solo settings.
     """
     # Install cleanup handler to terminate Modal sandboxes on Ctrl+C
     if install_cleanup_handler:
@@ -100,13 +107,23 @@ def run(
     is_single = len(tasks) == 1
     is_solo = setting == "solo"
     is_team = setting == "team"
+    oracle_mode_enum = OracleMode(oracle_mode) if oracle_mode else OracleMode.PATCH
 
     _print_header(
-        run_name, setting, tasks, agent, model_name, concurrency, is_single, is_solo, git_enabled, messaging_enabled
+        run_name,
+        setting,
+        tasks,
+        agent,
+        model_name,
+        concurrency,
+        is_single,
+        is_solo or setting == "oracle_solo",
+        git_enabled,
+        messaging_enabled,
     )
 
-    # Solo mode doesn't need Redis or git server
-    if not is_solo:
+    # Solo-like modes don't need Redis
+    if not is_solo and setting != "oracle_solo":
         if messaging_enabled:
             ensure_redis(redis_url)
 
@@ -158,6 +175,62 @@ def run(
                 dataset_dir=dataset_dir,
                 logs_dir=logs_dir,
                 team_features=team_features,
+            )
+        elif setting == "oracle_coop":
+            return execute_oracle_coop(
+                repo_name=task_info["repo"],
+                task_id=task_info["task_id"],
+                features=task_info["features"],
+                run_name=run_name,
+                agent_name=agent,
+                model_name=model_name,
+                redis_url=redis_url,
+                force=force,
+                quiet=not is_single,
+                git_enabled=git_enabled,
+                messaging_enabled=messaging_enabled,
+                backend=backend,
+                agent_config=agent_config,
+                dataset_dir=dataset_dir,
+                logs_dir=logs_dir,
+                oracle_mode=oracle_mode_enum,
+                oracle_full=False,
+            )
+        elif setting == "oracle_coop_full":
+            return execute_oracle_coop(
+                repo_name=task_info["repo"],
+                task_id=task_info["task_id"],
+                features=task_info["features"],
+                run_name=run_name,
+                agent_name=agent,
+                model_name=model_name,
+                redis_url=redis_url,
+                force=force,
+                quiet=not is_single,
+                git_enabled=git_enabled,
+                messaging_enabled=messaging_enabled,
+                backend=backend,
+                agent_config=agent_config,
+                dataset_dir=dataset_dir,
+                logs_dir=logs_dir,
+                oracle_mode=oracle_mode_enum,
+                oracle_full=True,
+            )
+        elif setting == "oracle_solo":
+            return execute_oracle_solo(
+                repo_name=task_info["repo"],
+                task_id=task_info["task_id"],
+                features=task_info["features"],
+                run_name=run_name,
+                agent_name=agent,
+                model_name=model_name,
+                force=force,
+                quiet=not is_single,
+                backend=backend,
+                agent_config=agent_config,
+                dataset_dir=dataset_dir,
+                logs_dir=logs_dir,
+                oracle_mode=oracle_mode_enum,
             )
         else:
             return execute_coop(
