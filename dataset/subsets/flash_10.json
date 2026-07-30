@@ -1,0 +1,90 @@
+{
+  "name": "flash_10",
+  "description": "10-pair high-signal eval subset curated from flash-50. Pairs selected to span easy anchors (consistent passers), strong discriminators (mid-difficulty tasks that split model quality), and diverse repo coverage. Use for cheap candidate-model screening before running flash-50.",
+  "stats": {
+    "tasks": 10,
+    "pairs": 10,
+    "repos": 9
+  },
+  "curation": {
+    "source": "flash (50 pairs, 20 tasks, 11 repos)",
+    "method": "manual — one pair per task, selected on: (a) known per-framework pass/fail signal from core benchmark (BENCHMARK_RESULTS.md); (b) repo diversity; (c) avoiding infrastructure-failure-prone pairs (LimitsExceeded or Modal-timeout in midtrain-flash run)",
+    "categories": {
+      "easy_anchor": ["dottxt_ai_outlines_task/1655", "openai_tiktoken_task/0", "typst_task/6554"],
+      "discriminator": ["pallets_click_task/2800", "pallets_jinja_task/1559", "pallets_jinja_task/1621"],
+      "coverage": ["dspy_task/8394", "huggingface_datasets_task/6252", "pillow_task/290", "go_chi_task/26"]
+    }
+  },
+  "tasks": [
+    {
+      "repo": "dottxt_ai_outlines_task",
+      "task_id": 1655,
+      "pairs": [
+        [7, 10]
+      ]
+    },
+    {
+      "repo": "openai_tiktoken_task",
+      "task_id": 0,
+      "pairs": [
+        [6, 8]
+      ]
+    },
+    {
+      "repo": "typst_task",
+      "task_id": 6554,
+      "pairs": [
+        [7, 8]
+      ]
+    },
+    {
+      "repo": "pallets_click_task",
+      "task_id": 2800,
+      "pairs": [
+        [1, 7]
+      ]
+    },
+    {
+      "repo": "pallets_jinja_task",
+      "task_id": 1559,
+      "pairs": [
+        [4, 8]
+      ]
+    },
+    {
+      "repo": "pallets_jinja_task",
+      "task_id": 1621,
+      "pairs": [
+        [4, 5]
+      ]
+    },
+    {
+      "repo": "dspy_task",
+      "task_id": 8394,
+      "pairs": [
+        [3, 4]
+      ]
+    },
+    {
+      "repo": "huggingface_datasets_task",
+      "task_id": 6252,
+      "pairs": [
+        [4, 6]
+      ]
+    },
+    {
+      "repo": "pillow_task",
+      "task_id": 290,
+      "pairs": [
+        [4, 5]
+      ]
+    },
+    {
+      "repo": "go_chi_task",
+      "task_id": 26,
+      "pairs": [
+        [1, 2]
+      ]
+    }
+  ]
+}
