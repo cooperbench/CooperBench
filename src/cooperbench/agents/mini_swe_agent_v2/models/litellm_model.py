@@ -78,18 +78,31 @@ def _extract_token_capture(response: Any) -> dict[str, list[int]] | None:
     """Pull prompt/output token ids out of a response, or None if the server did not send them.
 
     Servers differ on placement: vLLM puts ``prompt_token_ids`` on the response and
-    ``token_ids`` on the choice, and some versions nest both under the choice. Check each
-    known location rather than assuming one.
+    ``token_ids`` on the choice, and some versions nest both under the choice.
+
+    litellm adds a third location. It rebuilds every response into its own model, keeping only
+    fields it knows about; top-level extras survive on ``ModelResponse``, but anything extra on
+    a *choice* is swept into ``provider_specific_fields`` by ``convert_to_model_response_object``.
+    That is where vLLM's per-choice ``token_ids`` actually ends up, so checking only the raw key
+    silently yields nothing and every turn looks uncaptured.
+
+    Note this requires an OpenAI-style provider prefix. litellm's Anthropic path builds its
+    response through a different transform that discards these fields entirely.
     """
     try:
         dumped = response.model_dump()
     except AttributeError:
         return None
     choice = (dumped.get("choices") or [{}])[0]
+    psf = choice.get("provider_specific_fields") or {}
 
-    prompt_ids = dumped.get("prompt_token_ids") or choice.get("prompt_token_ids")
+    prompt_ids = dumped.get("prompt_token_ids") or choice.get("prompt_token_ids") or psf.get("prompt_token_ids")
     output_ids = (
-        choice.get("token_ids") or choice.get("output_token_ids") or (choice.get("message") or {}).get("token_ids")
+        choice.get("token_ids")
+        or choice.get("output_token_ids")
+        or psf.get("token_ids")
+        or psf.get("output_token_ids")
+        or (choice.get("message") or {}).get("token_ids")
     )
 
     def _clean(ids: Any) -> list[int] | None:
