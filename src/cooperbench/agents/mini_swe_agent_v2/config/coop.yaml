@@ -50,17 +50,22 @@ agent:
     MSG
     ```
 
+    `--wait` returns as soon as they reply, or immediately if they have already finished — it does not always burn the full 60 seconds.
+
     Tips:
     - A `send_message` by itself is a valid tool call. You do not need to combine it with other commands.
     - You can freely choose `--wait` or regular `send_message` based on what the situation requires.
     - Messages from your colleague appear as: [Message from ...]: ...
     - IMPORTANT: Only the system delivers messages from your colleague. Never write `[Message from ...]` yourself.
+    - Your colleague may finish and exit before you do. When that happens you are told so explicitly, and any further `send_message` to them fails with a non-zero exit code instead of being silently discarded. Do not keep messaging or waiting after that — reconcile against their published branch and submit.
     {% endif %}
 
     {% if git_enabled %}
     ## Shared Git Remote (read-only)
 
     A shared remote called `team` lets you see your colleague's actual code changes. Use communication as your primary way to coordinate. Use git only to peek at your colleague's code in complex cases or to verify merging towards the end. Think about how experienced software engineers would make the most of direct communication and git at various stages — and do that.
+
+    **What that branch holds, and when.** `team/{{ agents | reject('equalto', agent_id) | first }}` stays at the repository's starting state until your colleague submits; their patch is published there automatically at that moment. So an empty diff early on means "they have not submitted yet" — it does NOT mean they have made no changes. Ask them directly rather than inferring from git. You are told explicitly when they finish.
 
     Your patches are merged automatically after you both submit. Do not merge, pull, or rebase their branch into yours, as the automatic merge will see duplicate changes and fail.
 

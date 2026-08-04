@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.22] - 2026-08-04
+
+### Fixed
+
+- **A coop agent that finished could not be distinguished from one that was ignoring you.** When an agent submitted and exited, its peer kept talking to a mailbox nobody would ever read again: `MessagingConnector.send` queued into Redis and returned success unconditionally, with no liveness check. Measured over 8 `flash_10` pairs, **16 messages sent / 11 delivered (31% lost)**; in `pallets_click_task/2800/f1_f7` all 3 were lost — sent 35s after the peer's final turn. The sender was told `Message sent to agent2` (returncode 0) each time, and its own summary recorded *"Coordination with agent2 is ongoing … no expected conflicts"* immediately before submitting a patch that merge-conflicted. `send()` now returns `False` for a departed peer and the agent receives a non-zero result naming the cause and the recovery path, rather than a false success.
+
+- **`send_message --wait` was documented but never implemented.** `DefaultAgent._handle_send_message` guarded on `hasattr(self.comm, "send_and_wait")`, and `MessagingConnector` had no such method — so `--wait` silently degraded to fire-and-forget. Agents asking a blocking question got an instant "Message sent" and moved on. `send_and_wait(recipient, content, timeout)` now exists, returns `(delivered, replies)`, and ends the wait as soon as the peer replies **or exits**, instead of burning the full 60s on a reply that cannot arrive.
+
+- **`team/<peer>` never contained the peer's work.** `GitConnector.setup` pushes the base commit once and nothing updates the branch afterwards, while the prompt presents that remote as the sanctioned way to see a colleague's code. Across 19 agent runs there were **zero pushes**: in one pair an agent ran 24 `git fetch` / `git diff team/agent2` commands and saw the untouched baseline every time, then asked its colleague "have you submitted your branch yet?". Each agent now publishes its **submitted patch** (`patch.txt`, the artifact that is actually evaluated — not the working tree, which may differ) to `team/<agent_id>` on exit. It is built in a detached worktree from the pristine base, so the agent's own branch, index and working tree are untouched and a patch is never double-applied when the agent had already committed its work.
+
+### Added
+
+- Peers are told once, in context, when a colleague finishes: `[agent2 has completed their work and exited]`, with the branch to reconcile against. Publication is best-effort, so the exit marker records whether the patch actually reached the remote and the agent is only pointed at that branch when it really holds their submission.
+
+### Changed
+
+- The coop prompt now states what `team/<peer>` holds and when ("stays at the repository's starting state until your colleague submits" — an empty diff early means *not submitted yet*, not *no changes*), that `--wait` can return early, and that a colleague may exit before you do.
+
+## [0.0.21] - 2026-08-04
+
+### Fixed
+
+- **`capture_token_ids` (0.0.20) never produced a capture.** litellm rebuilds each response into its own model; top-level extras survive on `ModelResponse`, but extras on a *choice* are swept into `provider_specific_fields` by `convert_to_model_response_object` — which is where vLLM's per-choice `token_ids` lands. Reading the raw key yielded nothing, and a live run logged the "server returned no token ids" warning on all 816 calls while the server was returning them the whole time. Also documents that this requires an OpenAI-style provider prefix: litellm's Anthropic path uses a different transform that discards both `prompt_token_ids` and `token_ids` outright.
+
+## [0.0.20] - 2026-08-04
+
+### Added
+
+- **Optional `capture_token_ids` on `LitellmModelConfig`** (default `False`, so existing runs are byte-identical). When set, requests carry `extra_body={"return_token_ids": true}` and the ids the server actually used are stored on each assistant message as `extra["token_capture"]`, persisting into the saved trajectory. Reconstructing them afterwards is not equivalent: BPE is non-injective, tool-call serialization can differ between inference and training, and under context compaction the prompt a turn saw no longer exists in the final message list. Requires vLLM >= 0.10.2 or SGLang with `return_token_ids` support.
+
 ## [0.0.19] - 2026-05-25
 
 ### Fixed
