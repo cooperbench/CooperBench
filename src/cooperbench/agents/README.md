@@ -44,6 +44,7 @@ External packages can register custom agent implementations using the `COOPERBEN
 from cooperbench.agents.registry import register
 from cooperbench.agents import AgentResult
 
+
 @register("my_custom_agent")
 class CustomAgentRunner:
     def run(self, task, image, **kwargs) -> AgentResult:
@@ -76,15 +77,18 @@ All agents must implement the `AgentRunner` protocol:
 from dataclasses import dataclass
 from typing import Protocol
 
+
 @dataclass
 class AgentResult:
     """Result from an agent run."""
-    status: str           # "Submitted", "Error", "LimitsExceeded"
-    patch: str            # Generated diff/patch
-    cost: float           # Total LLM cost in USD
-    steps: int            # Number of agent steps/actions
+
+    status: str  # "Submitted", "Error", "LimitsExceeded"
+    patch: str  # Generated diff/patch
+    cost: float  # Total LLM cost in USD
+    steps: int  # Number of agent steps/actions
     messages: list[dict]  # Conversation history
-    error: str | None     # Error message if failed
+    error: str | None  # Error message if failed
+
 
 class AgentRunner(Protocol):
     """Protocol for agent framework adapters."""
@@ -102,8 +106,7 @@ class AgentRunner(Protocol):
         git_enabled: bool = False,
         messaging_enabled: bool = True,
         config: dict | None = None,
-    ) -> AgentResult:
-        ...
+    ) -> AgentResult: ...
 ```
 
 ## Adding a New Agent
@@ -125,6 +128,7 @@ agents/
 
 from cooperbench.agents import AgentResult
 from cooperbench.agents.registry import register
+
 
 @register("my_agent")
 class MyAgentRunner:

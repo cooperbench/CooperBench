@@ -89,9 +89,7 @@ def _extract_token_capture(response: Any) -> dict[str, list[int]] | None:
 
     prompt_ids = dumped.get("prompt_token_ids") or choice.get("prompt_token_ids")
     output_ids = (
-        choice.get("token_ids")
-        or choice.get("output_token_ids")
-        or (choice.get("message") or {}).get("token_ids")
+        choice.get("token_ids") or choice.get("output_token_ids") or (choice.get("message") or {}).get("token_ids")
     )
 
     def _clean(ids: Any) -> list[int] | None:
