@@ -43,6 +43,66 @@ class LitellmModelConfig(BaseModel):
     """Template used to render the observation after executing an action."""
     multimodal_regex: str = ""
     """Regex to extract multimodal content. Empty string disables multimodal processing."""
+    capture_token_ids: bool = False
+    """Record the exact prompt/response token IDs the inference server used.
+
+    When True, requests carry ``extra_body={"return_token_ids": true}`` so vLLM (>=0.10.2) /
+    SGLang return ``prompt_token_ids`` and ``token_ids`` alongside the usual response. They are
+    stored on each assistant message as ``extra["token_capture"]`` and persist into the saved
+    trajectory.
+
+    This exists for token-level training (distillation, TITO-style SFT), where re-tokenizing a
+    trajectory afterwards is not equivalent: BPE is non-injective, tool-call serialization can
+    differ between inference and training, and under context compaction the prompt a turn
+    actually saw no longer exists in the final message list. Capturing at request time makes
+    the training input identical to what the model saw, by construction.
+
+    Off by default; it only adds response payload when explicitly enabled.
+    """
+
+
+def _with_return_token_ids(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Add ``return_token_ids`` to the request's ``extra_body`` without clobbering it.
+
+    ``extra_body`` is how litellm forwards non-OpenAI fields to the backend, and callers may
+    already be using it, so merge rather than replace.
+    """
+    merged = dict(kwargs)
+    extra_body = dict(merged.get("extra_body") or {})
+    extra_body.setdefault("return_token_ids", True)
+    merged["extra_body"] = extra_body
+    return merged
+
+
+def _extract_token_capture(response: Any) -> dict[str, list[int]] | None:
+    """Pull prompt/output token ids out of a response, or None if the server did not send them.
+
+    Servers differ on placement: vLLM puts ``prompt_token_ids`` on the response and
+    ``token_ids`` on the choice, and some versions nest both under the choice. Check each
+    known location rather than assuming one.
+    """
+    try:
+        dumped = response.model_dump()
+    except AttributeError:
+        return None
+    choice = (dumped.get("choices") or [{}])[0]
+
+    prompt_ids = dumped.get("prompt_token_ids") or choice.get("prompt_token_ids")
+    output_ids = (
+        choice.get("token_ids")
+        or choice.get("output_token_ids")
+        or (choice.get("message") or {}).get("token_ids")
+    )
+
+    def _clean(ids: Any) -> list[int] | None:
+        if isinstance(ids, list) and ids and all(isinstance(i, int) for i in ids):
+            return ids
+        return None
+
+    prompt_ids, output_ids = _clean(prompt_ids), _clean(output_ids)
+    if prompt_ids is None or output_ids is None:
+        return None
+    return {"prompt_token_ids": prompt_ids, "output_token_ids": output_ids}
 
 
 class LitellmModel:
@@ -62,12 +122,15 @@ class LitellmModel:
             litellm.utils.register_model(json.loads(Path(self.config.litellm_model_registry).read_text()))
 
     def _query(self, messages: list[dict[str, str]], **kwargs):
+        merged = self.config.model_kwargs | kwargs
+        if self.config.capture_token_ids:
+            merged = _with_return_token_ids(merged)
         try:
             return litellm.completion(
                 model=self.config.model_name,
                 messages=messages,
                 tools=self._tools,
-                **(self.config.model_kwargs | kwargs),
+                **merged,
             )
         except litellm.exceptions.AuthenticationError as e:
             e.message += " You can permanently set your API key with `mini-extra config set KEY VALUE`."
@@ -91,6 +154,17 @@ class LitellmModel:
             **cost_output,
             "timestamp": time.time(),
         }
+        if self.config.capture_token_ids:
+            capture = _extract_token_capture(response)
+            if capture is None:
+                # Loud, because a silently empty capture only shows up much later as a
+                # training set with no usable rows.
+                logger.warning(
+                    "capture_token_ids is set but the server returned no token ids; "
+                    "vLLM >=0.10.2 or SGLang with return_token_ids support is required"
+                )
+            else:
+                message["extra"]["token_capture"] = capture
         return message
 
     def _calculate_cost(self, response) -> dict[str, float]:
