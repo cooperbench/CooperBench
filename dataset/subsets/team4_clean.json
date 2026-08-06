@@ -1,0 +1,48 @@
+{
+  "name": "team4_clean",
+  "description": "Clean 4-tuple groups from gold conflict check. 5 groups across 1 tasks.",
+  "stats": {
+    "tasks": 1,
+    "groups": 5,
+    "group_size": 4,
+    "repos": 1
+  },
+  "tasks": [
+    {
+      "repo": "react_hook_form_task",
+      "task_id": 85,
+      "groups": [
+        [
+          1,
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          5
+        ],
+        [
+          1,
+          2,
+          4,
+          5
+        ],
+        [
+          1,
+          3,
+          4,
+          5
+        ],
+        [
+          2,
+          3,
+          4,
+          5
+        ]
+      ]
+    }
+  ]
+}
