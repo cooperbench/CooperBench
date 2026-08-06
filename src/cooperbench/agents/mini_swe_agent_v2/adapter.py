@@ -205,14 +205,15 @@ class MiniSweAgentV2Runner:
             model_cfg = {**model_cfg, "model_kwargs": model_kwargs}
         model = LitellmModel(model_name=model_name, **model_cfg)
 
-        # Setup git connector if enabled
-        if git_enabled and git_server_url and agents:
-            git_connector = GitConnector(
-                agent_id=agent_id,
-                agents=agents,
-                server_url=git_server_url,
-            )
-            git_connector.setup(env)
+        # Always set up a git connector. Coop points it at the shared server; solo gets a
+        # bare repo in its own sandbox. Both then submit by opening a PR, so there is one
+        # submission path rather than two that can drift apart.
+        git_connector = GitConnector(
+            agent_id=agent_id,
+            agents=agents or [agent_id],
+            server_url=git_server_url if (git_enabled and git_server_url) else "",
+        )
+        git_connector.setup(env)
 
         # Setup team CLI in the container if either of its consumers
         # (the task_list or the typed protocol verbs) is active.  Both
@@ -251,15 +252,16 @@ class MiniSweAgentV2Runner:
             status = "Error"
             error_msg = str(e)
 
+        # The submitted artifact is the agent's PR, not a local file. Reading a local
+        # patch.txt let an agent submit work it had never shared, so its colleague could not
+        # see what was coming and the shared remote had nothing to show. The PR is pushed, so
+        # what gets graded is exactly what the other agent could read.
         patch = ""
         try:
-            r = env.execute({"command": "cat patch.txt 2>/dev/null"})
-            if r.get("returncode") == 0:
-                # git apply rejects diffs without a terminal newline; normalize
-                # to one trailing newline (matches claude_code / codex adapters).
-                from cooperbench.agents._coop.runtime import normalize_patch
+            from cooperbench.agents._coop.runtime import normalize_patch
 
-                patch = normalize_patch(r.get("output") or "")
+            raw = git_connector.submitted_patch(env)
+            patch = normalize_patch(raw)
         except Exception:
             pass
 
