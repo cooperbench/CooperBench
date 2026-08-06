@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.23] - 2026-08-05
+
+### Fixed
+
+- **Coop agents were told the shared git remote was read-only, so they never shared code.** The prompt titled the section "Shared Git Remote (read-only)", listed only `fetch`/`log`/`diff` under "Allowed (read-only)", never mentioned `push`, and instructed *"Do not merge, pull, or rebase their branch into yours"*. Both claims are wrong: `GitConnector` runs `git daemon --enable=receive-pack`, so the remote accepts writes, and grading never reads those branches — the evaluator applies each agent's submitted `patch.txt` to branches it creates itself (`eval/sandbox.py:473,480`). Measured across **117 trajectories in three `flash_10` runs: 292 `git fetch team` and 0 `git push team`.** Every one of those fetches returned the untouched baseline, because 0.0.22 only publishes an agent's patch at exit — by which point the peer can no longer act on it. Agents were following their instructions exactly; the instructions disabled the channel.
+
+  This prompt was the only surface that said so. `GitConnector`'s own docstring already advertised `git push team <branch>` and `git merge team/<agent>`, and the shared coop prompt used by the `claude_code` / `codex` adapters (`agents/_coop/prompt.py`) already instructs agents to commit and "push so peers can fetch you". Only `mini_swe_agent_v2`'s coop config disagreed with the infrastructure it runs on.
+
+  The section now describes a real read/write remote, tells agents to commit and `git push team HEAD:<agent_id>` as they work so a colleague can read their actual diff, and replaces the blanket prohibition with the one constraint that genuinely matters: **the submitted `patch.txt` must contain only that agent's own changes**, since the two submitted patches are merged and duplicated edits break the merge. Local `fetch`/`merge`/`cherry-pick` are now explicitly allowed — the rule is about what you submit, not what you do in your worktree — with `git diff -- <paths>` given as the way to scope a patch when both agents had to touch the same file.
+
+### Changed
+
+- Exit-time publication of `patch.txt` to `team/<agent_id>` (added in 0.0.22) is unchanged and still runs; it is now described as the *final* state of a branch agents are expected to have been pushing to all along, rather than the only thing that branch ever holds.
+
 ## [0.0.22] - 2026-08-04
 
 ### Fixed

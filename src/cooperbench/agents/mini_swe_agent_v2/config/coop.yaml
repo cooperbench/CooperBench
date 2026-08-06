@@ -61,28 +61,38 @@ agent:
     {% endif %}
 
     {% if git_enabled %}
-    ## Shared Git Remote (read-only)
+    ## Shared Git Remote
 
-    A shared remote called `team` lets you see your colleague's actual code changes. Use communication as your primary way to coordinate. Use git only to peek at your colleague's code in complex cases or to verify merging towards the end. Think about how experienced software engineers would make the most of direct communication and git at various stages — and do that.
+    `team` is a real git remote you can push to and fetch from. Your colleague
+    cannot see your working tree — only what you push.
 
-    **What that branch holds, and when.** `team/{{ agents | reject('equalto', agent_id) | first }}` stays at the repository's starting state until your colleague submits; their patch is published there automatically at that moment. So an empty diff early on means "they have not submitted yet" — it does NOT mean they have made no changes. Ask them directly rather than inferring from git. You are told explicitly when they finish.
-
-    Your patches are merged automatically after you both submit. Do not merge, pull, or rebase their branch into yours, as the automatic merge will see duplicate changes and fail.
-
-    Allowed (read-only):
+    Share your work as you go, and re-push whenever you change shared code:
     ```bash
-    git fetch team
-    git log team/{{ agents | reject('equalto', agent_id) | first }} --oneline
-    git diff HEAD...team/{{ agents | reject('equalto', agent_id) | first }} -- <file>
+    git add -A && git commit -m "wip: <what changed>"
+    git push team HEAD:{{ agent_id }}
     ```
 
-    Check for conflicts (dry-run merge):
+    Read theirs any time (an empty diff means they have not pushed yet — ask them):
+    ```bash
+    git fetch team
+    git diff team/{{ agents | reject('equalto', agent_id) | first }} -- <file>
+    ```
+
+    Check whether you would collide, and settle it over messaging if so:
     ```bash
     git merge --no-commit --no-ff team/{{ agents | reject('equalto', agent_id) | first }} && git merge --abort
     ```
-    If this reports conflicts, you may coordinate with your colleague via messaging to adjust your approaches.
 
-    Do NOT run: `git merge` (without --abort), `git pull`, `git rebase`, or `git reset --hard` against your colleague's branch or `origin/main`. These will corrupt your patch.
+    **Grading rule:** your two submitted patches are merged, so `patch.txt` must
+    contain only *your* changes — if it also contains theirs, the merge sees the
+    same edit twice and fails. Locally you may fetch and merge freely; just scope
+    what you submit:
+    ```bash
+    git diff -- path/to/your/files > patch.txt
+    ```
+    If you both must change one file, agree over messaging who carries it; the
+    other excludes it from their patch.
+
     {% endif %}
 
     ## Command Execution Rules
