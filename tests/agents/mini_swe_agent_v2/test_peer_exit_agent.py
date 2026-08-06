@@ -135,35 +135,44 @@ class TestDepartureAnnouncement:
         assert agent.messages == []
 
 
-class TestPublishFinalWork:
-    def test_solo_run_does_not_publish(self):
+class TestOpenedPR:
+    """`published` now means "the peer can see my work", which is true exactly when the agent
+    opened a PR. It replaces `_publish_final_work`, which pushed `patch.txt` to the agent's
+    branch at exit -- dead once submission became a PR the agent opens itself, and it logged
+    `no patch.txt to publish` on every run.
+    """
+
+    def test_solo_run_reports_no_pr(self):
         agent = DefaultAgent(
             _StubModel(), _StubEnv(), comm=None, agent_id="agent1", system_template="s", instance_template="i"
         )
-        assert agent._publish_final_work() is False
+        assert agent._opened_pr() is False
 
-    def test_publish_reports_failure_when_the_container_command_fails(self, pair):
-        """
-        Expected: False, so mark_exited(published=False) and peers are not misdirected
-        Catches:  treating a failed publish as success -- e.g. the `test -s patch.txt`
-                  guard exiting 0 when there is no patch, which would tell the peer the
-                  branch holds a submission that was never pushed.
-        """
+    def test_no_pr_on_the_remote_reports_false(self, pair):
+        """Expected: False, so mark_exited(published=False) and the peer is not pointed at a
+        branch holding nothing. Catches treating an empty ls-remote as success."""
         alice_comm, _ = pair
         agent = _agent("agent1", alice_comm)
 
-        class _FailingEnv(_StubEnv):
+        class _NoPR(_StubEnv):
             def execute(self, action):
-                return {"output": "no patch.txt to publish", "returncode": 3}
+                return {"output": "", "returncode": 0}
 
-        agent.env = _FailingEnv()
-        assert agent._publish_final_work() is False
+        agent.env = _NoPR()
+        assert agent._opened_pr() is False
 
-    def test_publish_reports_success_and_targets_the_agent_branch(self, pair):
+    def test_pr_on_the_remote_reports_true_and_is_checked_remotely(self, pair):
         alice_comm, _ = pair
         agent = _agent("agent1", alice_comm)
-        assert agent._publish_final_work() is True
+
+        class _HasPR(_StubEnv):
+            def execute(self, action):
+                self.commands.append(action)
+                return {"output": "abc123\trefs/tags/pr/agent1", "returncode": 0}
+
+        agent.env = _HasPR()
+        assert agent._opened_pr() is True
         cmd = agent.env.commands[-1]["command"]
-        assert "HEAD:refs/heads/agent1" in cmd
-        assert "worktree add" in cmd and "patch.txt" in cmd
-        assert f"{GIT_REMOTE}/main" in cmd, "must branch from the pristine base, not HEAD"
+        assert "ls-remote" in cmd, "must ask the remote, not the local repo"
+        assert "refs/tags/pr/agent1" in cmd
+        assert GIT_REMOTE in cmd

@@ -99,36 +99,20 @@ agent:
 
     ## Submission
 
-    `patch.txt` is the artifact we evaluate — write whatever unified diff
-    you want to submit to that file, however it makes sense given how you
-    worked:
-
-    Write the patch (one common way — `git diff` of your in-place edits):
+    Your pull request is your submission.
 
     ```bash
-    git diff -- path/to/file1 path/to/file2 > patch.txt
+    git add <only the changes you want to submit>
+    git commit -m "<what you did>"
+    git push
+    gh pr create --title "..." --body "..."
     ```
 
-    Verify it contains what you intend:
-
-    ```bash
-    cat patch.txt
-    ```
-
-    Submit (EXACT command required)
-    You MUST use this EXACT command to submit:
+    End the task (EXACT command required):
 
     ```bash
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
     ```
-
-    The patch must be a unified diff and contain only source files you
-    intentionally modified.  Exclude:
-
-    - reproduction or scratch test scripts you wrote
-    - helper scripts or tools you created
-    - installation, build, packaging, or configuration files
-    - binaries or compiled files
 
     <CRITICAL>
     Do NOT run `rm -rf .git`, `git init`, `git rm -rf .`, or `git reset --hard`

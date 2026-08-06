@@ -18,7 +18,7 @@ from cooperbench.agents.mini_swe_agent_v2.utils.serialize import recursive_merge
 
 # Name of the shared git remote created by GitConnector.  Referenced in the messages the
 # agent sees, so it must match GitConnector.REMOTE_NAME.
-GIT_REMOTE = "team"
+GIT_REMOTE = "origin"
 
 
 class AgentConfig(BaseModel):
@@ -201,73 +201,25 @@ class DefaultAgent:
             finally:
                 self.save(self.config.output_path)
             if self.messages[-1].get("role") == "exit":
-                published = self._publish_final_work()
                 if self.comm:
-                    self.comm.mark_exited(published=published)
+                    # `published` means "the peer can see my work on the remote". That is now
+                    # true exactly when the agent opened a PR, which it does itself -- there
+                    # is no separate publish step to perform on its behalf.
+                    self.comm.mark_exited(published=self._opened_pr())
                 break
         return self.messages[-1].get("extra", {})
 
-    def _publish_final_work(self) -> bool:
-        """Publish this agent's *submitted patch* to the shared remote before exiting.
+    def _opened_pr(self) -> bool:
+        """Whether this agent's PR exists on the shared remote.
 
-        The remote is seeded with the base commit at setup and never updated again, so a
-        peer inspecting ``{GIT_REMOTE}/<agent>`` sees the untouched baseline no matter how
-        much work was done — and reasonably concludes their colleague has not started.
-        The prompt presents that remote as the sanctioned way to see a colleague's code,
-        so today it is a documented capability that silently returns nothing.
-
-        We publish ``patch.txt``, not the working tree: patch.txt is the artifact that
-        gets evaluated and merged, and agents are free to submit a subset of their edits.
-        Showing a peer the tree would show them something other than what will be merged.
-
-        Built in a detached worktree so the agent's own branch, index and working tree
-        are untouched — the adapter still reads patch.txt from the container afterwards.
-
-        Returns True only when the patch actually reached the remote.  Peers are told to
-        read that branch, so a failed publication must not be reported as a success.
-        Best-effort otherwise: publication must never fail a run.
+        Replaces `_publish_final_work`, which pushed `patch.txt` to the agent's branch at
+        exit. Submission is now a PR the agent opens itself, so there is nothing left to
+        publish -- that method only logged `no patch.txt to publish` on every run.
         """
-        if not getattr(self, "comm", None):
-            return False  # solo run: nobody to publish to
-        agent_id = self.comm.agent_id
-        script = (
-            "set -e; "
-            # the repo is normally /workspace/repo, but fall back rather than guess
-            'repo=/workspace/repo; [ -d "$repo/.git" ] || repo=/workspace; cd "$repo"; '
-            # No patch means nothing to publish.  Exit non-zero so this is NOT reported as
-            # a successful publication -- claiming the branch holds their submission when
-            # it holds the baseline is the exact failure this change removes.
-            'test -s patch.txt || { echo "no patch.txt to publish"; exit 3; }; '
-            # Branch from the pristine base, not from HEAD: the evaluator applies patch.txt
-            # to the base, so mirroring that is what makes the branch equal the submission.
-            # If the agent committed its work, HEAD already contains it and applying the
-            # patch on top would double-apply.  setup() seeds the remote's main with base.
-            f"git fetch -q {GIT_REMOTE} 2>/dev/null || true; "
-            f"base=$(git rev-parse {GIT_REMOTE}/main 2>/dev/null "
-            "|| git rev-parse main 2>/dev/null || git rev-parse HEAD); "
-            'tmp=$(mktemp -d); git worktree add -q --detach "$tmp" "$base"; '
-            'cp patch.txt "$tmp/.__submitted.patch"; cd "$tmp"; '
-            "git apply --ignore-whitespace .__submitted.patch || git apply --3way .__submitted.patch; "
-            "rm -f .__submitted.patch; git add -A; "
-            f"git -c user.email=agent@cooperbench -c user.name={agent_id} "
-            f'commit -q --allow-empty -m "submitted work by {agent_id}"; '
-            f"git push -q -f {GIT_REMOTE} HEAD:refs/heads/{agent_id}; "
-            # `worktree remove` matches on git's own resolved path, which differs from
-            # $tmp wherever the temp dir sits behind a symlink; deleting the directory and
-            # pruning is equivalent and does not depend on that matching.
-            'cd /; rm -rf "$tmp"; git -C "$repo" worktree prune 2>/dev/null || true'
-        )
-        try:
-            result = self.env.execute({"command": script})
-            if (result or {}).get("returncode") == 0:
-                self.log(f"PUBLISHED submitted patch to {GIT_REMOTE}/{agent_id}")
-                return True
-            self.logger.warning(
-                f"could not publish to {GIT_REMOTE}/{agent_id}: {(result or {}).get('output', '')[:300]}"
-            )
-        except Exception as e:  # noqa: BLE001 - never fail a run over publication
-            self.logger.warning(f"could not publish to {GIT_REMOTE}/{agent_id}: {e}")
-        return False
+        if not self.comm:
+            return False
+        r = self.env.execute({"command": f"git ls-remote --tags {GIT_REMOTE} refs/tags/pr/{self.comm.agent_id}"})
+        return bool((r.get("output") or "").strip())
 
     def step(self) -> list[dict]:
         """Query the LM, execute actions. Polls for inter-agent messages
