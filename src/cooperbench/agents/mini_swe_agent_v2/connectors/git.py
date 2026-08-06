@@ -125,6 +125,20 @@ class GitConnector:
             # Remote might already exist
             self._exec(env, f"git remote set-url {self.REMOTE_NAME} {server}")
 
+        # Verify the remote actually points at the shared server before going any further.
+        # When this silently stays at the upstream clone URL, every `git push origin <agent>`
+        # the agent makes fails with "could not read Username for 'https://github.com'", the
+        # agent has no way to tell that the harness is misconfigured rather than the task being
+        # impossible, and the run ends as an empty patch that reads like an agent failure.
+        # Observed for real: one agent spent 499 steps working, then lost all of it this way.
+        actual = self._exec(env, f"git remote get-url {self.REMOTE_NAME}").get("output", "").strip()
+        if actual != server:
+            raise RuntimeError(
+                f"git remote {self.REMOTE_NAME} for {self.agent_id} is {actual!r}, expected "
+                f"{server!r}. The agent would be pushing to the upstream repo, not the team "
+                f"server, and could never submit."
+            )
+
         # Create agent's branch
         self._exec(env, f"git checkout -b {self.agent_id}")
 
@@ -200,11 +214,31 @@ class GitConnector:
             .strip()
         )
         if not opened:
-            # Never opening a PR is an agent failure, not something to paper over -- it scores
-            # zero, correctly. Log it so that outcome is attributable afterwards, instead of
-            # being indistinguishable from an agent whose code simply failed the tests.
-            self._logger.info(f"NO PR OPENED by {self.agent_id}: submitting nothing")
-            return ""
+            # No PR, but the branch may still carry pushed commits. The rule this mechanism
+            # exists to enforce is "grade only what the agent PUBLISHED, so the colleague could
+            # see it" -- and a pushed branch satisfies that just as a PR does. Discarding it
+            # would only punish the gap between `git push` and `gh pr create`, which is where
+            # a dying sandbox lands: measured twice in one 10-pair run, both times throwing
+            # away work that was committed and pushed successfully.
+            #
+            # Still zero for an agent that pushed nothing -- that is a genuine non-submission.
+            branch = self._exec(
+                env, f"git ls-remote --heads {self.REMOTE_NAME} refs/heads/{self.agent_id}"
+            ).get("output", "").strip()
+            if not branch:
+                self._logger.info(f"NO PR AND NO BRANCH pushed by {self.agent_id}: submitting nothing")
+                return ""
+            fallback = self._exec(
+                env, f"git --no-pager diff {self._base_sha} {self.REMOTE_NAME}/{self.agent_id}"
+            ).get("output", "") or ""
+            if not fallback.strip():
+                self._logger.info(f"NO PR OPENED by {self.agent_id} and branch is at base: nothing to submit")
+                return ""
+            self._logger.warning(
+                f"NO PR OPENED by {self.agent_id}, falling back to the pushed branch "
+                f"({len(fallback)} bytes). The work was published, so it is graded."
+            )
+            return fallback
         result = self._exec(
             env,
             f"git --no-pager diff {self._base_sha} {self.REMOTE_NAME}/{self.agent_id}",

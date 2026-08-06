@@ -182,9 +182,20 @@ agent:
     gh pr create --title "..." --body "..."
     ```
 
+    Keep the `--body` on one line and plain. If you want backticks, code fences
+    or `$(...)` in it, the shell will try to run them — pipe the body in instead:
+
+    ```bash
+    gh pr create --title "..." --body-file - <<'EOF'
+    ## Description
+    Adds `parse_config()` ...
+    EOF
+    ```
+
     Both PRs are merged and both feature test suites run against the result, so
     your PR must contain only your own work — do not commit your colleague's
-    changes into your branch.
+    changes into your branch. `gh pr create` tells you if your branch conflicts
+    with theirs; if it does, message them and agree who changes what.
 
     End the task (EXACT command required):
 

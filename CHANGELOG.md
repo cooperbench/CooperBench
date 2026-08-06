@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.24] - 2026-08-06
+
+Five submission-path defects found by reading all 20 agent trajectories from a 10-pair
+`flash_10` run. That run scored 0/10 pairs and 6/20 features, and most of the losses were
+mechanical rather than the model failing to write code: three agents did the work and never
+got it counted.
+
+### Fixed
+
+- **A pushed branch is no longer discarded when no PR was opened.** Grading required
+  `refs/tags/pr/<agent>`, so an agent that committed and pushed successfully but died before
+  `gh pr create` returned scored zero with its work sitting on the remote. Measured twice in
+  one run, both times a Modal sandbox shutting down between the two commands; in one case the
+  discarded patch was exactly what the failing assertion (`assert 'CMYK' == 'RGB'`) needed.
+  `submitted_patch()` now falls back to the branch diff. The rule this mechanism exists to
+  enforce — grade only what was *published*, so the colleague could see it — is satisfied by a
+  pushed branch just as it is by a PR. An agent that pushed nothing still scores zero.
+
+- **A misconfigured `origin` fails loudly instead of silently.** In one pair `origin` was still
+  `https://github.com/go-chi/chi.git`, so every `git push origin agent2` failed with
+  `could not read Username`. The agent had no way to distinguish a broken harness from an
+  impossible task and lost 499 steps of work; the run recorded an empty patch, which reads as
+  an agent failure. `setup()` now verifies `git remote get-url origin` against the team server
+  and raises, matching how a missing `gh` shim is already treated.
+
+- **`gh pr create` reports a conflicting peer branch.** Both PRs are merged before either
+  feature suite runs, so a collision fails *both* agents — and nothing said so until scoring.
+  Agents do not catch this themselves: one pair listed each other's open PRs, saw both, and
+  still shipped conflicting edits to the same region. The shim now runs `git merge-tree` against
+  each peer branch and says where to look. Guarded by a capability probe, since `--write-tree`
+  needs git ≥ 2.38 and older git would report a conflict on every PR.
+
+- **PR bodies containing markdown no longer kill the command.** Inside double quotes bash runs
+  backticks as command substitution, so a body describing `` `parse()` `` died with `rc=137` and
+  "command not found" for every identifier, before `gh` was reached. `--body-file -` reads the
+  body from stdin; the prompt shows the heredoc form.
+
+- **Ending the episode with unshared work is refused.** `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
+  and actually submitting were separate acts, so an agent could finish the task, verify its tests,
+  announce "all changes are complete", fire the sentinel, and publish nothing — indistinguishable
+  at grading from an agent that wrote no code. One agent did this after **943 steps**. If there is
+  no PR and either a dirty tree or unpushed commits, the agent is given the exact submit sequence
+  and the episode continues; capped at two nudges, after which ending empty is its own choice.
+
 ## [0.0.23] - 2026-08-05
 
 ### Changed
