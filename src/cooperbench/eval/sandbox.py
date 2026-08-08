@@ -393,6 +393,116 @@ def test_solo(
         sb.terminate()
 
 
+def test_solo_n(
+    repo_name: str,
+    task_id: int,
+    feature_ids: list[int],
+    patch: str | Path | None = None,
+    timeout: int = 600,
+    backend: str = "docker",
+    dataset_dir: Path | str | None = None,
+) -> dict:
+    """Test a solo patch against N features' tests.
+
+    Generalisation of :func:`test_solo` — one agent implements all N features
+    in a single patch, tested against each feature's suite separately.
+
+    Returns a dict with:
+      - features: {str(fid): {feature_id, passed, ...}} for all N features
+      - all_passed: bool
+      - feature1/feature2/both_passed (only when N == 2, for backward compat)
+      - setting, patch_lines, error
+    """
+    if len(feature_ids) < 2:
+        return _solo_n_error_result("test_solo_n requires at least 2 features", feature_ids)
+
+    root = Path(dataset_dir) if dataset_dir is not None else DEFAULT_DATASET_DIR
+    task_dir = root / repo_name / f"task{task_id}"
+
+    tests_paths = [task_dir / f"feature{fid}" / "tests.patch" for fid in feature_ids]
+    for tp in tests_paths:
+        if not tp.exists():
+            return _solo_n_error_result(f"Tests patch not found: {tp}", feature_ids)
+
+    patch_content = _load_patch(patch) or ""
+    patch_content = _filter_test_files(patch_content)
+
+    tests_contents = [tp.read_text() for tp in tests_paths]
+
+    image = get_image_name(repo_name, task_id)
+    eval_backend = get_backend(backend)
+    sb = eval_backend.create_sandbox(image, timeout)
+
+    try:
+        result = sb.exec("bash", "-c", "cd /workspace/repo && git rev-parse HEAD")
+        base_sha = result.stdout_read().strip()
+        if not base_sha:
+            return _solo_n_error_result("Failed to get base commit SHA", feature_ids)
+
+        _write_patch(sb, "solo.patch", patch_content)
+        for i, tc in enumerate(tests_contents, start=1):
+            _write_patch(sb, f"tests{i}.patch", tc)
+
+        features_out = {}
+        for i, fid in enumerate(feature_ids, start=1):
+            r = _run_tests(sb, f"tests{i}.patch", "solo.patch", base_sha)
+            features_out[str(fid)] = {
+                "feature_id": fid,
+                "passed": r["passed"],
+                "exit_code": r.get("exit_code"),
+                "tests_passed": r.get("tests_passed", 0),
+                "tests_failed": r.get("tests_failed", 0),
+                "test_output": r["output"],
+            }
+
+        all_passed = all(v["passed"] for v in features_out.values())
+        out: dict = {
+            "setting": "solo",
+            "patch_lines": len(patch_content.splitlines()) if patch_content else 0,
+            "features": features_out,
+            "all_passed": all_passed,
+            "error": None,
+        }
+        if len(feature_ids) == 2:
+            f1, f2 = feature_ids
+            out["feature1"] = features_out[str(f1)]
+            out["feature2"] = features_out[str(f2)]
+            out["both_passed"] = all_passed
+        return out
+    except Exception as e:
+        return _solo_n_error_result(str(e), feature_ids)
+    finally:
+        sb.terminate()
+
+
+def _solo_n_error_result(error: str, feature_ids: list[int]) -> dict:
+    """Error result for test_solo_n with N-feature schema."""
+    features_out = {
+        str(fid): {
+            "feature_id": fid,
+            "passed": False,
+            "exit_code": None,
+            "tests_passed": 0,
+            "tests_failed": 0,
+            "test_output": "",
+        }
+        for fid in feature_ids
+    }
+    result: dict = {
+        "setting": "solo",
+        "patch_lines": 0,
+        "features": features_out,
+        "all_passed": False,
+        "error": error,
+    }
+    if len(feature_ids) == 2:
+        f1, f2 = feature_ids
+        result["feature1"] = features_out[str(f1)]
+        result["feature2"] = features_out[str(f2)]
+        result["both_passed"] = False
+    return result
+
+
 def test_merged_n(
     repo_name: str,
     task_id: int,

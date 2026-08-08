@@ -198,3 +198,96 @@ class TestEvaluateSingleTeamRouting:
         mock_n.assert_not_called()
         assert result["setting"] == "coop"
 
+    def test_coop_setting_3_agents_calls_test_merged_n(self, tmp_path):
+        """Coop with N>2 agents must route to test_merged_n."""
+        run_info = self._make_run_info(tmp_path, [1, 2, 3], setting="coop")
+        fake_result = {
+            "apply_status": {"agent1": "applied", "agent2": "applied", "agent3": "applied"},
+            "merge": {"status": "clean", "strategy": "sequential-fold", "steps": [], "diff": ""},
+            "features": {
+                "1": {"feature_id": 1, "passed": True, "exit_code": 0, "tests_passed": 1, "tests_failed": 0, "test_output": ""},
+                "2": {"feature_id": 2, "passed": True, "exit_code": 0, "tests_passed": 1, "tests_failed": 0, "test_output": ""},
+                "3": {"feature_id": 3, "passed": False, "exit_code": 1, "tests_passed": 0, "tests_failed": 1, "test_output": ""},
+            },
+            "all_passed": False,
+            "error": None,
+        }
+
+        with patch("cooperbench.eval.evaluate.test_merged_n", return_value=fake_result) as mock_n, \
+             patch("cooperbench.eval.evaluate.test_merged") as mock_2:
+            result = _evaluate_single(run_info, force=True)
+
+        mock_n.assert_called_once()
+        mock_2.assert_not_called()
+        assert mock_n.call_args.kwargs["feature_ids"] == [1, 2, 3]
+        assert result["setting"] == "coop"
+        assert result["all_passed"] is False
+        assert "features_result" in result
+        assert "feature1" not in result
+        assert "both_passed" not in result
+
+
+class TestEvaluateSingleSoloRouting:
+    """Tests that _evaluate_single routes solo setting to the right eval fn."""
+
+    def _make_run_info(self, tmp_path: Path, features: list[int]) -> dict:
+        log_dir = tmp_path / "logs" / "myrun" / "solo" / "repo_task" / "1" / "_".join(f"f{f}" for f in features)
+        log_dir.mkdir(parents=True)
+        (log_dir / "solo.patch").write_text("the solo patch")
+        return {
+            "log_dir": str(log_dir),
+            "setting": "solo",
+            "repo": "repo_task",
+            "task_id": 1,
+            "features": features,
+        }
+
+    def test_solo_setting_2_features_still_calls_test_solo(self, tmp_path):
+        """Solo with 2 features must keep using the legacy test_solo path."""
+        run_info = self._make_run_info(tmp_path, [1, 2])
+        fake_result = {
+            "setting": "solo",
+            "patch_lines": 1,
+            "feature1": {"passed": True, "test_output": ""},
+            "feature2": {"passed": True, "test_output": ""},
+            "both_passed": True,
+            "error": None,
+        }
+
+        with patch("cooperbench.eval.evaluate.test_solo", return_value=fake_result) as mock_2, \
+             patch("cooperbench.eval.evaluate.test_solo_n") as mock_n:
+            result = _evaluate_single(run_info, force=True)
+
+        mock_2.assert_called_once()
+        mock_n.assert_not_called()
+        assert result["setting"] == "solo"
+        assert result["both_passed"] is True
+
+    def test_solo_setting_3_features_calls_test_solo_n(self, tmp_path):
+        """Solo with N>2 features must route to test_solo_n."""
+        run_info = self._make_run_info(tmp_path, [1, 2, 3])
+        fake_result = {
+            "setting": "solo",
+            "patch_lines": 1,
+            "features": {
+                "1": {"feature_id": 1, "passed": True, "exit_code": 0, "tests_passed": 1, "tests_failed": 0, "test_output": ""},
+                "2": {"feature_id": 2, "passed": True, "exit_code": 0, "tests_passed": 1, "tests_failed": 0, "test_output": ""},
+                "3": {"feature_id": 3, "passed": True, "exit_code": 0, "tests_passed": 1, "tests_failed": 0, "test_output": ""},
+            },
+            "all_passed": True,
+            "error": None,
+        }
+
+        with patch("cooperbench.eval.evaluate.test_solo_n", return_value=fake_result) as mock_n, \
+             patch("cooperbench.eval.evaluate.test_solo") as mock_2:
+            result = _evaluate_single(run_info, force=True)
+
+        mock_n.assert_called_once()
+        mock_2.assert_not_called()
+        assert mock_n.call_args.kwargs["feature_ids"] == [1, 2, 3]
+        assert result["setting"] == "solo"
+        assert result["all_passed"] is True
+        assert "features_result" in result
+        assert "feature1" not in result
+        assert "both_passed" not in result
+

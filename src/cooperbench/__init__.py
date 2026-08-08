@@ -13,7 +13,7 @@ Or use as library:
 """
 
 from cooperbench.__about__ import __version__
-from cooperbench.eval import discover_runs, evaluate, evaluate_merge, test_merged, test_solo
+from cooperbench.eval import discover_runs, evaluate, evaluate_merge, test_merged, test_merged_n, test_solo, test_solo_n
 from cooperbench.runner import discover_tasks, run
 
 __all__ = [
@@ -23,6 +23,8 @@ __all__ = [
     "evaluate",
     "discover_runs",
     "test_merged",
+    "test_merged_n",
     "test_solo",
+    "test_solo_n",
     "evaluate_merge",
 ]

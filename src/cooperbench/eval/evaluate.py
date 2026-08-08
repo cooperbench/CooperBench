@@ -9,7 +9,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 
 from cooperbench.eval.runs import discover_runs
-from cooperbench.eval.sandbox import _sanitize_patch, test_merged, test_merged_n, test_solo
+from cooperbench.eval.sandbox import _sanitize_patch, test_merged, test_merged_n, test_solo, test_solo_n
 from cooperbench.runner.tasks import DEFAULT_DATASET_DIR, DEFAULT_LOGS_DIR
 from cooperbench.utils import console
 
@@ -183,53 +183,39 @@ def _run_gcp_batch(
     tasks = []
     for i, run_info in enumerate(runs):
         task_dir = root / run_info["repo"] / f"task{run_info['task_id']}"
-        f1, f2 = run_info["features"]
-
-        tests1_path = task_dir / f"feature{f1}" / "tests.patch"
-        tests2_path = task_dir / f"feature{f2}" / "tests.patch"
+        features = run_info["features"]
 
         # Load test patches (with sanitization for newlines etc)
-        tests1_patch = _sanitize_patch(tests1_path.read_text()) if tests1_path.exists() else ""
-        tests2_patch = _sanitize_patch(tests2_path.read_text()) if tests2_path.exists() else ""
+        tests_patches = []
+        for fid in features:
+            tests_path = task_dir / f"feature{fid}" / "tests.patch"
+            tests_patches.append(_sanitize_patch(tests_path.read_text()) if tests_path.exists() else "")
 
         setting = run_info["setting"]
         log_dir = run_info["log_dir"]
 
-        # GCP batch does not yet support N>2 team runs
-        if setting == "team" and len(run_info["features"]) > 2:
-            console.print(
-                f"[yellow]skip[/yellow] {run_info['repo']}/{run_info['task_id']} "
-                f"— GCP batch eval not supported for team runs with >2 agents"
-            )
-            continue
-
         if setting == "solo":
-            # Solo mode: single patch for both features
+            # Solo mode: single patch covering all features
             patch_file = Path(log_dir) / "solo.patch"
-            patch1 = _load_patch(patch_file) if patch_file.exists() else ""
-            patch1 = _filter_test_files(patch1) if patch1 else ""
-            patch2 = ""
+            patch = _load_patch(patch_file) if patch_file.exists() else ""
+            patches = [_filter_test_files(patch) if patch else ""]
         else:
-            # Coop mode: separate patches from each agent
-            patch1_file = Path(log_dir) / f"agent{f1}.patch"
-            patch2_file = Path(log_dir) / f"agent{f2}.patch"
-            patch1 = _load_patch(patch1_file) if patch1_file.exists() else ""
-            patch2 = _load_patch(patch2_file) if patch2_file.exists() else ""
-            patch1 = _filter_test_files(patch1) if patch1 else ""
-            patch2 = _filter_test_files(patch2) if patch2 else ""
+            # Coop/team mode: separate patch from each agent
+            patches = []
+            for fid in features:
+                patch_file = Path(log_dir) / f"agent{fid}.patch"
+                patch = _load_patch(patch_file) if patch_file.exists() else ""
+                patches.append(_filter_test_files(patch) if patch else "")
 
         task = EvalTask(
             task_index=i,
             repo_name=run_info["repo"],
             task_id=run_info["task_id"],
-            feature1_id=f1,
-            feature2_id=f2,
             setting=setting,
             log_dir=log_dir,
-            patch1=patch1,
-            patch2=patch2,
-            tests1_patch=tests1_patch,
-            tests2_patch=tests2_patch,
+            feature_ids=features,
+            patches=patches,
+            tests_patches=tests_patches,
         )
         tasks.append(task)
 
@@ -272,30 +258,46 @@ def _run_gcp_batch(
         feat_str = ",".join(str(f) for f in run_info["features"])
         task_name = f"{run_info['repo']}/{run_info['task_id']}"
 
+        features = batch_result.features
+        features_passed = batch_result.features_passed or []
+        features_output = batch_result.features_output or []
+
         # Build eval_result for saving
+        features_result = {
+            str(fid): {
+                "feature_id": fid,
+                "passed": features_passed[i] if i < len(features_passed) else False,
+                "test_output": features_output[i] if i < len(features_output) else "",
+            }
+            for i, fid in enumerate(features)
+        }
         eval_result = {
             "repo": batch_result.repo_name,
             "task_id": batch_result.task_id,
-            "features": batch_result.features,
+            "features": features,
             "setting": batch_result.setting,
             "merge": {
                 "status": batch_result.merge_status,
                 "strategy": batch_result.merge_strategy,
             }
-            if batch_result.setting == "coop"
+            if batch_result.setting in ("coop", "team")
             else None,
-            "feature1": {
-                "passed": batch_result.feature1_passed,
-                "test_output": batch_result.feature1_output or "",
-            },
-            "feature2": {
-                "passed": batch_result.feature2_passed,
-                "test_output": batch_result.feature2_output or "",
-            },
-            "both_passed": batch_result.both_passed,
+            "features_result": features_result,
+            "all_passed": batch_result.all_passed,
             "error": batch_result.error,
             "evaluated_at": datetime.now().isoformat(),
         }
+        # Dual-write legacy keys for 2-agent runs
+        if len(features) == 2:
+            eval_result["feature1"] = {
+                "passed": batch_result.feature1_passed,
+                "test_output": batch_result.feature1_output or "",
+            }
+            eval_result["feature2"] = {
+                "passed": batch_result.feature2_passed,
+                "test_output": batch_result.feature2_output or "",
+            }
+            eval_result["both_passed"] = batch_result.both_passed
 
         # Save eval.json
         log_dir = Path(run_info["log_dir"])
@@ -307,16 +309,18 @@ def _run_gcp_batch(
             errors += 1
             status = "error"
             console.print(f"[yellow]✗ error[/yellow] {task_name} [dim]{batch_result.error}[/dim]")
-        elif batch_result.both_passed:
+        elif batch_result.all_passed:
             passed += 1
             status = "pass"
             console.print(f"[green]✓ pass[/green] {task_name} [dim][{feat_str}][/dim]")
         else:
             failed += 1
             status = "fail"
-            f1 = "[green]✓[/green]" if batch_result.feature1_passed else "[red]✗[/red]"
-            f2 = "[green]✓[/green]" if batch_result.feature2_passed else "[red]✗[/red]"
-            console.print(f"[red]✗ fail[/red] {task_name} [dim][{feat_str}][/dim] f1:{f1} f2:{f2}")
+            icons = " ".join(
+                f"f{fid}:" + ("[green]✓[/green]" if features_result[str(fid)]["passed"] else "[red]✗[/red]")
+                for fid in features
+            )
+            console.print(f"[red]✗ fail[/red] {task_name} [dim][{feat_str}][/dim] {icons}")
 
         results.append({"run": f"{task_name}/{feat_str}", "status": status})
 
@@ -343,8 +347,8 @@ def _evaluate_single(
     features = run_info["features"]
     f1, f2 = features[0], features[1]
 
-    if setting == "solo":
-        # Solo evaluation
+    if setting == "solo" and len(features) == 2:
+        # Solo evaluation (legacy 2-feature path)
         patch_file = log_dir / "solo.patch"
         patch = patch_file.read_text() if patch_file.exists() else ""
 
@@ -370,18 +374,16 @@ def _evaluate_single(
             "error": result.get("error"),
             "evaluated_at": datetime.now().isoformat(),
         }
-    elif setting == "team":
-        # Team evaluation — N agents, one patch per feature
-        team_patches = []
-        for fid in features:
-            pf = log_dir / f"agent{fid}.patch"
-            team_patches.append(pf.read_text() if pf.exists() else "")
+    elif setting == "solo":
+        # Solo evaluation — one patch, N features
+        patch_file = log_dir / "solo.patch"
+        patch = patch_file.read_text() if patch_file.exists() else ""
 
-        result = test_merged_n(
+        result = test_solo_n(
             repo_name=repo,
             task_id=task_id,
             feature_ids=features,
-            patches=team_patches,
+            patch=patch,
             backend=backend,
             dataset_dir=dataset_dir,
         )
@@ -390,21 +392,15 @@ def _evaluate_single(
             "repo": repo,
             "task_id": task_id,
             "features": features,
-            "setting": "team",
-            "apply_status": result.get("apply_status"),
-            "merge": result.get("merge", {}),
+            "setting": "solo",
+            "merge": None,
             "features_result": result.get("features", {}),
             "all_passed": result.get("all_passed", False),
             "error": result.get("error"),
             "evaluated_at": datetime.now().isoformat(),
         }
-        # Dual-write legacy keys for 2-agent team runs
-        if len(features) == 2:
-            eval_result["feature1"] = result.get("feature1", {})
-            eval_result["feature2"] = result.get("feature2", {})
-            eval_result["both_passed"] = result.get("both_passed", False)
-    else:
-        # Coop evaluation - merge two agent patches
+    elif setting == "coop" and len(features) == 2:
+        # Coop evaluation (legacy 2-agent path) - merge two agent patches
         patch1_file = log_dir / f"agent{f1}.patch"
         patch2_file = log_dir / f"agent{f2}.patch"
 
@@ -435,6 +431,39 @@ def _evaluate_single(
             "error": result.get("error"),
             "evaluated_at": datetime.now().isoformat(),
         }
+    else:
+        # Team (any N) or coop with N>2 — N agents, one patch per feature
+        agent_patches = []
+        for fid in features:
+            pf = log_dir / f"agent{fid}.patch"
+            agent_patches.append(pf.read_text() if pf.exists() else "")
+
+        result = test_merged_n(
+            repo_name=repo,
+            task_id=task_id,
+            feature_ids=features,
+            patches=agent_patches,
+            backend=backend,
+            dataset_dir=dataset_dir,
+        )
+
+        eval_result = {
+            "repo": repo,
+            "task_id": task_id,
+            "features": features,
+            "setting": setting,
+            "apply_status": result.get("apply_status"),
+            "merge": result.get("merge", {}),
+            "features_result": result.get("features", {}),
+            "all_passed": result.get("all_passed", False),
+            "error": result.get("error"),
+            "evaluated_at": datetime.now().isoformat(),
+        }
+        # Dual-write legacy keys for 2-agent runs
+        if len(features) == 2:
+            eval_result["feature1"] = result.get("feature1", {})
+            eval_result["feature2"] = result.get("feature2", {})
+            eval_result["both_passed"] = result.get("both_passed", False)
 
     # Save result
     with open(eval_file, "w") as f:
@@ -481,7 +510,7 @@ def _run_with_progress(runs: list, eval_run, concurrency: int) -> tuple:
                     elif result.get("error"):
                         errors += 1
                         status = "error"
-                    elif result.get("both_passed"):
+                    elif result.get("both_passed") or result.get("all_passed"):
                         passed += 1
                         status = "pass"
                     else:

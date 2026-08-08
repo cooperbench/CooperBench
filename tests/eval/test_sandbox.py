@@ -20,6 +20,7 @@ from cooperbench.eval.sandbox import (
     _sanitize_patch,
     _setup_branches_n,
     _solo_error_result,
+    _solo_n_error_result,
 )
 
 
@@ -497,6 +498,59 @@ class TestTestMergedNSignature:
     def test_dual_write_legacy_keys_for_two_agents(self):
         """test_merged_n source must dual-write feature1/feature2/both_passed for N==2."""
         src = inspect.getsource(_sandbox_module.test_merged_n)
+        assert "feature1" in src
+        assert "feature2" in src
+        assert "both_passed" in src
+
+
+class TestSoloNErrorResult:
+    """Tests for _solo_n_error_result helper."""
+
+    def test_two_feature_ids_includes_legacy_keys(self):
+        """2-feature error result must include legacy feature1/feature2/both_passed."""
+        result = _solo_n_error_result("boom", [3, 7])
+        assert result["setting"] == "solo"
+        assert result["error"] == "boom"
+        assert result["all_passed"] is False
+        assert "feature1" in result
+        assert "feature2" in result
+        assert result["both_passed"] is False
+        assert result["features"]["3"]["passed"] is False
+        assert result["features"]["7"]["passed"] is False
+
+    def test_three_feature_ids_no_legacy_keys(self):
+        """3-feature error result must NOT include feature1/feature2/both_passed."""
+        result = _solo_n_error_result("boom", [1, 2, 3])
+        assert result["error"] == "boom"
+        assert result["all_passed"] is False
+        assert "feature1" not in result
+        assert "feature2" not in result
+        assert "both_passed" not in result
+        assert len(result["features"]) == 3
+
+
+class TestTestSoloNSignature:
+    """Verify test_solo_n has the expected signature and source-level invariants."""
+
+    def test_function_exists_and_is_callable(self):
+        assert callable(_sandbox_module.test_solo_n)
+
+    def test_signature_has_feature_ids_and_patch(self):
+        sig = inspect.signature(_sandbox_module.test_solo_n)
+        params = list(sig.parameters)
+        assert "feature_ids" in params
+        assert "patch" in params
+        assert "repo_name" in params
+        assert "task_id" in params
+
+    def test_rejects_fewer_than_two_features(self):
+        result = _sandbox_module.test_solo_n("repo", 1, [1], patch="")
+        assert result["error"] is not None
+        assert result["all_passed"] is False
+
+    def test_dual_write_legacy_keys_for_two_features(self):
+        """test_solo_n source must dual-write feature1/feature2/both_passed for N==2."""
+        src = inspect.getsource(_sandbox_module.test_solo_n)
         assert "feature1" in src
         assert "feature2" in src
         assert "both_passed" in src
