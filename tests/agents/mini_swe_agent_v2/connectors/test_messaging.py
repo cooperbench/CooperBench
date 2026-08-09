@@ -112,3 +112,86 @@ class TestMessagingConnector:
             url=f"{redis_url}#namespace1",
         )
         assert conn_ns1_receiver.peek() == 0
+
+
+class TestPeerExit:
+    """A peer that finishes must stop looking like a live correspondent.
+
+    Before this, ``send`` to a departed agent returned success, the message sat unread
+    in Redis forever, and ``--wait`` blocked for its full timeout on a reply that could
+    never arrive.  Observed in a real run: one agent sent three messages (two blocking)
+    to a colleague that had already submitted, was told "Message sent" each time,
+    concluded coordination was "ongoing", and shipped a conflicting patch.
+    """
+
+    @pytest.fixture
+    def alice(self, redis_url):
+        return MessagingConnector(agent_id="agent1", agents=["agent1", "agent2"], url=f"{redis_url}#test:exit")
+
+    @pytest.fixture
+    def bob(self, redis_url):
+        return MessagingConnector(agent_id="agent2", agents=["agent1", "agent2"], url=f"{redis_url}#test:exit")
+
+    def test_send_to_live_peer_reports_delivered(self, alice, bob):
+        assert alice.send("agent2", "still here?") is True
+        assert len(bob.receive()) == 1
+
+    def test_send_to_exited_peer_reports_not_delivered(self, alice, bob):
+        bob.mark_exited()
+        assert alice.send("agent2", "are you there?") is False
+        assert bob.peek() == 0, "message must not be queued for an agent that has left"
+
+    def test_has_exited_tracks_state(self, alice, bob):
+        assert alice.has_exited("agent2") is False
+        bob.mark_exited()
+        assert alice.has_exited("agent2") is True
+
+    def test_published_flag_distinguishes_publish_success(self, alice, bob):
+        bob.mark_exited(published=False)
+        assert alice.has_exited("agent2") is True
+        assert alice.has_published("agent2") is False, (
+            "a failed publish must not be reported as work available on the remote"
+        )
+
+    def test_published_flag_set_when_publish_succeeded(self, alice, bob):
+        bob.mark_exited(published=True)
+        assert alice.has_published("agent2") is True
+
+    def test_send_and_wait_returns_immediately_when_peer_gone(self, alice, bob):
+        import time as _t
+
+        bob.mark_exited()
+        start = _t.monotonic()
+        delivered, replies = alice.send_and_wait("agent2", "hello?", timeout=60)
+        elapsed = _t.monotonic() - start
+        assert delivered is False
+        assert replies == []
+        assert elapsed < 5, f"must not block on a departed peer (took {elapsed:.1f}s)"
+
+    def test_send_and_wait_stops_when_peer_exits_mid_wait(self, alice, bob):
+        import threading
+        import time as _t
+
+        threading.Timer(1.0, bob.mark_exited).start()
+        start = _t.monotonic()
+        delivered, replies = alice.send_and_wait("agent2", "still working?", timeout=60)
+        elapsed = _t.monotonic() - start
+        assert delivered is True, "peer was alive at send time"
+        assert replies == []
+        assert elapsed < 10, f"must abandon the wait once the peer exits (took {elapsed:.1f}s)"
+
+    def test_send_and_wait_returns_reply(self, alice, bob):
+        import threading
+
+        threading.Timer(0.5, lambda: bob.send("agent1", "yes, editing core.py")).start()
+        delivered, replies = alice.send_and_wait("agent2", "what are you editing?", timeout=30)
+        assert delivered is True
+        assert len(replies) == 1
+        assert replies[0]["content"] == "yes, editing core.py"
+
+    def test_fresh_connector_clears_stale_exit_marker(self, redis_url):
+        first = MessagingConnector(agent_id="agent2", agents=["agent1", "agent2"], url=f"{redis_url}#test:stale")
+        first.mark_exited()
+        # a new run reuses the agent id; it must not start out looking departed
+        second = MessagingConnector(agent_id="agent2", agents=["agent1", "agent2"], url=f"{redis_url}#test:stale")
+        assert second.has_exited("agent2") is False

@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.23] - 2026-08-05
+
+### Changed
+
+- **`mini_swe_agent_v2` submits a pull request instead of writing `patch.txt`.** Submission was a unified diff the agent wrote to a local file, which nothing else could see — so the artifact that got graded was decoupled from anything a colleague could read, and an agent could submit work it had never shared. The agent now commits what it wants to submit, pushes its branch, and opens a PR; the PR is what is graded. A `gh` shim (`connectors/gh_shim.sh`) implements `gh pr create/list/view/diff/checkout` over the shared remote using plain git, so agents use the spelling they already know rather than a command invented for this benchmark. A PR **tracks its branch**, as on a forge: agents are told to open one early so a colleague has context, and later commits are included once pushed.
+
+  Consequences worth knowing: an agent that never opens a PR submits nothing and scores zero — that is an agent failure, and it is logged (`NO PR OPENED by <agent>`) so it stays attributable rather than looking like failed tests. Solo runs use the same path against a bare repo inside their own sandbox, so there is one submission mechanism rather than two that can drift. Both prompts got *smaller*: `patch.txt` needed ~30 lines teaching a diff incantation that exists nowhere in real engineering, while `gh pr create` needs none.
+
+- **The shared remote is now `origin`, and the clone's upstream is removed.** It was `team`, while `origin` pointed at github.com and was unreachable — so the name agents reach for by reflex was the one that could not work.
+
+### Fixed
+
+- **Coop agents could read the entire upstream history, including the commits that came after the task commit.** A task image runs `git clone <upstream> && git checkout <task-sha>`, which leaves every later commit reachable through `refs/remotes/origin/*`, tags, and the local branch the clone left at the tip — `git checkout <sha>` only detaches HEAD, it does not move that branch. For any task derived from a real pull request, `git log --all -p` could therefore show the upstream implementation of the feature the agent was being asked to write. Setup now removes the remote, deletes remote refs, tags and leftover local branches, expires the reflog and prunes, so those objects are gone from the object database rather than merely unreferenced (verified with `git cat-file -e`). History *before* the task commit is kept — that is ordinary context, and `git log` still works.
+
+- **A submission could be silently re-baselined by anyone pushing to `main`.** Submissions were diffed against `origin/main`, a movable ref on a daemon that runs `--enable=receive-pack` with no access control. One `git push origin HEAD:main`, from either agent, would change what both submissions contained. The base commit is now pinned at setup.
+
+- **A failed `gh` shim install was a log warning.** Submission goes through `gh pr create`, so a sandbox without the shim cannot submit at all — and it would have surfaced hours later as an empty patch, indistinguishable from an agent that simply failed the task. Setup now raises.
+
+### Fixed
+
+- **Coop agents were told the shared git remote was read-only, so they never shared code.** The prompt titled the section "Shared Git Remote (read-only)", listed only `fetch`/`log`/`diff` under "Allowed (read-only)", never mentioned `push`, and instructed *"Do not merge, pull, or rebase their branch into yours"*. Both claims are wrong: `GitConnector` runs `git daemon --enable=receive-pack`, so the remote accepts writes, and grading never reads those branches — the evaluator applies each agent's submitted `patch.txt` to branches it creates itself (`eval/sandbox.py:473,480`). Measured across **117 trajectories in three `flash_10` runs: 292 `git fetch team` and 0 `git push team`.** Every one of those fetches returned the untouched baseline, because 0.0.22 only publishes an agent's patch at exit — by which point the peer can no longer act on it. Agents were following their instructions exactly; the instructions disabled the channel.
+
+  This prompt was the only surface that said so. `GitConnector`'s own docstring already advertised `git push team <branch>` and `git merge team/<agent>`, and the shared coop prompt used by the `claude_code` / `codex` adapters (`agents/_coop/prompt.py`) already instructs agents to commit and "push so peers can fetch you". Only `mini_swe_agent_v2`'s coop config disagreed with the infrastructure it runs on.
+
+  The section now describes a real read/write remote, tells agents to commit and `git push team HEAD:<agent_id>` as they work so a colleague can read their actual diff, and replaces the blanket prohibition with the one constraint that genuinely matters: **the submitted `patch.txt` must contain only that agent's own changes**, since the two submitted patches are merged and duplicated edits break the merge. Local `fetch`/`merge`/`cherry-pick` are now explicitly allowed — the rule is about what you submit, not what you do in your worktree — with `git diff -- <paths>` given as the way to scope a patch when both agents had to touch the same file.
+
+### Changed
+
+- Exit-time publication of `patch.txt` to `team/<agent_id>` (added in 0.0.22) is unchanged and still runs; it is now described as the *final* state of a branch agents are expected to have been pushing to all along, rather than the only thing that branch ever holds.
+
+## [0.0.22] - 2026-08-04
+
+### Fixed
+
+- **A coop agent that finished could not be distinguished from one that was ignoring you.** When an agent submitted and exited, its peer kept talking to a mailbox nobody would ever read again: `MessagingConnector.send` queued into Redis and returned success unconditionally, with no liveness check. Measured over 8 `flash_10` pairs, **16 messages sent / 11 delivered (31% lost)**; in `pallets_click_task/2800/f1_f7` all 3 were lost — sent 35s after the peer's final turn. The sender was told `Message sent to agent2` (returncode 0) each time, and its own summary recorded *"Coordination with agent2 is ongoing … no expected conflicts"* immediately before submitting a patch that merge-conflicted. `send()` now returns `False` for a departed peer and the agent receives a non-zero result naming the cause and the recovery path, rather than a false success.
+
+- **`send_message --wait` was documented but never implemented.** `DefaultAgent._handle_send_message` guarded on `hasattr(self.comm, "send_and_wait")`, and `MessagingConnector` had no such method — so `--wait` silently degraded to fire-and-forget. Agents asking a blocking question got an instant "Message sent" and moved on. `send_and_wait(recipient, content, timeout)` now exists, returns `(delivered, replies)`, and ends the wait as soon as the peer replies **or exits**, instead of burning the full 60s on a reply that cannot arrive.
+
+- **`team/<peer>` never contained the peer's work.** `GitConnector.setup` pushes the base commit once and nothing updates the branch afterwards, while the prompt presents that remote as the sanctioned way to see a colleague's code. Across 19 agent runs there were **zero pushes**: in one pair an agent ran 24 `git fetch` / `git diff team/agent2` commands and saw the untouched baseline every time, then asked its colleague "have you submitted your branch yet?". Each agent now publishes its **submitted patch** (`patch.txt`, the artifact that is actually evaluated — not the working tree, which may differ) to `team/<agent_id>` on exit. It is built in a detached worktree from the pristine base, so the agent's own branch, index and working tree are untouched and a patch is never double-applied when the agent had already committed its work.
+
+### Added
+
+- Peers are told once, in context, when a colleague finishes: `[agent2 has completed their work and exited]`, with the branch to reconcile against. Publication is best-effort, so the exit marker records whether the patch actually reached the remote and the agent is only pointed at that branch when it really holds their submission.
+
+### Changed
+
+- The coop prompt now states what `team/<peer>` holds and when ("stays at the repository's starting state until your colleague submits" — an empty diff early means *not submitted yet*, not *no changes*), that `--wait` can return early, and that a colleague may exit before you do.
+
+## [0.0.21] - 2026-08-04
+
+### Fixed
+
+- **`capture_token_ids` (0.0.20) never produced a capture.** litellm rebuilds each response into its own model; top-level extras survive on `ModelResponse`, but extras on a *choice* are swept into `provider_specific_fields` by `convert_to_model_response_object` — which is where vLLM's per-choice `token_ids` lands. Reading the raw key yielded nothing, and a live run logged the "server returned no token ids" warning on all 816 calls while the server was returning them the whole time. Also documents that this requires an OpenAI-style provider prefix: litellm's Anthropic path uses a different transform that discards both `prompt_token_ids` and `token_ids` outright.
+
+## [0.0.20] - 2026-08-04
+
+### Added
+
+- **Optional `capture_token_ids` on `LitellmModelConfig`** (default `False`, so existing runs are byte-identical). When set, requests carry `extra_body={"return_token_ids": true}` and the ids the server actually used are stored on each assistant message as `extra["token_capture"]`, persisting into the saved trajectory. Reconstructing them afterwards is not equivalent: BPE is non-injective, tool-call serialization can differ between inference and training, and under context compaction the prompt a turn saw no longer exists in the final message list. Requires vLLM >= 0.10.2 or SGLang with `return_token_ids` support.
+
 ## [0.0.19] - 2026-05-25
 
 ### Fixed

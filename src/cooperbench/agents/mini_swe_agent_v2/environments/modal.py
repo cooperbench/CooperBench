@@ -215,9 +215,14 @@ class ModalEnvironment:
             try:
                 if self.sb is None:
                     raise RuntimeError("Sandbox not initialized")
-                proc = self.sb.exec("bash", "-lc", f"cd {cwd} && {command}")
-                stdout = proc.stdout.read()
-                stderr = proc.stderr.read()
+                # text=False so WE decode, leniently. Modal's text mode decodes as strict
+                # UTF-8 and raises on the first non-UTF-8 byte -- and that exception kills the
+                # agent's run. An agent only has to `cat` a binary file once (observed:
+                # `tail -5 .git/index`, byte 0xb3) to end its own episode, which is then
+                # recorded as an ordinary agent error rather than a harness limitation.
+                proc = self.sb.exec("bash", "-lc", f"cd {cwd} && {command}", text=False)
+                stdout = proc.stdout.read().decode("utf-8", errors="replace")
+                stderr = proc.stderr.read().decode("utf-8", errors="replace")
                 proc.wait()
                 output = stdout + stderr if stderr else stdout
                 result = {"output": output, "returncode": proc.returncode, "exception_info": ""}

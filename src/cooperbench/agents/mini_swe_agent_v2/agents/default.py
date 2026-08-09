@@ -16,6 +16,10 @@ from cooperbench.agents.mini_swe_agent_v2.connectors.messaging import MessagingC
 from cooperbench.agents.mini_swe_agent_v2.exceptions import InterruptAgentFlow, LimitsExceeded
 from cooperbench.agents.mini_swe_agent_v2.utils.serialize import recursive_merge
 
+# Name of the shared git remote created by GitConnector.  Referenced in the messages the
+# agent sees, so it must match GitConnector.REMOTE_NAME.
+GIT_REMOTE = "origin"
+
 
 class AgentConfig(BaseModel):
     """Check the config files in config/ for example settings."""
@@ -197,8 +201,25 @@ class DefaultAgent:
             finally:
                 self.save(self.config.output_path)
             if self.messages[-1].get("role") == "exit":
+                if self.comm:
+                    # `published` means "the peer can see my work on the remote". That is now
+                    # true exactly when the agent opened a PR, which it does itself -- there
+                    # is no separate publish step to perform on its behalf.
+                    self.comm.mark_exited(published=self._opened_pr())
                 break
         return self.messages[-1].get("extra", {})
+
+    def _opened_pr(self) -> bool:
+        """Whether this agent's PR exists on the shared remote.
+
+        Replaces `_publish_final_work`, which pushed `patch.txt` to the agent's branch at
+        exit. Submission is now a PR the agent opens itself, so there is nothing left to
+        publish -- that method only logged `no patch.txt to publish` on every run.
+        """
+        if not self.comm:
+            return False
+        r = self.env.execute({"command": f"git ls-remote --tags {GIT_REMOTE} refs/tags/pr/{self.comm.agent_id}"})
+        return bool((r.get("output") or "").strip())
 
     def step(self) -> list[dict]:
         """Query the LM, execute actions. Polls for inter-agent messages
@@ -215,6 +236,7 @@ class DefaultAgent:
                         content=f"[Message from {msg['from']}]: {msg['content']}",
                     )
                 )
+            self._announce_departed_peers()
         # In team mode, also refresh the shared task list so the LLM
         # sees the live state of who's working on what before its next
         # response.  ``team_poller`` is set by the adapter when team
@@ -351,30 +373,110 @@ class DefaultAgent:
             outputs.append(self.env.execute(action))
         return self.add_messages(*self.model.format_observation_messages(message, outputs, self.get_template_vars()))
 
+    def _announce_departed_peers(self) -> None:
+        """Tell the agent, once, when a peer has finished and left.
+
+        Otherwise an agent can spend the rest of its run waiting for an answer from a
+        colleague who is no longer running, with nothing in its context to indicate that.
+        Announced once per peer; the recovery path is named because the peer's work is
+        still reachable through git even though the conversation is over.
+        """
+        if not self.comm:
+            return
+        announced = getattr(self, "_departed_announced", None)
+        if announced is None:
+            announced = self._departed_announced = set()
+        for peer in getattr(self.comm, "agents", []) or []:
+            if peer == self.comm.agent_id or peer in announced:
+                continue
+            if not self.comm.has_exited(peer):
+                continue
+            announced.add(peer)
+            self.log(f"PEER EXITED: {peer}")
+            self.add_messages(
+                self.model.format_message(
+                    role="user",
+                    content=(
+                        f"[{peer} has completed their work and exited] They will not read or "
+                        f"answer further messages.\n\n{self._peer_work_pointer(peer)}"
+                    ),
+                )
+            )
+
+    def _peer_work_pointer(self, peer: str) -> str:
+        """Where to find a departed peer's work — only claimed when it is really there.
+
+        Publication to the shared remote is best-effort, so asserting the branch holds
+        their submission when it does not would repeat exactly the failure this whole
+        change exists to remove: telling the agent something untrue and letting it act
+        on it.
+        """
+        if self.comm and self.comm.has_published(peer):
+            return (
+                f"Their submitted patch is on branch {GIT_REMOTE}/{peer}. If your changes "
+                f"overlap theirs, inspect and reconcile before you submit:\n"
+                f"    git fetch {GIT_REMOTE} && git diff HEAD...{GIT_REMOTE}/{peer}"
+            )
+        return (
+            f"Their work could NOT be published to {GIT_REMOTE}/{peer}, so that branch does "
+            f"not reflect what they submitted — do not rely on it. Proceed on your own "
+            f"judgement and keep your changes as self-contained as you can."
+        )
+
     def _handle_send_message(self, action: dict) -> dict:
         """Handle a send_message call via the messaging connector.
 
-        ``wait=True`` (when the agent wrote ``send_message --wait ...`` in
-        bash) uses ``send_and_wait`` so the peer's reply comes back in the
-        same tool output.
+        ``wait=True`` (when the agent wrote ``send_message --wait ...`` in bash) blocks
+        until the peer replies, the peer exits, or the timeout elapses.
+
+        A send to a peer that has already finished is reported as a failure, not a
+        success.  Reporting success there is actively misleading: the agent believes it
+        has coordinated, keeps waiting for an answer that cannot arrive, and ships work
+        that was never reconciled.
         """
         recipient = action.get("recipient", "")
         content = action.get("content", "")
         wait = action.get("wait", False)
 
         if wait and hasattr(self.comm, "send_and_wait"):
-            replies = self.comm.send_and_wait(recipient, content, timeout=60)
+            delivered, replies = self.comm.send_and_wait(recipient, content, timeout=60)
+            if not delivered:
+                return self._peer_gone_result(recipient)
             self.log(f"SENT (blocking) to {recipient}: {content[:80]}...")
             self.sent_messages.append({"to": recipient, "content": content})
             output = f"Message sent to {recipient}"
-            for r in replies or []:
-                output += f"\n\n[Reply from {r['from']}]: {r['content']}"
+            if replies:
+                for r in replies:
+                    output += f"\n\n[Reply from {r['from']}]: {r['content']}"
+            elif self.comm.has_exited(recipient):
+                output += (
+                    f"\n\nNo reply: {recipient} has since completed their work and exited.\n"
+                    f"{self._peer_work_pointer(recipient)}"
+                )
             return {"output": output, "returncode": 0, "exception_info": ""}
 
-        self.comm.send(recipient, content)
+        if not self.comm.send(recipient, content):
+            return self._peer_gone_result(recipient)
         self.log(f"SENT to {recipient}: {content[:80]}...")
         self.sent_messages.append({"to": recipient, "content": content})
         return {"output": f"Message sent to {recipient}", "returncode": 0, "exception_info": ""}
+
+    def _peer_gone_result(self, recipient: str) -> dict:
+        """Tell the agent its peer is gone, and what to do about it.
+
+        Phrased as a terminal state rather than a delivery error so the agent does not
+        retry, and names the recovery path so the peer's work is still reachable.
+        """
+        self.log(f"NOT DELIVERED to {recipient}: peer already exited")
+        return {
+            "output": (
+                f"{recipient} has already completed their work and exited. Your message was "
+                f"NOT delivered and no reply will come — do not send further messages to "
+                f"them.\n\n{self._peer_work_pointer(recipient)}"
+            ),
+            "returncode": 1,
+            "exception_info": "",
+        }
 
     def serialize(self, *extra_dicts) -> dict:
         """Serialize agent state to a json-compatible nested dictionary for saving."""
