@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.26] - 2026-08-09
+
+### Changed
+
+- **The coop prompt now tells the receiving side that a message may need an answer.** All
+  messaging guidance was written from the sender's point of view — how to use `--wait`, what
+  happens when the peer exits — while the only line describing the receiving side explained
+  the `[Message from ...]` format and nothing more. So `--wait` was asymmetric in practice:
+  the sender paid up to 60s of dead time and the receiver paid nothing for ignoring it.
+
+  Measured in a flash_10 run: one agent sent three `--wait` questions and blocked the full
+  60s on each. Its colleague received all three, ran 22, 13 and 8 steps of pytest/git/sed
+  during those windows, and never replied — costing the sender 3 minutes, ~17% of its
+  wall-clock, for zero information. Phrased as a courtesy ("answer when you can") rather
+  than an instruction, because implementation is still the stated first priority and an
+  agent mid-test-run should be able to finish before replying.
+
 ## [0.0.25] - 2026-08-09
 
 ### Fixed
