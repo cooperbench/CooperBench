@@ -12,6 +12,7 @@ at open time would silently submit a fraction of the work, and nothing downstrea
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -425,3 +426,38 @@ def test_body_with_backticks_survives_via_stdin(team):
     )
     body = gh("pr view agent1", a2, "agent2").stdout
     assert "error_threshold" in body and "quantize()" in body
+
+
+# --- send_message parsing: malformed calls must not silently reach bash -------------------
+
+import importlib
+
+_d = importlib.import_module("cooperbench.agents.mini_swe_agent_v2.agents.default")
+
+
+@pytest.mark.parametrize("cmd", [
+    "send_message --wait agent2 <<'MSG'\nhello there\nMSG",
+    'send_message agent2 "hello there"',
+    "send_message agent2 'hello there'",
+    "send_message agent2 --wait <<'MSG'\nhello\nMSG",
+])
+def test_wellformed_send_message_parses(cmd):
+    assert _d._parse_send_messages(cmd), f"should have parsed: {cmd!r}"
+
+
+@pytest.mark.parametrize("cmd", [
+    "send_message --wait agent2",                      # no body at all
+    "send_message agent2 <<'MSG'\nunterminated body",  # heredoc never closed
+    "send_message agent2 < /tmp/msg.txt",              # body via redirect
+    "send_message -t 60 agent2 'hi'",                  # invented flag
+])
+def test_malformed_send_message_is_not_parsed(cmd):
+    """These are the exact shapes agents wrote that fell through to bash.
+
+    Each one reached the sandbox as `send_message: command not found` (rc 127), so the agent
+    read a shell error as "messaging is broken" and the message was never sent. 7 such losses
+    across two flash_10 runs. The agent loop must return a parse error instead of executing
+    them; this test pins the detection half -- that the parser genuinely does not match them.
+    """
+    assert not _d._parse_send_messages(cmd), f"unexpectedly parsed: {cmd!r}"
+    assert re.search(r"\bsend_message\b", cmd), "the fallthrough guard keys off this"

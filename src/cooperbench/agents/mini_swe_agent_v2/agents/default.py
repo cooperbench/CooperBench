@@ -282,10 +282,18 @@ class DefaultAgent:
             for msg in messages:
                 ts = msg.get("timestamp", "")[:19].replace("T", " ")
                 self.log(f"INBOX: [{msg['from']} @ {ts}] {msg['content']}")
+                # Say so when the sender is stalled on us. Without it the message reads as
+                # ordinary context and gets deprioritised behind the agent's own edit loop.
+                blocked = ""
+                if getattr(self.comm, "is_awaited_by", None) and self.comm.is_awaited_by(msg["from"]):
+                    blocked = (
+                        f" — {msg['from']} is BLOCKED waiting for your reply and cannot continue"
+                        f" until you answer. Reply with send_message before your next command."
+                    )
                 self.add_messages(
                     self.model.format_message(
                         role="user",
-                        content=f"[Message from {msg['from']}]: {msg['content']}",
+                        content=f"[Message from {msg['from']}{blocked}]: {msg['content']}",
                     )
                 )
             self._announce_departed_peers()
@@ -407,6 +415,24 @@ class DefaultAgent:
             cmd = action.get("command", "")
             if self.comm:
                 sm_matches = _parse_send_messages(cmd)
+                if not sm_matches and re.search(r"\bsend_message\b", cmd):
+                    # send_message is parsed out of the command string, not a real binary, so an
+                    # unparsed one reaches bash and dies as `command not found` -- and the agent
+                    # reads that as "messaging is broken" rather than "my quoting was wrong".
+                    # Measured: 7 lost sends across two runs (bare --wait with no body,
+                    # unterminated heredoc, `< file` redirect, `-t 60`, `timeout N bash -c ...`).
+                    outputs.append({
+                        "output": (
+                            "send_message: could not parse that call, so nothing was sent.\n"
+                            "Use one of:\n"
+                            "  send_message [--wait] <agent> <<'MSG'\n  your text\n  MSG\n"
+                            "  send_message [--wait] <agent> \"your text\"\n"
+                            "The message body is required, and --wait takes no argument."
+                        ),
+                        "returncode": 1,
+                        "exception_info": "",
+                    })
+                    continue
                 if sm_matches:
                     sm_outputs = []
                     for recipient, content, wait in sm_matches:
