@@ -129,6 +129,7 @@ class DockerEnvironment:
                 timeout=timeout or self.config.timeout,
                 encoding="utf-8",
                 errors="replace",
+                stdin=subprocess.DEVNULL,  # else a stdin reader (bare `grep`) blocks on ours
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
             )

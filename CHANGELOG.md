@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.25] - 2026-08-09
+
+### Fixed
+
+- **Commands that read stdin no longer hang until the sandbox dies.** Modal's `sandbox.exec`
+  hands the process an stdin pipe that never reaches EOF, so `grep pattern` with no file, a
+  bare `cat`, or `python3` with no script blocked forever — and agents write those by
+  accident routinely. Measured over one 27-pair run: three such calls consumed 3553s, 2353s
+  and 2200s, i.e. 2.25 hours, against a p50 tool call of 0.4s. This is what put the tail of
+  pair durations against the sandbox timeout rather than any slowness in inference (p50
+  1.5s/step) or in the sandbox round trip (p50 0.4s).
+
+  Commands now run under `exec < /dev/null`. Verified in a live sandbox: `grep -n break`
+  goes from 31.2s (killed) to 0.2s. Heredocs are unaffected — a `<< EOF` redirect is
+  per-command and takes precedence. The docker backend gets the same treatment via
+  `stdin=subprocess.DEVNULL`, which is what SWE-ReX's local runtime already does.
+
+- **A per-command timeout backstops what closing stdin cannot** — a genuine infinite loop.
+  `command_timeout` defaults to 300s; the longest legitimate command observed is ~104s
+  (`npm test`). Passed as argv rather than wrapped into the shell string, so nothing needs
+  re-quoting. A timed-out command now returns a message saying so instead of empty output,
+  so the agent can respond to it rather than being confused by a silent empty result.
+
 ## [0.0.24] - 2026-08-06
 
 Five submission-path defects found by reading all 20 agent trajectories from a 10-pair
