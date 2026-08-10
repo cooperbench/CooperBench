@@ -252,9 +252,9 @@ class DefaultAgent:
                     f"You have not submitted anything. Your work is still local ({held}) and "
                     f"no pull request exists, so it would be graded as an empty submission.\n\n"
                     f"    git add <the files you want to submit>\n"
-                    f"    git commit -m \"...\"\n"
+                    f'    git commit -m "..."\n'
                     f"    git push {GIT_REMOTE} HEAD:{agent}\n"
-                    f"    gh pr create --title \"...\" --body \"...\"\n\n"
+                    f'    gh pr create --title "..." --body "..."\n\n'
                     f"Then echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
                 ),
             )
