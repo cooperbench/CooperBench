@@ -59,7 +59,8 @@ agent:
     Tips:
     - A `send_message` by itself is a valid tool call. You do not need to combine it with other commands.
     - You can freely choose `--wait` or regular `send_message` based on what the situation requires.
-    - Messages from your colleague appear as: [Message from ...]: ...
+    - Messages from your colleague appear as: [Message from ...]: ... If they have asked you
+      something, answer when you can — they may be waiting on your reply before continuing.
     - IMPORTANT: Only the system delivers messages from your colleague. Never write `[Message from ...]` yourself.
     - Your colleague may finish and exit before you do. When that happens you are told so explicitly, and any further `send_message` to them fails with a non-zero exit code instead of being silently discarded. Do not keep messaging or waiting after that — reconcile against their published branch and submit.
     {% endif %}
@@ -182,9 +183,20 @@ agent:
     gh pr create --title "..." --body "..."
     ```
 
+    Keep the `--body` on one line and plain. If you want backticks, code fences
+    or `$(...)` in it, the shell will try to run them — pipe the body in instead:
+
+    ```bash
+    gh pr create --title "..." --body-file - <<'EOF'
+    ## Description
+    Adds `parse_config()` ...
+    EOF
+    ```
+
     Both PRs are merged and both feature test suites run against the result, so
     your PR must contain only your own work — do not commit your colleague's
-    changes into your branch.
+    changes into your branch. `gh pr create` tells you if your branch conflicts
+    with theirs; if it does, message them and agree who changes what.
 
     End the task (EXACT command required):
 

@@ -365,3 +365,63 @@ def test_two_submissions_merge_the_way_the_evaluator_merges_them(team, tmp_path)
     run("git merge --no-commit --no-ff agent1", ev)  # must not conflict
 
     assert (ev / "feat_a.py").exists() and (ev / "feat_b.py").exists()
+
+
+def test_conflicting_branch_is_reported_when_the_pr_is_opened(team):
+    """Both PRs are merged before either feature is tested, so a collision fails BOTH agents.
+
+    Nothing used to tell them until the run was scored. Measured in a real 10-pair run: a pair
+    listed each other's open PRs, saw both, and still shipped conflicting edits to the same
+    region. Visibility was not the missing piece -- the merge has to be computed for them.
+    """
+    a1, a2 = team["agent1"], team["agent2"]
+
+    (a1 / "shared.py").write_text("def quantize(im, error_threshold=0.0):\n    return im\n")
+    run("git commit -qam a1", a1)
+    run("git push -q origin HEAD:agent1", a1)
+    gh("pr create --title 'threshold' --body 'x'", a1, "agent1")
+
+    # agent2 edits the SAME line a different way.
+    (a2 / "shared.py").write_text("def quantize(im, palette=None):\n    return im\n")
+    run("git commit -qam a2", a2)
+    out = gh("pr create --title 'palette' --body 'y'", a2, "agent2")
+    combined = out.stdout + out.stderr
+    assert "conflicts with agent1" in combined, f"no conflict warning:\n{combined}"
+
+
+def test_no_conflict_warning_when_the_branches_are_disjoint(team):
+    """A warning on every PR would be noise agents learn to ignore."""
+    a1, a2 = team["agent1"], team["agent2"]
+
+    (a1 / "one.py").write_text("A = 1\n")
+    run("git add -A && git commit -qm a1", a1)
+    run("git push -q origin HEAD:agent1", a1)
+    gh("pr create --title 'one' --body 'x'", a1, "agent1")
+
+    (a2 / "two.py").write_text("B = 2\n")
+    run("git add -A && git commit -qm a2", a2)
+    out = gh("pr create --title 'two' --body 'y'", a2, "agent2")
+    assert "conflicts with" not in (out.stdout + out.stderr)
+
+
+def test_body_with_backticks_survives_via_stdin(team):
+    """A markdown body containing code is the normal thing to write, and it used to be fatal.
+
+    Inside double quotes bash runs backticks as command substitution, so `gh pr create --body
+    "...`parse()`..."` died with rc=137 and "command not found" for every identifier before gh
+    was ever reached. `--body-file -` takes the body off the command line entirely.
+    """
+    a1, a2 = team["agent1"], team["agent2"]
+    (a1 / "shared.py").write_text("def quantize(im, error_threshold=0.0):\n    return im\n")
+    run("git commit -qam a1", a1)
+
+    run(
+        f"sh {SHIM} pr create --title 'adds quantize' --body-file - <<'EOF'\n"
+        "## Description\n"
+        "Adds `error_threshold` to `quantize()` via $(nothing).\n"
+        "EOF\n",
+        a1,
+        agent="agent1",
+    )
+    body = gh("pr view agent1", a2, "agent2").stdout
+    assert "error_threshold" in body and "quantize()" in body

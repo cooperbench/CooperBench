@@ -79,7 +79,8 @@ def _invalidate_image(image_name: str) -> None:
 class ModalEnvironmentConfig(BaseModel):
     image: str
     cwd: str = "/"
-    timeout: int = 3600
+    timeout: int = 3600           # sandbox lifetime
+    command_timeout: int = 300    # per command; longest real one observed is ~104s (npm test)
     env: dict[str, str] = {}
     max_retries: int = 5
     retry_delay: float = 5.0
@@ -220,11 +221,22 @@ class ModalEnvironment:
                 # agent's run. An agent only has to `cat` a binary file once (observed:
                 # `tail -5 .git/index`, byte 0xb3) to end its own episode, which is then
                 # recorded as an ordinary agent error rather than a harness limitation.
-                proc = self.sb.exec("bash", "-lc", f"cd {cwd} && {command}", text=False)
+                # Modal's stdin pipe never reaches EOF, so `grep pattern` with no file (or any
+                # other stdin reader) hangs until the sandbox dies. `timeout` catches infinite
+                # loops, which closing stdin cannot.
+                proc = self.sb.exec(
+                    "timeout", "-k", "10", str(timeout or self.config.command_timeout),
+                    "bash", "-lc", f"exec < /dev/null; cd {cwd} && {command}",
+                    text=False,
+                )
                 stdout = proc.stdout.read().decode("utf-8", errors="replace")
                 stderr = proc.stderr.read().decode("utf-8", errors="replace")
                 proc.wait()
                 output = stdout + stderr if stderr else stdout
+                if proc.returncode == 124:
+                    # Otherwise the agent sees an empty result and no reason for it.
+                    limit = timeout or self.config.command_timeout
+                    output += f"\n[cooperbench] command killed after {limit}s. Re-run it in a form that terminates."
                 result = {"output": output, "returncode": proc.returncode, "exception_info": ""}
                 self._check_finished(result)
                 return result

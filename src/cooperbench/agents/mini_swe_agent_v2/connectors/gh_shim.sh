@@ -51,7 +51,12 @@ cmd_create() {
         case "$1" in
             -t|--title) title="${2:-}"; shift 2 ;;
             -b|--body)  body="${2:-}";  shift 2 ;;
-            -T|--body-file) body="$(cat "${2:-}")"; shift 2 ;;
+            # `-` reads stdin, so a body containing backticks or $(...) can be passed through
+            # a heredoc instead of an interpolated shell argument. Agents write markdown PR
+            # bodies with fenced code in them; inside double quotes bash runs that as command
+            # substitution and the whole call dies (observed: rc=137, "command not found" for
+            # every backticked identifier) before gh is ever reached.
+            -T|--body-file) if [ "${2:-}" = "-" ]; then body="$(cat)"; else body="$(cat "${2:-}")"; fi; shift 2 ;;
             --draft|-d|--fill) shift ;;
             *) shift ;;
         esac
@@ -75,8 +80,35 @@ Switch back with: git checkout $AGENT"
 $body" HEAD >/dev/null
     git push -f -q "$REMOTE" "refs/tags/pr/$AGENT"
     echo "opened PR for $AGENT: $title"
-    echo "further commits are included automatically — push them with: git push team HEAD:$AGENT"
+    echo "further commits are included automatically — push them with: git push $REMOTE HEAD:$AGENT"
     git --no-pager diff --stat "$BASE" HEAD
+
+    # Both PRs get merged before either feature is tested, so a conflict fails BOTH agents --
+    # and nothing tells you until the run is scored. Agents demonstrably do not catch this on
+    # their own: in one measured run a pair listed each other's open PRs and still collided.
+    # Compute the merge here, where there is still time to fix it.
+    git fetch -q "$REMOTE" 2>/dev/null || true
+    # --write-tree needs git >= 2.38. On older git the same non-zero exit means "unknown
+    # option", which would report a conflict on every PR. Probe once against a ref that
+    # cannot conflict with itself: non-zero here means unsupported, so skip the check.
+    if ! git merge-tree --write-tree HEAD HEAD >/dev/null 2>&1; then
+        return 0
+    fi
+    # Note the trailing /*: matching "refs/remotes/$REMOTE" alone also yields the bare remote
+    # name, which survives the sed as "origin" and makes this compare HEAD against
+    # "origin/origin" -- a ref that does not resolve, so merge-tree fails and every PR gets a
+    # conflict warning for a peer that does not exist.
+    for peer in $(git for-each-ref --format='%(refname:short)' "refs/remotes/$REMOTE/*" \
+                  | sed "s|^$REMOTE/||" | grep -vE "^(HEAD|main|$AGENT)$"); do
+        git rev-parse -q --verify "$REMOTE/$peer" >/dev/null 2>&1 || continue
+        if ! git merge-tree --write-tree HEAD "$REMOTE/$peer" >/dev/null 2>&1; then
+            echo
+            echo "WARNING: your branch conflicts with $peer's."
+            echo "Both PRs are merged before testing, so this fails both of you."
+            echo "See where:  git --no-pager diff $BASE $REMOTE/$peer"
+            echo "Then message them and agree who changes what."
+        fi
+    done
 }
 
 cmd_list() {

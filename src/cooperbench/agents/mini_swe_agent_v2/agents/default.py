@@ -201,6 +201,8 @@ class DefaultAgent:
             finally:
                 self.save(self.config.output_path)
             if self.messages[-1].get("role") == "exit":
+                if self._nudge_unsubmitted():
+                    continue
                 if self.comm:
                     # `published` means "the peer can see my work on the remote". That is now
                     # true exactly when the agent opened a PR, which it does itself -- there
@@ -208,6 +210,56 @@ class DefaultAgent:
                     self.comm.mark_exited(published=self._opened_pr())
                 break
         return self.messages[-1].get("extra", {})
+
+    MAX_SUBMIT_NUDGES = 2
+
+    def _nudge_unsubmitted(self) -> bool:
+        """Tell an agent that is ending with unshared work, instead of letting it end.
+
+        `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` and actually submitting are separate
+        acts, so an agent can finish the task, verify its tests, announce "all changes are
+        complete", fire the sentinel -- and have published nothing. Grading sees an empty
+        patch, indistinguishable from an agent that never wrote any code. Measured: one agent
+        did this after 943 steps of real work.
+
+        Returns True if the episode should continue rather than exit.
+        """
+        if not self.comm:  # solo has no peer branch to compare against; left as-is
+            return False
+        if getattr(self, "_submit_nudges", 0) >= self.MAX_SUBMIT_NUDGES:
+            return False  # it was told twice; ending with nothing is now its own choice
+        if self._opened_pr():
+            return False
+
+        agent = self.comm.agent_id
+        dirty = (self.env.execute({"command": "git status --porcelain"}).get("output") or "").strip()
+        ahead = (
+            self.env.execute({"command": f"git rev-list --count {GIT_REMOTE}/{agent}..HEAD 2>/dev/null"})
+            .get("output", "")
+            .strip()
+        )
+        unpushed = ahead not in ("", "0")
+        if not dirty and not unpushed:
+            return False  # nothing to lose: it genuinely has no work to submit
+
+        self._submit_nudges = getattr(self, "_submit_nudges", 0) + 1
+        held = "uncommitted changes" if dirty else "commits that are not pushed"
+        self.log(f"SUBMIT NUDGE {self._submit_nudges} for {agent}: {held}, no PR")
+        self.add_messages(
+            self.model.format_message(
+                role="user",
+                content=(
+                    f"You have not submitted anything. Your work is still local ({held}) and "
+                    f"no pull request exists, so it would be graded as an empty submission.\n\n"
+                    f"    git add <the files you want to submit>\n"
+                    f"    git commit -m \"...\"\n"
+                    f"    git push {GIT_REMOTE} HEAD:{agent}\n"
+                    f"    gh pr create --title \"...\" --body \"...\"\n\n"
+                    f"Then echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
+                ),
+            )
+        )
+        return True
 
     def _opened_pr(self) -> bool:
         """Whether this agent's PR exists on the shared remote.
