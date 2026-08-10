@@ -11,6 +11,7 @@ at open time would silently submit a fraction of the work, and nothing downstrea
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import subprocess
@@ -429,8 +430,6 @@ def test_body_with_backticks_survives_via_stdin(team):
 
 
 # --- send_message parsing: malformed calls must not silently reach bash -------------------
-
-import importlib
 
 _d = importlib.import_module("cooperbench.agents.mini_swe_agent_v2.agents.default")
 

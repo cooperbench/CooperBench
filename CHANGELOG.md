@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.28] - 2026-08-10
+
+### Fixed
+
+- **Test-file stripping now covers every language, not only Python.** A test file the agent wrote
+  must never reach the graded patch: it collides with the hidden `tests.patch` and `git apply`
+  then rejects the *whole* patch, failing both features for a reason unrelated to their code. The
+  rule matched `_test.py`, `/tests/`, `/test_`, so `metrics_test.go` sailed through — and that,
+  not the merge, is what killed 3 of 4 runs on `go_chi/26`. Now recognises `_test.<ext>`,
+  `.test.<ext>` / `.spec.<ext>`, `FooTest.java`, and `__tests__/`, `spec/`, `testdata/`
+  directories, while leaving `contest/`, `protest.py`, `latest.py` and `pytest_helper.py` alone.
+
+- **Language toolchains are on PATH in agent sandboxes.** Task images set `PATH` via Docker `ENV`,
+  which `sb.exec` does not inherit, so anything outside `/usr/bin` was invisible. On `typst`
+  (`rust:1.80-slim`) `cargo check` returned `cargo: command not found` while
+  `/usr/local/cargo/bin/cargo` worked fine. This is a silent discriminator rather than a nuisance:
+  the 27B hit it, ran `which rustc rustup cargo`, got nothing, and then wrote Rust for the entire
+  task **without ever compiling** — which is why that pair produced a byte-identical patch that
+  still failed to build with `E0277` and ran zero tests. A model that happened to try
+  `find / -name cargo` recovered and got real compiler output. Cargo, Go and local bins are now
+  prepended for every command.
+
 ## [0.0.27] - 2026-08-09
 
 ### Fixed
