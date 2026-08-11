@@ -245,6 +245,12 @@ class DefaultAgent:
         self._submit_nudges = getattr(self, "_submit_nudges", 0) + 1
         held = "uncommitted changes" if dirty else "commits that are not pushed"
         self.log(f"SUBMIT NUDGE {self._submit_nudges} for {agent}: {held}, no PR")
+        # Drop the terminal role="exit" sentinel before continuing the episode.
+        # It is harness-internal; if it stays in the list, every subsequent API
+        # request replays it and OpenAI-style backends reject the whole call
+        # with "Unexpected message role", killing the agent mid-nudge.
+        if self.messages and self.messages[-1].get("role") == "exit":
+            self.messages.pop()
         self.add_messages(
             self.model.format_message(
                 role="user",
