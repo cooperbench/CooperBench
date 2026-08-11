@@ -152,17 +152,37 @@ class MessagingConnector:
         if not self.send(recipient, content):
             return False, []
 
+        # Publish that we are blocked on this recipient, so their delivery can say so. A peer
+        # that knows someone is stalled on it answers; measured over 62 timeouts, the peer had
+        # the message in hand within ~10s and then took a median of 7 more actions without
+        # replying, so the failure is salience, not delivery. TTL means a crashed waiter
+        # cannot leave the flag set.
+        self._client.setex(self._blocked_key(recipient), max(1, int(timeout)), self.agent_id)
         deadline = time.monotonic() + timeout
         replies: list[dict] = []
-        while time.monotonic() < deadline:
-            got = self.receive()
-            if got:
-                replies.extend(got)
-                break
-            if self.has_exited(recipient):
-                break
-            time.sleep(1.0)
+        try:
+            while time.monotonic() < deadline:
+                got = self.receive()
+                if got:
+                    replies.extend(got)
+                    break
+                if self.has_exited(recipient):
+                    break
+                time.sleep(1.0)
+        finally:
+            self._client.delete(self._blocked_key(recipient))
         return True, replies
+
+    def _blocked_key(self, recipient: str) -> str:
+        """Key set while WE are blocked waiting on `recipient` to reply."""
+        return f"{self._prefix}{recipient}:awaited_by"
+
+    def is_awaited_by(self, sender: str) -> bool:
+        """Whether `sender` is currently blocked in send_and_wait on us."""
+        try:
+            return self._client.get(self._blocked_key(self.agent_id)) == sender.encode()
+        except redis.RedisError:  # bookkeeping must never take down a run
+            return False
 
     def broadcast(self, content: str) -> None:
         """Send a message to all other agents.

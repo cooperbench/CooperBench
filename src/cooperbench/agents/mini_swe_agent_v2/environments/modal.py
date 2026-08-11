@@ -76,6 +76,18 @@ def _invalidate_image(image_name: str) -> None:
         _image_cache.pop(image_name, None)
 
 
+# The task images set PATH via Docker ENV, but `sb.exec` does not inherit it, so language
+# toolchains installed outside /usr/bin are simply invisible. Observed on typst (rust:1.80-slim):
+# `cargo check` -> "cargo: command not found", while /usr/local/cargo/bin/cargo works fine. It is
+# a silent discriminator, not a nuisance -- the 27B hit it, ran `which rustc rustup cargo`, got
+# nothing, and wrote Rust for the whole task without ever compiling, shipping code that failed to
+# build. A model that happened to run `find / -name cargo` recovered. Prepending the well-known
+# toolchain dirs costs nothing and removes the archaeology.
+_TOOLCHAIN_PATH = (
+    'export PATH="/usr/local/cargo/bin:/usr/local/go/bin:/root/.cargo/bin:/root/go/bin:/usr/local/bin:$PATH";'
+)
+
+
 class ModalEnvironmentConfig(BaseModel):
     image: str
     cwd: str = "/"
@@ -231,7 +243,7 @@ class ModalEnvironment:
                     str(timeout or self.config.command_timeout),
                     "bash",
                     "-lc",
-                    f"exec < /dev/null; cd {cwd} && {command}",
+                    f"{_TOOLCHAIN_PATH} exec < /dev/null; cd {cwd} && {command}",
                     text=False,
                 )
                 stdout = proc.stdout.read().decode("utf-8", errors="replace")

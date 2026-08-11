@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.28] - 2026-08-10
+
+### Fixed
+
+- **Test-file stripping now covers every language, not only Python.** A test file the agent wrote
+  must never reach the graded patch: it collides with the hidden `tests.patch` and `git apply`
+  then rejects the *whole* patch, failing both features for a reason unrelated to their code. The
+  rule matched `_test.py`, `/tests/`, `/test_`, so `metrics_test.go` sailed through — and that,
+  not the merge, is what killed 3 of 4 runs on `go_chi/26`. Now recognises `_test.<ext>`,
+  `.test.<ext>` / `.spec.<ext>`, `FooTest.java`, and `__tests__/`, `spec/`, `testdata/`
+  directories, while leaving `contest/`, `protest.py`, `latest.py` and `pytest_helper.py` alone.
+
+- **Language toolchains are on PATH in agent sandboxes.** Task images set `PATH` via Docker `ENV`,
+  which `sb.exec` does not inherit, so anything outside `/usr/bin` was invisible. On `typst`
+  (`rust:1.80-slim`) `cargo check` returned `cargo: command not found` while
+  `/usr/local/cargo/bin/cargo` worked fine. This is a silent discriminator rather than a nuisance:
+  the 27B hit it, ran `which rustc rustup cargo`, got nothing, and then wrote Rust for the entire
+  task **without ever compiling** — which is why that pair produced a byte-identical patch that
+  still failed to build with `E0277` and ran zero tests. A model that happened to try
+  `find / -name cargo` recovered and got real compiler output. Cargo, Go and local bins are now
+  prepended for every command.
+
+## [0.0.27] - 2026-08-09
+
+### Fixed
+
+- **A malformed `send_message` is reported instead of vanishing into bash.** `send_message` is
+  parsed out of the command string, not a real binary, so a call the regex did not match went
+  through to the sandbox and died as `send_message: command not found` (rc 127) — which the
+  agent reads as "messaging is broken" rather than "my quoting was wrong". Measured across two
+  flash_10 runs: 7 messages lost this way (bare `--wait` with no body, unterminated heredoc,
+  body via `< file`, invented flags like `-t 60`). The agent loop now returns a parse error
+  naming the accepted forms.
+
+- **Delivery says when the sender is blocked.** `send_and_wait` publishes that it is waiting
+  (Redis key, TTL = the timeout, so a crashed waiter cannot leave it set) and the receiving
+  agent's message is rendered as `[Message from agent1 — agent1 is BLOCKED waiting for your
+  reply …]`.
+
+  This targets a measured failure. Over 62 full 60s timeouts in two runs, the peer had already
+  exited in **0** cases and had never seen the message in **0** cases; in 58 of 62 it held the
+  message a median 2–12s into the window and then took a median of 7 more actions without
+  replying. Raising the timeout does not fix that: 23 of the 30 late replies only arrived after
+  the waiter unblocked and pinged again, so a clean counterfactual rescues 4/61 at 120s and
+  7/61 at infinity. The cost of the timeouts is ~63 agent-minutes per pair of runs, ~10% of
+  agent-alive time. Note it does **not** correlate with pass rate at this n (rho +0.25, p 0.31)
+  — this is a compute-efficiency fix, not a score fix.
+
 ## [0.0.26] - 2026-08-09
 
 ### Changed
