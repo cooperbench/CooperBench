@@ -49,6 +49,7 @@ def discover_tasks(
     task_filter: int | None = None,
     features_filter: list[int] | None = None,
     dataset_dir: Path | str | None = None,
+    n_agents: int = 2,
 ) -> list[dict]:
     """Discover benchmark tasks from ``dataset_dir``.
 
@@ -56,8 +57,10 @@ def discover_tasks(
         subset: Use a predefined subset (e.g., 'lite')
         repo_filter: Filter by repository name
         task_filter: Filter by task ID
-        features_filter: Specific feature pair to use
+        features_filter: Specific feature set to use
         dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
+        n_agents: Number of agents per task; controls combination size in the
+            default (no subset, no features_filter) path.  Defaults to 2.
 
     Returns:
         List of task dicts with repo, task_id, features
@@ -95,7 +98,7 @@ def discover_tasks(
                     fid = int(feature_dir.name.replace("feature", ""))
                     feature_ids.append(fid)
 
-            if len(feature_ids) < 2:
+            if len(feature_ids) < n_agents:
                 continue
 
             if features_filter:
@@ -121,14 +124,14 @@ def discover_tasks(
                             }
                         )
             else:
-                # All pairwise combinations: nC2
+                # All nCk combinations where k == n_agents
                 feature_ids.sort()
-                for f1, f2 in combinations(feature_ids, 2):
+                for combo in combinations(feature_ids, n_agents):
                     tasks.append(
                         {
                             "repo": repo_dir.name,
                             "task_id": task_id,
-                            "features": [f1, f2],
+                            "features": list(combo),
                         }
                     )
 

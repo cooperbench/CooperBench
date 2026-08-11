@@ -398,3 +398,57 @@ class TestGroupsSubsetKey:
         tasks = discover_tasks(subset="coop2", dataset_dir=dataset)
         assert len(tasks) == 1
         assert tasks[0]["features"] == [1, 2]
+
+
+class TestNAgents:
+    """Tests for the n_agents parameter in discover_tasks."""
+
+    def _make_task(self, tmp_path, n_features: int):
+        dataset = tmp_path / "dataset" / "test_task"
+        task = dataset / "task1"
+        task.mkdir(parents=True)
+        for i in range(1, n_features + 1):
+            (task / f"feature{i}").mkdir()
+        return tmp_path / "dataset"
+
+    def test_default_generates_pairs(self, tmp_path):
+        """n_agents=2 (default) produces nC2 pairs."""
+        dataset = self._make_task(tmp_path, 3)
+        tasks = discover_tasks(repo_filter="test_task", task_filter=1, dataset_dir=dataset)
+        feature_sets = {tuple(t["features"]) for t in tasks}
+        assert feature_sets == {(1, 2), (1, 3), (2, 3)}
+
+    def test_n_agents_3_generates_triples(self, tmp_path):
+        """n_agents=3 produces nC3 triples."""
+        dataset = self._make_task(tmp_path, 4)
+        tasks = discover_tasks(
+            repo_filter="test_task", task_filter=1, dataset_dir=dataset, n_agents=3
+        )
+        feature_sets = {tuple(t["features"]) for t in tasks}
+        assert feature_sets == {(1, 2, 3), (1, 2, 4), (1, 3, 4), (2, 3, 4)}
+
+    def test_skips_task_when_fewer_features_than_n_agents(self, tmp_path):
+        """Tasks with fewer features than n_agents are skipped."""
+        dataset = self._make_task(tmp_path, 2)
+        tasks = discover_tasks(
+            repo_filter="test_task", task_filter=1, dataset_dir=dataset, n_agents=3
+        )
+        assert tasks == []
+
+    def test_exactly_n_agents_features_produces_one_combo(self, tmp_path):
+        """A task with exactly n_agents features yields exactly one combo."""
+        dataset = self._make_task(tmp_path, 3)
+        tasks = discover_tasks(
+            repo_filter="test_task", task_filter=1, dataset_dir=dataset, n_agents=3
+        )
+        assert len(tasks) == 1
+        assert tasks[0]["features"] == [1, 2, 3]
+
+    def test_n_agents_1_generates_singleton_features(self, tmp_path):
+        """n_agents=1 produces one entry per feature (for solo-style dispatch)."""
+        dataset = self._make_task(tmp_path, 3)
+        tasks = discover_tasks(
+            repo_filter="test_task", task_filter=1, dataset_dir=dataset, n_agents=1
+        )
+        feature_sets = [tuple(t["features"]) for t in tasks]
+        assert sorted(feature_sets) == [(1,), (2,), (3,)]
