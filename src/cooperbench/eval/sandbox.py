@@ -676,11 +676,11 @@ def _parse_results(output: str) -> dict:
 _TEST_DIR_RE = re.compile(r"/(tests?|__tests__|spec|testdata)/")
 _TEST_FILE_RE = re.compile(
     r"(^|/)("
-    r"test_[^/]+"                       # test_foo.py
-    r"|[^/]+_test\.[A-Za-z0-9]+"        # foo_test.go / foo_test.rs / foo_test.py
+    r"test_[^/]+"  # test_foo.py
+    r"|[^/]+_test\.[A-Za-z0-9]+"  # foo_test.go / foo_test.rs / foo_test.py
     r"|[^/]+\.(test|spec)\.[A-Za-z0-9]+"  # foo.test.ts / foo.spec.js
     r"|[^/]*Test[s]?\.(java|kt|cs|scala)"  # FooTest.java
-    r"|tests?\.py"                      # tests.py
+    r"|tests?\.py"  # tests.py
     r")$"
 )
 

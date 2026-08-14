@@ -252,9 +252,9 @@ class DefaultAgent:
                     f"You have not submitted anything. Your work is still local ({held}) and "
                     f"no pull request exists, so it would be graded as an empty submission.\n\n"
                     f"    git add <the files you want to submit>\n"
-                    f"    git commit -m \"...\"\n"
+                    f'    git commit -m "..."\n'
                     f"    git push {GIT_REMOTE} HEAD:{agent}\n"
-                    f"    gh pr create --title \"...\" --body \"...\"\n\n"
+                    f'    gh pr create --title "..." --body "..."\n\n'
                     f"Then echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
                 ),
             )
@@ -421,17 +421,19 @@ class DefaultAgent:
                     # reads that as "messaging is broken" rather than "my quoting was wrong".
                     # Measured: 7 lost sends across two runs (bare --wait with no body,
                     # unterminated heredoc, `< file` redirect, `-t 60`, `timeout N bash -c ...`).
-                    outputs.append({
-                        "output": (
-                            "send_message: could not parse that call, so nothing was sent.\n"
-                            "Use one of:\n"
-                            "  send_message [--wait] <agent> <<'MSG'\n  your text\n  MSG\n"
-                            "  send_message [--wait] <agent> \"your text\"\n"
-                            "The message body is required, and --wait takes no argument."
-                        ),
-                        "returncode": 1,
-                        "exception_info": "",
-                    })
+                    outputs.append(
+                        {
+                            "output": (
+                                "send_message: could not parse that call, so nothing was sent.\n"
+                                "Use one of:\n"
+                                "  send_message [--wait] <agent> <<'MSG'\n  your text\n  MSG\n"
+                                '  send_message [--wait] <agent> "your text"\n'
+                                "The message body is required, and --wait takes no argument."
+                            ),
+                            "returncode": 1,
+                            "exception_info": "",
+                        }
+                    )
                     continue
                 if sm_matches:
                     sm_outputs = []

@@ -222,15 +222,20 @@ class GitConnector:
             # away work that was committed and pushed successfully.
             #
             # Still zero for an agent that pushed nothing -- that is a genuine non-submission.
-            branch = self._exec(
-                env, f"git ls-remote --heads {self.REMOTE_NAME} refs/heads/{self.agent_id}"
-            ).get("output", "").strip()
+            branch = (
+                self._exec(env, f"git ls-remote --heads {self.REMOTE_NAME} refs/heads/{self.agent_id}")
+                .get("output", "")
+                .strip()
+            )
             if not branch:
                 self._logger.info(f"NO PR AND NO BRANCH pushed by {self.agent_id}: submitting nothing")
                 return ""
-            fallback = self._exec(
-                env, f"git --no-pager diff {self._base_sha} {self.REMOTE_NAME}/{self.agent_id}"
-            ).get("output", "") or ""
+            fallback = (
+                self._exec(env, f"git --no-pager diff {self._base_sha} {self.REMOTE_NAME}/{self.agent_id}").get(
+                    "output", ""
+                )
+                or ""
+            )
             if not fallback.strip():
                 self._logger.info(f"NO PR OPENED by {self.agent_id} and branch is at base: nothing to submit")
                 return ""
