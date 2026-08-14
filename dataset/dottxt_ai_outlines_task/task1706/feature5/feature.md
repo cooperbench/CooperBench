@@ -19,6 +19,9 @@ This feature enables developers to use custom tensor libraries with XGrammarLogi
    - Accept optional `custom_adapter` parameter for custom tensor implementations
    - Validate that `custom_adapter` is provided when `tensor_library_name="custom"`
    - Validate that `custom_adapter` is only provided when using "custom" library
+   - The two `ValueError` messages are
+     `custom_adapter must be provided when tensor_library_name is 'custom'` and
+     `custom_adapter should only be provided when tensor_library_name is 'custom'`
    - Override the tensor_adapter when custom adapter is provided
 
 2. Update the `XGrammarBackend` methods to:

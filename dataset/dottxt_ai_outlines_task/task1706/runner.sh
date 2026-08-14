@@ -77,8 +77,10 @@ timeout 300 python -m pytest tests/backends/test_xgrammar.py -v 2>&1 | tee /tmp/
 PYTEST_EXIT=${PIPESTATUS[0]}  # Get exit code of timeout/pytest, not tee
 set -e  # Re-enable exit on error
 
-# Check if tests passed in the output (even if there was a segfault)
-if grep -qE "passed.*skipped|passed" /tmp/pytest_output.log && ! grep -qE "FAILED|ERROR" /tmp/pytest_output.log; then
+# Check if tests passed in the output (even if there was a segfault).
+# The count must be non-zero: a bare "passed" also matches the "0 passed, N skipped" summary, so
+# a run whose tests were all skipped would otherwise be scored as a pass with nothing executed.
+if grep -qE "[1-9][0-9]* passed" /tmp/pytest_output.log && ! grep -qE "FAILED|ERROR" /tmp/pytest_output.log; then
     echo ""
     echo "Test execution completed!"
     # If exit code is 139 (segfault) but tests passed, exit with 0

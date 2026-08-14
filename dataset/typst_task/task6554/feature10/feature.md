@@ -34,5 +34,11 @@ error.
 - Reuse existing behaviour when the unit is omitted or set to `"grapheme"`.
 - Emit a descriptive error for unsupported unit strings and for strings without any words.
 
+**Error messages are compared verbatim by the test harness.** The exact wording is:
+
+- no word segment found: `string contains no words`
+- an unrecognised unit: `unknown unit "<value>"`, with the value in double quotes
+
+
 **Files Modified:**
 - `crates/typst/src/foundations/str.rs`

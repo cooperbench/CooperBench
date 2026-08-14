@@ -19,6 +19,10 @@ Introduce a new `ctrans` template tag that conditionally renders translations ba
    * Add module-level alias: `conditional_i18n = ConditionalI18nExtension`
 
 2. Implement template tag syntax: `{% ctrans condition [variables] [trimmed|notrimmed] %}...{% pluralize [variable] %}...{% fallback %}...{% endctrans %}`
+   * **Commas are optional separators anywhere in the header.** `{% ctrans use_i18n, count %}` and
+     `{% ctrans use_i18n count %}` are both valid.
+   * **`trimmed` / `notrimmed` apply to every block in the tag**, including `{% fallback %}`, not
+     only to the singular and plural blocks.
 
 3. Inside the extension's `parse()` method:
    * Parse the condition expression using `parser.parse_expression()`

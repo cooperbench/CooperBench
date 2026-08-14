@@ -79,6 +79,12 @@ uv pip install --system "tensorflow==2.16.2" || uv pip install --system "tensorf
 uv pip install --system torch jax
 # Pin numpy to < 2.0 to avoid compatibility issues with np.array(copy=False)
 uv pip install --system "numpy<2.0"
+# scipy has to be pinned back with it. The `torch jax` line above resolves numpy to 2.5.2 and
+# scipy to 1.18.0; downgrading numpy alone leaves scipy 1.18, which is built for numpy>=2.0 and
+# calls `np.long` -- removed in numpy 1.24, reintroduced in 2.0 -- so tests/features/test_image.py
+# dies with "module 'numpy' has no attribute 'long'" on base AND gold. 1.13.1 is the last scipy
+# supporting numpy 1.26.
+uv pip install --system "scipy<1.14"
 # Now install the package (tensorflow already installed, so dependency resolver won't try tensorflow-macos)
 uv pip install --system -e .
 uv pip uninstall --system pyarrow

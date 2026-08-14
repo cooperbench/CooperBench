@@ -1,5 +1,13 @@
 **Title**: Caching for `require_decoding`
 
+The hook is a method on `Features`:
+
+```python
+def set_custom_decoding_criteria(self, custom_criteria: Optional[callable] = None): ...
+```
+Passing `None` restores the default behaviour. The criteria set this way participate in the caching described below.
+
+
 **Pull Request Details**
 
 **Description**:

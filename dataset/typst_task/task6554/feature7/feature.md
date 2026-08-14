@@ -27,6 +27,11 @@ Add a named `pattern` argument supporting values such as `"alpha"`, `"numeric"`,
 - Parse the optional `pattern` argument and normalise to an enum of supported classes.
 - Iterate graphemes with `unicode_segmentation::UnicodeSegmentation`, testing the first char of each cluster.
 - Return the matching grapheme or propagate the existing `string is empty` / out-of-pattern errors.
+- Error messages are compared verbatim by the test harness. When no grapheme matches, the message
+  is exactly `no character matches pattern "<name>"` — for example
+  `no character matches pattern "alpha"`, with the pattern name in double quotes.
+- Check for an empty string **before** checking the pattern, so `"".last(pattern: "alpha")` still
+  reports `string is empty` rather than the no-match message.
 - Surface a descriptive error when the caller passes an unknown pattern string.
 
 **Files Modified:**
