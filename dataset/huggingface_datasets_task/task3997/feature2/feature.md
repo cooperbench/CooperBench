@@ -1,5 +1,13 @@
 **Title**: Custom `require_decoding` Criteria
 
+The hook is a method on `Features`:
+
+```python
+def set_custom_decoding_criteria(self, custom_criteria: Optional[callable] = None): ...
+```
+Passing `None` restores the default behaviour.
+
+
 **Pull Request Details**
 
 **Description**:

@@ -87,7 +87,12 @@ uv pip install --system pytest pytest-xdist pytest-datadir Pillow  # Common test
 
 # Run test
 echo "RUNNING_TESTS..."
-timeout 300 python -m pytest "$TEST_PATH" -v
+# test_parquet_read_geoparquet is red on a PRISTINE checkout (`assert 'large_string' ==
+# 'string'`, unaffected by pyarrow 17/18/19) and is unrelated to either feature of this task.
+# Because the runner executes the whole file, leaving it in makes BOTH features permanently
+# unscoreable no matter what the agent writes. Deselected so the base suite is green.
+timeout 300 python -m pytest "$TEST_PATH" -v \
+    --deselect "tests/io/test_parquet.py::test_parquet_read_geoparquet"
 
 echo "TEST_EXECUTION_COMPLETED"
 

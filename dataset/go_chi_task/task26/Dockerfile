@@ -1,4 +1,8 @@
-FROM golang:1.21-alpine
+# 1.22, not 1.21: the graded test file for feature 1 carries `//go:build go1.22`, and the base
+# commit below is upstream chi's "go 1.22 ci (#898)". Under 1.21 that file is excluded from the
+# build, so `go test -run TestPathValue` matches nothing and exits 0 — which the runner scored as
+# a pass. Feature 1 was ungradeable, passing even for a patch with no implementation in it.
+FROM golang:1.22-alpine
 
 # Install system dependencies (including Python for Modal compatibility)
 RUN apk add --no-cache \

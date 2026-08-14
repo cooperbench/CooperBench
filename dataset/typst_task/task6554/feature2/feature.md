@@ -43,5 +43,10 @@ pub fn first(
 - Proper error handling for out-of-bounds access
 - Full Unicode grapheme cluster support
 
+**Error messages are compared verbatim by the test harness.** The exact wording is:
+
+- out of range: `index <i> out of bounds for string with <n> characters`
+
+
 **Files Modified:**
 - `crates/typst/src/foundations/str.rs` - Method implementations  

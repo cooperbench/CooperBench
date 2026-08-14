@@ -84,16 +84,15 @@ def _invalidate_image(image_name: str) -> None:
 # build. A model that happened to run `find / -name cargo` recovered. Prepending the well-known
 # toolchain dirs costs nothing and removes the archaeology.
 _TOOLCHAIN_PATH = (
-    'export PATH="/usr/local/cargo/bin:/usr/local/go/bin:/root/.cargo/bin:'
-    '/root/go/bin:/usr/local/bin:$PATH";'
+    'export PATH="/usr/local/cargo/bin:/usr/local/go/bin:/root/.cargo/bin:/root/go/bin:/usr/local/bin:$PATH";'
 )
 
 
 class ModalEnvironmentConfig(BaseModel):
     image: str
     cwd: str = "/"
-    timeout: int = 3600           # sandbox lifetime
-    command_timeout: int = 300    # per command; longest real one observed is ~104s (npm test)
+    timeout: int = 3600  # sandbox lifetime
+    command_timeout: int = 300  # per command; longest real one observed is ~104s (npm test)
     env: dict[str, str] = {}
     max_retries: int = 5
     retry_delay: float = 5.0
@@ -238,8 +237,13 @@ class ModalEnvironment:
                 # other stdin reader) hangs until the sandbox dies. `timeout` catches infinite
                 # loops, which closing stdin cannot.
                 proc = self.sb.exec(
-                    "timeout", "-k", "10", str(timeout or self.config.command_timeout),
-                    "bash", "-lc", f"{_TOOLCHAIN_PATH} exec < /dev/null; cd {cwd} && {command}",
+                    "timeout",
+                    "-k",
+                    "10",
+                    str(timeout or self.config.command_timeout),
+                    "bash",
+                    "-lc",
+                    f"{_TOOLCHAIN_PATH} exec < /dev/null; cd {cwd} && {command}",
                     text=False,
                 )
                 stdout = proc.stdout.read().decode("utf-8", errors="replace")

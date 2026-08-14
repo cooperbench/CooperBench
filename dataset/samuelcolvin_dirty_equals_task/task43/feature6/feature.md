@@ -7,7 +7,7 @@ issuer-specific validation for enhanced payment processing workflows.
 **Description**:
 The IsCreditCard validator provides robust credit card number validation by implementing the industry-standard Luhn
 algorithm to verify card number integrity. Users can perform basic validation against any valid credit card number or
-specify a particular issuer (Visa, Mastercard, American Express, etc.) for more targeted validation. This enables
+specify a particular issuer. The accepted issuer names are exactly `'Visa'`, `'Mastercard'` and `'AmericanExpress'` — matched case-sensitively, and note `AmericanExpress` is one word for more targeted validation. This enables
 developers to validate payment inputs with confidence while supporting both general and issuer-specific use cases in
 e-commerce and financial applications.
 
