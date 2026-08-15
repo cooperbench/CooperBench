@@ -26,7 +26,7 @@ def create_git_server(
     run_id: str,
     *,
     app: modal.App | None = None,
-    timeout: int = 3600,
+    timeout: int = 10800,
     # GCP-specific options
     project_id: str | None = None,
     zone: str = "us-central1-a",

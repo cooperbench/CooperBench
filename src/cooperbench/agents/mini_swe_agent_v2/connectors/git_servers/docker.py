@@ -124,7 +124,7 @@ class DockerGitServer:
         self._logger = logging.getLogger("cooperbench.agents.mini_swe_agent_v2.git_server.docker")
 
     @classmethod
-    def create(cls, run_id: str, timeout: int = 3600) -> DockerGitServer:
+    def create(cls, run_id: str, timeout: int = 10800) -> DockerGitServer:
         """Ensure shared infra is up, then init a per-run bare repo on it.
 
         Args:

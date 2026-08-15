@@ -190,25 +190,33 @@ class DefaultAgent:
             self.model.format_message(role="system", content=self._render_template(self.config.system_template)),
             self.model.format_message(role="user", content=self._render_template(self.config.instance_template)),
         )
-        while True:
-            try:
-                self.step()
-            except InterruptAgentFlow as e:
-                self.add_messages(*e.messages)
-            except Exception as e:
-                self.handle_uncaught_exception(e)
-                raise
-            finally:
-                self.save(self.config.output_path)
-            if self.messages[-1].get("role") == "exit":
-                if self._nudge_unsubmitted():
-                    continue
-                if self.comm:
-                    # `published` means "the peer can see my work on the remote". That is now
-                    # true exactly when the agent opened a PR, which it does itself -- there
-                    # is no separate publish step to perform on its behalf.
-                    self.comm.mark_exited(published=self._opened_pr())
-                break
+        try:
+            while True:
+                try:
+                    self.step()
+                except InterruptAgentFlow as e:
+                    self.add_messages(*e.messages)
+                except Exception as e:
+                    self.handle_uncaught_exception(e)
+                    raise
+                finally:
+                    self.save(self.config.output_path)
+                if self.messages[-1].get("role") == "exit":
+                    if self._nudge_unsubmitted():
+                        continue
+                    break
+        finally:
+            # Announce departure on EVERY exit path, not just a clean submit. A crash or a
+            # step-limit exit used to leave this unset, so the peer's has_exited() stayed False
+            # and it waited on someone who was never coming back -- one agent burned 91 minutes
+            # of sleep that way and outlived its own sandbox.
+            if self.comm:
+                # `published` means "the peer can see my work on the remote", i.e. a PR is open.
+                try:
+                    published = self._opened_pr()
+                except Exception:
+                    published = False
+                self.comm.mark_exited(published=published)
         return self.messages[-1].get("extra", {})
 
     MAX_SUBMIT_NUDGES = 2
@@ -278,6 +286,8 @@ class DefaultAgent:
         and (in team mode) the shared task list before querying."""
         # Check for inter-agent messages before querying LLM
         if self.comm:
+            if hasattr(self.comm, "heartbeat"):
+                self.comm.heartbeat()
             messages = self.comm.receive()
             for msg in messages:
                 ts = msg.get("timestamp", "")[:19].replace("T", " ")
@@ -472,14 +482,19 @@ class DefaultAgent:
             if not self.comm.has_exited(peer):
                 continue
             announced.add(peer)
-            self.log(f"PEER EXITED: {peer}")
+            gone = getattr(self.comm, "is_unreachable", None) and self.comm.is_unreachable(peer)
+            self.log(f"PEER {'UNREACHABLE' if gone else 'EXITED'}: {peer}")
+            headline = (
+                f"[{peer} is no longer running] They stopped without submitting, so nothing "
+                f"further will arrive from them."
+                if gone else
+                f"[{peer} has completed their work and exited] They will not read or "
+                f"answer further messages."
+            )
             self.add_messages(
                 self.model.format_message(
                     role="user",
-                    content=(
-                        f"[{peer} has completed their work and exited] They will not read or "
-                        f"answer further messages.\n\n{self._peer_work_pointer(peer)}"
-                    ),
+                    content=f"{headline}\n\n{self._peer_work_pointer(peer)}",
                 )
             )
 
