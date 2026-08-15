@@ -487,9 +487,8 @@ class DefaultAgent:
             headline = (
                 f"[{peer} is no longer running] They stopped without submitting, so nothing "
                 f"further will arrive from them."
-                if gone else
-                f"[{peer} has completed their work and exited] They will not read or "
-                f"answer further messages."
+                if gone
+                else f"[{peer} has completed their work and exited] They will not read or answer further messages."
             )
             self.add_messages(
                 self.model.format_message(
