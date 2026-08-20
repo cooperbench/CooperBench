@@ -17,6 +17,8 @@ Currently, users must perform a separate brightness adjustment operation after q
 
 A `lightness_factor` greater than 1.0 makes the image brighter (e.g., 1.1 for 10% brighter), while a value less than 1.0 makes it darker (e.g., 0.9 for 10% darker). The implementation ensures that values don't exceed valid color ranges (0-255).
 
+`lightness_factor` must be strictly positive: a value of `0` or below raises `ValueError`. There is no upper bound — any positive value is accepted, with the resulting channel values clamped to 0-255.
+
 This feature allows for fine-tuning the appearance of quantized images without requiring additional processing steps or color conversions.
 
 **Files Modified**

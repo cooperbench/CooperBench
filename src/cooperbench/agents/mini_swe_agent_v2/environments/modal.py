@@ -91,7 +91,9 @@ _TOOLCHAIN_PATH = (
 class ModalEnvironmentConfig(BaseModel):
     image: str
     cwd: str = "/"
-    timeout: int = 3600  # sandbox lifetime
+    # Sandbox lifetime. At 3600 a heavy reasoner blew past it mid-run and its partner then hung
+    # waiting on an agent that no longer existed.
+    timeout: int = 10800
     command_timeout: int = 300  # per command; longest real one observed is ~104s (npm test)
     env: dict[str, str] = {}
     max_retries: int = 5

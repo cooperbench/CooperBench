@@ -22,6 +22,25 @@ In large applications with many routes, it's common to have situations where mul
 
 This implementation provides a way to explicitly control route matching priority, ensuring that the most appropriate handler is selected when multiple routes could match. This is particularly useful for applications with complex routing requirements, such as those with both specific and catch-all routes.
 
+## Public API
+
+Callers depend on these exact names.
+
+```go
+// Returns a router that registers subsequent routes at the given priority, so it chains:
+//   r.WithPriority(PriorityHigh).Get("/resources", handler)
+func (mx *Mux) WithPriority(priority int) *Mux
+
+// Named levels, highest value wins when several routes match.
+const (
+    PriorityHighest = 100
+    PriorityHigh    = 75
+    PriorityNormal  = 50
+    PriorityLow     = 25
+    PriorityLowest  = 0
+)
+```
+
 ## Files Modified
 
 ```

@@ -26,6 +26,11 @@ RUN uv pip install --system "tensorflow>=2.16.0,<2.17.0" || uv pip install --sys
 RUN uv pip install --system torch jax
 # Pin numpy to < 2.0 to avoid compatibility issues with np.array(copy=False)
 RUN uv pip install --system "numpy<2.0"
+# scipy must be pinned to the numpy-1.x era alongside it. An unpinned resolve picks scipy 1.18,
+# which requires numpy>=2.0 and calls `np.long` -- an alias numpy removed in 1.24 and only
+# reintroduced in 2.0 -- so tests/features/test_image.py dies with
+# "module 'numpy' has no attribute 'long'". scipy 1.13.1 is the last release supporting numpy 1.26.
+RUN uv pip install --system "scipy<1.14"
 RUN uv pip install --system pytest pytest-xdist pytest-datadir Pillow
 
 # Copy the runner script

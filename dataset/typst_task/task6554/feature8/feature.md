@@ -32,7 +32,12 @@ in the requested case. Invalid values raise a descriptive error.
 - Parse the optional `case` argument in both methods.
 - Transform the selected grapheme using Rust's Unicode-aware case conversion helpers.
 - Handle title casing by uppercasing the first scalar value and lowercasing the rest.
-- Error out when an unsupported `case` value is provided.
+- Error out when an unsupported `case` value is provided. Error messages are compared verbatim by
+  the test harness; the message is exactly `unknown case option "<value>"`, with the offending
+  value in double quotes — for example `unknown case option "spongebob"`.
+- The harness compares the diagnostic's source range as well as its text. Report the error against
+  the whole method call expression (the default when the failure is returned from the function),
+  not against the offending argument.
 - Leave existing behaviour unchanged when the parameter is omitted.
 
 **Files Modified:**

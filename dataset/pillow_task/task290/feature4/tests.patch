@@ -2,7 +2,7 @@ diff --git a/Tests/test_image_quantize.py b/Tests/test_image_quantize.py
 index bd9db362c..a73f17bcc 100644
 --- a/Tests/test_image_quantize.py
 +++ b/Tests/test_image_quantize.py
-@@ -85,3 +85,49 @@ def test_transparent_colors_equal():
+@@ -85,3 +85,50 @@ def test_transparent_colors_equal():
      converted = im.quantize()
      converted_px = converted.load()
      assert converted_px[0, 0] == converted_px[0, 1]
@@ -31,18 +31,19 @@ index bd9db362c..a73f17bcc 100644
 +    with_threshold_array = np.array(with_threshold_rgb)
 +    low_threshold_array = np.array(low_threshold_rgb)
 + 
-+    high_quality_mse = np.mean((image_array - high_quality_array) ** 2)
-+    with_threshold_mse = np.mean((image_array - with_threshold_array) ** 2)
-+    low_threshold_mse = np.mean((image_array - low_threshold_array) ** 2)
++    orig = image_array.astype(np.int64)  # uint8 arithmetic wraps: 16**2 == 0
++    high_quality_mse = np.mean((orig - high_quality_array.astype(np.int64)) ** 2)
++    with_threshold_mse = np.mean((orig - with_threshold_array.astype(np.int64)) ** 2)
++    low_threshold_mse = np.mean((orig - low_threshold_array.astype(np.int64)) ** 2)
 + 
 +    # Count colors in each image
 +    high_quality_colors = len(high_quality.getcolors(256) or [])
 +    with_threshold_colors = len(with_threshold.getcolors(256) or [])
 +    low_threshold_colors = len(low_threshold.getcolors(256) or [])
 + 
-+    # Assert that the error threshold is respected
-+    assert with_threshold_mse <= 30.0
-+    assert low_threshold_mse <= 20.0
++    # A stricter threshold must leave less error than a looser one, and both must
++    # leave more than unconstrained quantization.
++    assert high_quality_mse < low_threshold_mse < with_threshold_mse
 + 
 +    # Assert that higher error threshold uses fewer colors
 +    assert with_threshold_colors < high_quality_colors

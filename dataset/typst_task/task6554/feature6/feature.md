@@ -31,5 +31,11 @@ hello
 - Reuse the existing grapheme-selection logic on the trimmed slice.
 - Preserve current error handling for empty or whitespace-only strings.
 
+**Error messages are compared verbatim by the test harness.** The exact wording is:
+
+- an all-whitespace string, once whitespace is skipped: `string contains only whitespace`
+  (note this is a new message; an empty string keeps the pre-existing `string is empty`)
+
+
 **Files Modified:**
 - `crates/typst/src/foundations/str.rs`

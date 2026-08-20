@@ -16,6 +16,8 @@ The implementation adds an optional `auto_backup` parameter to the `click.edit()
 3. **Safety Implementation**: 
    - Create backup only when editing existing files (not for new temporary files)
    - Handle file I/O errors gracefully with informative error messages
+   - When the backup cannot be written, raise `ClickException` with the text
+     `Failed to create backup file: {error}`
    - Preserve original file permissions on backup copies
 4. **Cross-Platform Support**: Use platform-appropriate file operations for reliable backup creation
 5. **Error Handling**:

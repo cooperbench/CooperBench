@@ -49,5 +49,11 @@ pub fn first(
 - Proper error handling when count exceeds string length
 - Full Unicode grapheme cluster support
 
+**Error messages are compared verbatim by the test harness.** The exact wording is:
+
+- too few characters: `not enough characters (requested <n>, but string only has <m>)`
+- a non-positive count: `count must be at least 1`
+
+
 **Files Modified:**
 - `crates/typst/src/foundations/str.rs` - Method implementations

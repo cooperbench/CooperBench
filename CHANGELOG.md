@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.29] - 2026-08-14
+
+### Fixed
+
+- **All 199 features are now gradeable.** The property the benchmark rests on — a feature's tests
+  must FAIL on the base commit and PASS with its gold patch — did not hold for 24 of them, and
+  none were findable by reading the specs: 12 had a `runner.sh` that never invoked the feature's
+  own tests, 8 broke on dependency drift, 5 carried feature 1's expectations in every test patch,
+  2 had tests that did not discriminate, 1 had overlapping hunks. `pallets_jinja/1621` f5 passed
+  6/6 on an untouched tree, so it scored for any submission at all. No `feature.patch` was
+  modified: where a fix had a choice it went to the spec or the tests, never the reference.
+  `scripts/check_gradeable.py` reproduces the sweep. Reasoning per feature is in
+  `dataset/SPEC_AUDIT.md`.
+
+- **Sandbox setup no longer deletes the build output the images pre-compile.** `test_merged` ran
+  `git clean -fdx` before each graded feature, and `-x` removes gitignored paths — which is
+  exactly where the images keep the artifacts they built at the base commit. typst's Dockerfile
+  runs `cargo build --package typst-tests --tests` for this purpose and its `runner.sh` already
+  said `git clean -fd  # No -x to preserve target/`; the harness overrode both, costing 335 crate
+  compiles on every graded run.
+
+- **Agent and git-daemon sandboxes live 3 hours instead of 1.** A heavy reasoner generates ~4x the
+  tokens per step, so agents were still working when Modal reclaimed their sandbox at 3600s. Four
+  separate sites pinned the old value and the explicit one in `adapter.py` silently beat the
+  dataclass default. The git daemon expiring is the worse half: it hosts the bare repo both agents
+  push and fetch through, so one expiry breaks every git operation in the pair at once and leaves
+  agents chasing commits the remote no longer has (`fatal: invalid object name`).
+
+- **An agent announces its departure on every exit path.** `mark_exited()` was only called after a
+  clean submit, so a crash or a step-limit exit left the peer's `has_exited()` False forever. The
+  peer then waited on someone who was never coming back: one agent issued 42 `sleep` commands
+  totalling 91 minutes, received zero exit notices, and outlived its own sandbox doing it. Because
+  a pair is only graded when both sides return, a single silent death loses the pair.
+
+- **A peer that is killed is now detected, not just one that leaves politely.** Departure was
+  entirely self-reported, which cannot work for the case that actually happens — the sandbox is
+  reclaimed, the process is killed outright, and no `finally` runs. Agents now refresh an `:alive`
+  key every step and `has_exited()` treats a lapsed heartbeat as gone, so silence is the signal
+  and death needs no cooperation from the dead. `is_unreachable()` separates the two, and the
+  message injected into the survivor's history says which happened rather than claiming a killed
+  peer "completed their work" — an agent told something untrue about the remote acts on it. A peer
+  that has not started yet is never mistaken for one that has died.
+
 ## [0.0.28] - 2026-08-10
 
 ### Fixed

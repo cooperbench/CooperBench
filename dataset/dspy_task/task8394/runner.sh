@@ -78,22 +78,25 @@ pip install -e ".[dev]"
 
 # Run tests with timeout and better error handling
 echo "Running tests..."
-timeout 300 python -m pytest "tests/clients/test_cache.py" -v --tb=short --maxfail=1
+# No --maxfail: stopping at the first failure left 2 of 14 tests unexecuted in observed runs, so
+# the reported tests_failed count was a floor rather than a count. `timeout 300` already bounds it.
+timeout 300 python -m pytest "tests/clients/test_cache.py" -v --tb=short
 
-# Run secondary tests if they exist (only after feature patches are applied)
-if [[ -n "$FEATURE_PATCH" ]]; then
-    SECONDARY_TEST_SPEC="tests/clients/test_cache_namespace.py tests/clients/test_cache_ttl.py"
-    if [[ -n "$SECONDARY_TEST_SPEC" ]]; then
-        IFS=' ' read -ra TEST_FILES <<< "$SECONDARY_TEST_SPEC"
-        for file in "${TEST_FILES[@]}"; do
-            if [[ -e "$file" ]]; then
-                echo "Running secondary test: $file"
-                python -m pytest "$file" -v
-            else
-                echo "Skipping missing test target: $file"
-            fi
-        done
+# Run whatever test files this feature's patch actually creates or modifies, in addition to the
+# primary suite. Two failure modes this avoids, both observed:
+#   * gating secondary tests on "$FEATURE_PATCH" means the base run never executes the feature's
+#     own tests, so a feature scores as passing on an untouched tree;
+#   * hardcoding a filename misses per-feature files (test_grounded_proposer1.py .. 5.py), so the
+#     graded tests never run at all in either pass.
+PATCH_TARGETS=$(grep -oE '^\+\+\+ b/.*' "/patches/$TEST_PATCH" 2>/dev/null | sed 's|^+++ b/||' | sort -u)
+for file in $PATCH_TARGETS; do
+    if [[ -e "$file" ]]; then
+        echo "Running tests from the test patch: $file"
+        timeout 300 python -m pytest "$file" -v || exit $?
+    else
+        echo "Error: test target named by the patch is missing: $file"
+        exit 1
     fi
-fi
+done
 
 echo "Test execution completed!"

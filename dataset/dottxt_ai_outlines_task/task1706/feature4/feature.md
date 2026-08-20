@@ -1,5 +1,9 @@
 **Title**: Add batch size validation to XGrammarLogitsProcessor
 
+The rejection raises `ValueError` with the text
+`Batch size {batch_size} exceeds maximum allowed batch size {max_batch_size}`.
+
+
 **Pull Request Details**
 Adds a `max_batch_size` parameter to XGrammarLogitsProcessor to validate and limit batch sizes during initialization,
 preventing resource exhaustion from oversized batches.

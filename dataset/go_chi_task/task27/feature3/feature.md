@@ -8,6 +8,13 @@ Adds detailed debug-level logging for route pattern handling to make debugging e
 - Logs pattern parsing information including method detection
 - Integrates with existing logging mechanism
 
+## Public API
+
+```go
+// Turns on debug-level logging; off by default.
+func EnableDebugLogging()
+```
+
 ## Issue Context:
 
 Developers have reported difficulty debugging route handling issues, particularly with complex patterns or when methods are involved. This change provides more visibility into the pattern handling process.

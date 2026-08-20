@@ -148,7 +148,7 @@ class MiniSweAgentV2Runner:
         env_kwargs = {
             "image": image,
             "cwd": "/workspace/repo",
-            "timeout": 3600,
+            "timeout": 10800,
         }
         container_env = dict(env_cfg.get("env") or {})
         # In team mode, propagate the CB_TEAM_* env vars into every

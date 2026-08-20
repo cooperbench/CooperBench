@@ -6,7 +6,8 @@ set -e
 cleanup() {
     if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
         git reset --hard HEAD 2>/dev/null || true
-        git clean -fdx 2>/dev/null || true
+        # No -x: keeps the image's prebuilt native extension.
+        git clean -fd 2>/dev/null || true
     fi
 }
 
