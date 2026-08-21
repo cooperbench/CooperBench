@@ -15,6 +15,24 @@ Many production applications need to monitor which routes are most frequently ac
 4. **Mux integration** – Add `metricsCollector` field to `Mux` struct and `SetMetricsCollector()` method to configure the collector.  
 5. **Timing instrumentation** – In `routeHTTP()`, measure request duration using `time.Now()` and `time.Since()`, then call `RecordHit()` after handler execution if collector is configured.
 
+**Public API**
+
+Callers depend on these exact names. Note `Params`, not chi's usual `URLParams`.
+
+```go
+type RouteMetric struct {
+    Pattern  string            // matched route pattern, e.g. "/users/{id}"
+    Method   string
+    Path     string
+    Duration time.Duration
+    Params   map[string]string // URL parameters keyed by name, e.g. {"id": "123"}
+}
+
+type SimpleMetricsCollector struct {
+    OnHit func(RouteMetric)
+}
+```
+
 **Files Modified**
 - `mux.go`
 - `metrics.go`

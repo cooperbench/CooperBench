@@ -1,0 +1,798 @@
+{
+ "dottxt_ai_outlines_task/task1371|feature1": [
+  "OK",
+  "custom filters API named"
+ ],
+ "dottxt_ai_outlines_task/task1371|feature2": [
+  "OK",
+  "bare `Exception` in the test is a catch-all any error satisfies"
+ ],
+ "dottxt_ai_outlines_task/task1371|feature3": [
+  "OK",
+  "conditional filter loading described"
+ ],
+ "dottxt_ai_outlines_task/task1371|feature4": [
+  "OK",
+  "built-in filter extensions named"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature1": [
+  "OK",
+  "regex type: format described and the type name given"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature10": [
+  "OK",
+  "over-complete \u2014 spec contains the answer verbatim"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature2": [
+  "OK",
+  "regex type: format described and the type name given"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature3": [
+  "OK",
+  "regex type: format described and the type name given"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature4": [
+  "OK",
+  "regex type: format described and the type name given"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature5": [
+  "OK",
+  "regex type: format described and the type name given"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature6": [
+  "OK",
+  "regex type: format described and the type name given"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature7": [
+  "OK",
+  "every assertion derivable; \"xor\" is exact"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature8": [
+  "OK",
+  "format-only is explicit ('format' x3, XXX-XX-XXXX given) \u2014 note 000-00-0000 and 999-99-9999 are valid, so real SSN area rules must NOT be applied"
+ ],
+ "dottxt_ai_outlines_task/task1655|feature9": [
+  "OK",
+  "regex type: format described and the type name given"
+ ],
+ "dottxt_ai_outlines_task/task1706|feature1": [
+  "OK",
+  "'\u2026is not available' is pre-existing outlines text (0 occurrences in gold)"
+ ],
+ "dottxt_ai_outlines_task/task1706|feature2": [
+  "OK",
+  "cache_compiled_grammars and the processor API both named"
+ ],
+ "dottxt_ai_outlines_task/task1706|feature3": [
+  "OK",
+  "`temperature` named; only pre-existing messages asserted"
+ ],
+ "dottxt_ai_outlines_task/task1706|feature4": [
+  "SPEC",
+  "exact batch-size ValueError text"
+ ],
+ "dottxt_ai_outlines_task/task1706|feature5": [
+  "SPEC",
+  "exact custom_adapter ValueError texts \u2014 conditions stated, wording was not"
+ ],
+ "dottxt_ai_outlines_task/task1706|feature6": [
+  "OK",
+  "the matched messages come from the test's own validator, not from gold"
+ ],
+ "dottxt_ai_outlines_task/task1706|feature7": [
+  "OK",
+  "'Grammar error' is raised by the test's own stub; fallback API named"
+ ],
+ "dottxt_ai_outlines_task/task1706|feature8": [
+  "OK",
+  "all four memory attributes named in the spec"
+ ],
+ "dspy_task/task8394|feature1": [
+  "OK",
+  "bypass() context manager named and described"
+ ],
+ "dspy_task/task8394|feature2": [
+  "OK",
+  "over-complete \u2014 gives the exact ns_hash formula and key format"
+ ],
+ "dspy_task/task8394|feature3": [
+  "OK",
+  "every assertion maps to a stated sentence"
+ ],
+ "dspy_task/task8394|feature4": [
+  "OK",
+  "both candidate gaps derivable; amendment reverted"
+ ],
+ "dspy_task/task8394|feature5": [
+  "OK",
+  "compression + magic-header format stated in the spec"
+ ],
+ "dspy_task/task8563|feature1": [
+  "OK",
+  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+ ],
+ "dspy_task/task8563|feature2": [
+  "OK",
+  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+ ],
+ "dspy_task/task8563|feature3": [
+  "OK",
+  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+ ],
+ "dspy_task/task8563|feature4": [
+  "OK",
+  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+ ],
+ "dspy_task/task8563|feature5": [
+  "OK",
+  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+ ],
+ "dspy_task/task8563|feature6": [
+  "OK",
+  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+ ],
+ "dspy_task/task8587|feature1": [
+  "OK",
+  "nothing flagged \u2014 streaming API fully named in each spec"
+ ],
+ "dspy_task/task8587|feature2": [
+  "OK",
+  "nothing flagged \u2014 streaming API fully named in each spec"
+ ],
+ "dspy_task/task8587|feature3": [
+  "OK",
+  "nothing flagged \u2014 streaming API fully named in each spec"
+ ],
+ "dspy_task/task8587|feature4": [
+  "OK",
+  "nothing flagged \u2014 streaming API fully named in each spec"
+ ],
+ "dspy_task/task8587|feature5": [
+  "OK",
+  "nothing flagged \u2014 streaming API fully named in each spec"
+ ],
+ "dspy_task/task8587|feature6": [
+  "OK",
+  "nothing flagged \u2014 streaming API fully named in each spec"
+ ],
+ "dspy_task/task8635|feature1": [
+  "OK",
+  "nothing flagged \u2014 proposer params fully named in each spec"
+ ],
+ "dspy_task/task8635|feature2": [
+  "OK",
+  "nothing flagged \u2014 proposer params fully named in each spec"
+ ],
+ "dspy_task/task8635|feature3": [
+  "OK",
+  "nothing flagged \u2014 proposer params fully named in each spec"
+ ],
+ "dspy_task/task8635|feature4": [
+  "OK",
+  "nothing flagged \u2014 proposer params fully named in each spec"
+ ],
+ "dspy_task/task8635|feature5": [
+  "OK",
+  "nothing flagged \u2014 proposer params fully named in each spec"
+ ],
+ "dspy_task/task8635|feature6": [
+  "OK",
+  "nothing flagged \u2014 proposer params fully named in each spec"
+ ],
+ "go_chi_task/task26|feature1": [
+  "OK",
+  "\"alias for chi.URLParam\" carries the ordering requirement"
+ ],
+ "go_chi_task/task26|feature2": [
+  "SPEC",
+  "added RouteMetric/SimpleMetricsCollector field names"
+ ],
+ "go_chi_task/task26|feature3": [
+  "SPEC",
+  "added RouteSelector API \u2014 spec named no identifiers at all"
+ ],
+ "go_chi_task/task26|feature4": [
+  "SPEC",
+  "added WithPriority + Priority* constants"
+ ],
+ "go_chi_task/task27|feature1": [
+  "OK",
+  "HTTP method parsing in patterns described"
+ ],
+ "go_chi_task/task27|feature2": [
+  "OK",
+  "method aliases + case insensitivity stated"
+ ],
+ "go_chi_task/task27|feature3": [
+  "SPEC",
+  "added EnableDebugLogging() \u2014 gold introduces it, spec named nothing"
+ ],
+ "go_chi_task/task27|feature4": [
+  "OK",
+  "path prefix support described"
+ ],
+ "go_chi_task/task56|feature1": [
+  "OK",
+  "Allow header on 405 described"
+ ],
+ "go_chi_task/task56|feature2": [
+  "OK",
+  "501 default + configurability stated"
+ ],
+ "go_chi_task/task56|feature3": [
+  "OK",
+  "request context tracing described"
+ ],
+ "go_chi_task/task56|feature4": [
+  "OK",
+  "method validation middleware described"
+ ],
+ "go_chi_task/task56|feature5": [
+  "OK",
+  "CORS options described"
+ ],
+ "huggingface_datasets_task/task3997|feature1": [
+  "OK",
+  "Features sync semantics stated"
+ ],
+ "huggingface_datasets_task/task3997|feature2": [
+  "SPEC",
+  "added set_custom_decoding_criteria \u2014 gold introduces it, spec named nothing"
+ ],
+ "huggingface_datasets_task/task3997|feature3": [
+  "SPEC",
+  "same hook name, needed for the caching feature too"
+ ],
+ "huggingface_datasets_task/task3997|feature4": [
+  "OK",
+  "extended update() semantics stated"
+ ],
+ "huggingface_datasets_task/task3997|feature5": [
+  "OK",
+  "deep-merge behaviour stated"
+ ],
+ "huggingface_datasets_task/task6252|feature1": [
+  "OK",
+  "EXIF orientation correction described; decode-time behaviour stated"
+ ],
+ "huggingface_datasets_task/task6252|feature2": [
+  "OK",
+  "center-crop-to-square parameter named"
+ ],
+ "huggingface_datasets_task/task6252|feature3": [
+  "OK",
+  "max-resolution clamping parameter named"
+ ],
+ "huggingface_datasets_task/task6252|feature4": [
+  "OK",
+  "2x arithmetic follows from \"all four sides\""
+ ],
+ "huggingface_datasets_task/task6252|feature5": [
+  "OK",
+  "`decode_example` is the repo's existing decode entry point"
+ ],
+ "huggingface_datasets_task/task6252|feature6": [
+  "OK",
+  "single assertion, stated verbatim"
+ ],
+ "huggingface_datasets_task/task7309|feature1": [
+  "OK",
+  "predicate pushdown + filters described"
+ ],
+ "huggingface_datasets_task/task7309|feature2": [
+  "OK",
+  "streaming sort described"
+ ],
+ "llama_index_task/task17070|feature1": [
+  "OK",
+  "NDCG metric change fully described incl. flag semantics"
+ ],
+ "llama_index_task/task17070|feature2": [
+  "OK",
+  "NDCG metric change fully described incl. flag semantics"
+ ],
+ "llama_index_task/task17070|feature3": [
+  "OK",
+  "NDCG metric change fully described incl. flag semantics"
+ ],
+ "llama_index_task/task17244|feature1": [
+  "OK",
+  "ImageBlock parameter named with its semantics stated"
+ ],
+ "llama_index_task/task17244|feature2": [
+  "OK",
+  "ImageBlock parameter named with its semantics stated"
+ ],
+ "llama_index_task/task17244|feature3": [
+  "OK",
+  "ImageBlock parameter named with its semantics stated"
+ ],
+ "llama_index_task/task17244|feature4": [
+  "OK",
+  "ImageBlock parameter named with its semantics stated"
+ ],
+ "llama_index_task/task17244|feature5": [
+  "OK",
+  "ImageBlock parameter named with its semantics stated"
+ ],
+ "llama_index_task/task17244|feature6": [
+  "OK",
+  "ImageBlock parameter named with its semantics stated"
+ ],
+ "llama_index_task/task17244|feature7": [
+  "OK",
+  "ImageBlock parameter named with its semantics stated"
+ ],
+ "llama_index_task/task18813|feature1": [
+  "OK",
+  "DocumentBlock is pre-existing; empty-bytes error described"
+ ],
+ "llama_index_task/task18813|feature2": [
+  "SPEC",
+  "exact 'exceeds maximum allowed size' message \u2014 spec gave only the condition"
+ ],
+ "llama_index_task/task18813|feature3": [
+  "OK",
+  "resolve_* variant named with its return shape stated"
+ ],
+ "llama_index_task/task18813|feature4": [
+  "OK",
+  "resolve_* variant named with its return shape stated"
+ ],
+ "llama_index_task/task18813|feature5": [
+  "OK",
+  "resolve_* variant named with its return shape stated"
+ ],
+ "llama_index_task/task18813|feature6": [
+  "OK",
+  "resolve_* variant named with its return shape stated"
+ ],
+ "openai_tiktoken_task/task0|feature1": [
+  "OK",
+  "encode() parameter named with its post-processing semantics stated"
+ ],
+ "openai_tiktoken_task/task0|feature10": [
+  "OK",
+  "encode() parameter named with its post-processing semantics stated"
+ ],
+ "openai_tiktoken_task/task0|feature2": [
+  "OK",
+  "encode() parameter named with its post-processing semantics stated"
+ ],
+ "openai_tiktoken_task/task0|feature3": [
+  "OK",
+  "encode() parameter named with its post-processing semantics stated"
+ ],
+ "openai_tiktoken_task/task0|feature4": [
+  "OK",
+  "encode() parameter named with its post-processing semantics stated"
+ ],
+ "openai_tiktoken_task/task0|feature5": [
+  "OK",
+  "encode() parameter named with its post-processing semantics stated"
+ ],
+ "openai_tiktoken_task/task0|feature6": [
+  "OK",
+  "composition order stated with an example"
+ ],
+ "openai_tiktoken_task/task0|feature7": [
+  "OK",
+  "encode() parameter named with its post-processing semantics stated"
+ ],
+ "openai_tiktoken_task/task0|feature8": [
+  "OK",
+  "recomputed the dict \u2014 exactly \"top 3 adjacent pairs\""
+ ],
+ "openai_tiktoken_task/task0|feature9": [
+  "OK",
+  "encode() parameter named with its post-processing semantics stated"
+ ],
+ "pallets_click_task/task2068|feature1": [
+  "OK",
+  "multi-file edit; `filename` sequence stated, assertions are content round-trips"
+ ],
+ "pallets_click_task/task2068|feature10": [
+  "OK",
+  "`working_dir` named; \"Editing failed\" is pre-existing"
+ ],
+ "pallets_click_task/task2068|feature11": [
+  "OK",
+  "spec gives the full callback signature the test asserts, incl. timestamp"
+ ],
+ "pallets_click_task/task2068|feature12": [
+  "OK",
+  "`handle_exit_codes`/`exit_code` named; \"Editing failed\" pre-existing"
+ ],
+ "pallets_click_task/task2068|feature2": [
+  "SPEC",
+  "exact timeout message \u2014 and gold does not pluralise, so \"after 1 seconds\""
+ ],
+ "pallets_click_task/task2068|feature3": [
+  "SPEC",
+  "exact `Failed to create backup file: {error}` text"
+ ],
+ "pallets_click_task/task2068|feature4": [
+  "OK",
+  "`editor_args` named; \"Editing failed\" is pre-existing click text"
+ ],
+ "pallets_click_task/task2068|feature5": [
+  "OK",
+  "`lock_files` named; reuses the pre-existing \"Editing failed\" message"
+ ],
+ "pallets_click_task/task2068|feature6": [
+  "OK",
+  "`process_priority` named; test asserts the attribute round-trips"
+ ],
+ "pallets_click_task/task2068|feature7": [
+  "OK",
+  "`escape_shell` named; assertions compare escaped vs unescaped commands"
+ ],
+ "pallets_click_task/task2068|feature8": [
+  "SPEC",
+  "test inspects Popen kwargs for preexec_fn=os.setpgrp; start_new_session is equally correct, so 50/50"
+ ],
+ "pallets_click_task/task2068|feature9": [
+  "OK",
+  "`isolate_env`/`env` named; assertions are on the captured environment"
+ ],
+ "pallets_click_task/task2800|feature1": [
+  "OK",
+  "over-complete \u2014 names function, call sites, construct"
+ ],
+ "pallets_click_task/task2800|feature2": [
+  "OK",
+  "exit-hook API named in the spec"
+ ],
+ "pallets_click_task/task2800|feature3": [
+  "OK",
+  "resource-limit parameter named and described"
+ ],
+ "pallets_click_task/task2800|feature4": [
+  "OK",
+  "'Test error' comes from the test's own stub"
+ ],
+ "pallets_click_task/task2800|feature5": [
+  "OK",
+  "retry messages are test-local; default 0 = no retries is stated, so propagation follows"
+ ],
+ "pallets_click_task/task2800|feature6": [
+  "OK",
+  "snapshot/restore API named in the spec"
+ ],
+ "pallets_click_task/task2800|feature7": [
+  "OK",
+  "explicit API Specification section"
+ ],
+ "pallets_click_task/task2956|feature1": [
+  "OK",
+  "`Argument` is pre-existing; `shell_complete` is click's standard completion hook and the spec's subject"
+ ],
+ "pallets_click_task/task2956|feature2": [
+  "OK",
+  "'Custom error' is raised by the test's own validator, not gold"
+ ],
+ "pallets_click_task/task2956|feature3": [
+  "OK",
+  "`to_info_dict` is pre-existing click API (context line)"
+ ],
+ "pallets_click_task/task2956|feature4": [
+  "OK",
+  "`invoke` is pre-existing click API (context line)"
+ ],
+ "pallets_click_task/task2956|feature5": [
+  "OK",
+  "nothing flagged"
+ ],
+ "pallets_click_task/task2956|feature6": [
+  "OK",
+  "nothing flagged"
+ ],
+ "pallets_click_task/task2956|feature7": [
+  "OK",
+  "nothing flagged"
+ ],
+ "pallets_click_task/task2956|feature8": [
+  "OK",
+  "nothing flagged"
+ ],
+ "pallets_jinja_task/task1465|feature1": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1465|feature10": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1465|feature2": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1465|feature3": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1465|feature4": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1465|feature5": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1465|feature6": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1465|feature7": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1465|feature8": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1465|feature9": [
+  "OK",
+  "groupby param named with semantics, default and backward-compat all stated"
+ ],
+ "pallets_jinja_task/task1559|feature1": [
+  "OK",
+  "i18n extension API and tag syntax fully named in the spec"
+ ],
+ "pallets_jinja_task/task1559|feature10": [
+  "OK",
+  "i18n extension API and tag syntax fully named in the spec"
+ ],
+ "pallets_jinja_task/task1559|feature2": [
+  "OK",
+  "i18n extension API and tag syntax fully named in the spec"
+ ],
+ "pallets_jinja_task/task1559|feature3": [
+  "OK",
+  "i18n extension API and tag syntax fully named in the spec"
+ ],
+ "pallets_jinja_task/task1559|feature4": [
+  "OK",
+  "over-complete \u2014 error strings quoted verbatim"
+ ],
+ "pallets_jinja_task/task1559|feature5": [
+  "OK",
+  "i18n extension API and tag syntax fully named in the spec"
+ ],
+ "pallets_jinja_task/task1559|feature6": [
+  "OK",
+  "i18n extension API and tag syntax fully named in the spec"
+ ],
+ "pallets_jinja_task/task1559|feature7": [
+  "OK",
+  "i18n extension API and tag syntax fully named in the spec"
+ ],
+ "pallets_jinja_task/task1559|feature8": [
+  "SPEC",
+  "comma separators + trimmed covering fallback"
+ ],
+ "pallets_jinja_task/task1559|feature9": [
+  "OK",
+  "i18n extension API and tag syntax fully named in the spec"
+ ],
+ "pallets_jinja_task/task1621|feature1": [
+  "OK",
+  "fallback search paths named and described"
+ ],
+ "pallets_jinja_task/task1621|feature10": [
+  "OK",
+  "aliasing map named and described"
+ ],
+ "pallets_jinja_task/task1621|feature2": [
+  "OK",
+  "normalisation rules stated"
+ ],
+ "pallets_jinja_task/task1621|feature3": [
+  "OK",
+  "validation rules stated"
+ ],
+ "pallets_jinja_task/task1621|feature4": [
+  "OK",
+  "invalid-tuple handling already stated"
+ ],
+ "pallets_jinja_task/task1621|feature5": [
+  "TEST",
+  "6/6 passed on base; 3 tests rewritten to observe _path_cache"
+ ],
+ "pallets_jinja_task/task1621|feature6": [
+  "OK",
+  "spec names `path_transform`; the flagged `transform_path` is the test's own local function"
+ ],
+ "pallets_jinja_task/task1621|feature7": [
+  "OK",
+  "expansion of env vars / user paths stated"
+ ],
+ "pallets_jinja_task/task1621|feature8": [
+  "OK",
+  "filtering predicate named"
+ ],
+ "pallets_jinja_task/task1621|feature9": [
+  "OK",
+  "`TemplateNotFound` is jinja's standard exception; monitoring API named"
+ ],
+ "pillow_task/task25|feature1": [
+  "OK",
+  "readonly-on-matching-filename rule stated"
+ ],
+ "pillow_task/task25|feature2": [
+  "OK",
+  "preserve-readonly option named"
+ ],
+ "pillow_task/task25|feature3": [
+  "OK",
+  "`OSError` is Pillow's standard save error; spec says dry_run still surfaces format errors"
+ ],
+ "pillow_task/task25|feature4": [
+  "OK",
+  "backup-on-overwrite behaviour stated"
+ ],
+ "pillow_task/task25|feature5": [
+  "OK",
+  "corner-pixel watermark option named"
+ ],
+ "pillow_task/task290|feature1": [
+  "OK",
+  "palette-limit semantics stated"
+ ],
+ "pillow_task/task290|feature2": [
+  "OK",
+  "maximum colour limit stated"
+ ],
+ "pillow_task/task290|feature3": [
+  "OK",
+  "custom palette sort callable named"
+ ],
+ "pillow_task/task290|feature4": [
+  "TEST",
+  "MSE assertions wrapped in uint8 and the reference does not honour the absolute threshold; rewritten to assert the ordering. Verified on Modal: passes with gold, fails without."
+ ],
+ "pillow_task/task290|feature5": [
+  "SPEC",
+  "lightness_factor <= 0 raises ValueError"
+ ],
+ "pillow_task/task68|feature1": [
+  "OK",
+  "tuple XMP form stated"
+ ],
+ "pillow_task/task68|feature2": [
+  "OK",
+  "metadata-removal option named"
+ ],
+ "pillow_task/task68|feature3": [
+  "OK",
+  "orientation transformer callback named"
+ ],
+ "pillow_task/task68|feature4": [
+  "OK",
+  "`TypeError` is the pre-existing exif_transpose error the handler replaces"
+ ],
+ "pillow_task/task68|feature5": [
+  "OK",
+  "logging hooks named"
+ ],
+ "react_hook_form_task/task153|feature1": [
+  "OK",
+  "over-complete \u2014 callback signature, ordering and target file all stated"
+ ],
+ "react_hook_form_task/task153|feature2": [
+  "OK",
+  "over-complete \u2014 callback signature, ordering and target file all stated"
+ ],
+ "react_hook_form_task/task153|feature3": [
+  "OK",
+  "over-complete \u2014 callback signature, ordering and target file all stated"
+ ],
+ "react_hook_form_task/task153|feature4": [
+  "OK",
+  "over-complete \u2014 callback signature, ordering and target file all stated"
+ ],
+ "react_hook_form_task/task153|feature5": [
+  "OK",
+  "over-complete \u2014 callback signature, ordering and target file all stated"
+ ],
+ "react_hook_form_task/task153|feature6": [
+  "OK",
+  "over-complete \u2014 callback signature, ordering and target file all stated"
+ ],
+ "react_hook_form_task/task85|feature1": [
+  "OK",
+  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+ ],
+ "react_hook_form_task/task85|feature2": [
+  "OK",
+  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+ ],
+ "react_hook_form_task/task85|feature3": [
+  "OK",
+  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+ ],
+ "react_hook_form_task/task85|feature4": [
+  "OK",
+  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+ ],
+ "react_hook_form_task/task85|feature5": [
+  "OK",
+  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+ ],
+ "samuelcolvin_dirty_equals_task/task43|feature1": [
+  "OK",
+  "IsIP: version/netmask/ipaddress module all named"
+ ],
+ "samuelcolvin_dirty_equals_task/task43|feature2": [
+  "OK",
+  "IsMac: 'hyphen'/'dot' map 1:1 onto the four named formats"
+ ],
+ "samuelcolvin_dirty_equals_task/task43|feature3": [
+  "OK",
+  "IsEmail: dotted-domain requirement is the universal convention"
+ ],
+ "samuelcolvin_dirty_equals_task/task43|feature4": [
+  "OK",
+  "IsURL: (protocol, domain) order follows the title"
+ ],
+ "samuelcolvin_dirty_equals_task/task43|feature5": [
+  "SPEC",
+  "country codes are case-insensitive \u2014 gold does .upper(), spec silent"
+ ],
+ "samuelcolvin_dirty_equals_task/task43|feature6": [
+  "SPEC",
+  "issuer tokens are exactly 'Visa'/'Mastercard'/'AmericanExpress' (one word)"
+ ],
+ "samuelcolvin_dirty_equals_task/task43|feature7": [
+  "OK",
+  "IsHash: algorithms and case-preserving repr both stated"
+ ],
+ "samuelcolvin_dirty_equals_task/task43|feature8": [
+  "OK",
+  "IsRegex: repr format given for both flag cases"
+ ],
+ "samuelcolvin_dirty_equals_task/task43|feature9": [
+  "OK",
+  "IsColor: hex/rgb/hsl named in the title"
+ ],
+ "typst_task/task6554|feature1": [
+  "OK",
+  "default param stated with examples"
+ ],
+ "typst_task/task6554|feature10": [
+  "SPEC",
+  "exact no-words + unknown-unit diagnostics"
+ ],
+ "typst_task/task6554|feature2": [
+  "SPEC",
+  "exact out-of-bounds diagnostic"
+ ],
+ "typst_task/task6554|feature3": [
+  "OK",
+  "safe param stated with examples"
+ ],
+ "typst_task/task6554|feature4": [
+  "SPEC",
+  "exact not-enough-characters + repeat diagnostics"
+ ],
+ "typst_task/task6554|feature5": [
+  "SPEC",
+  "exact not-enough-characters + count diagnostics"
+ ],
+ "typst_task/task6554|feature6": [
+  "SPEC",
+  "exact \"string contains only whitespace\" (new, not pre-existing)"
+ ],
+ "typst_task/task6554|feature7": [
+  "SPEC",
+  "exact no-character-matches diagnostic + check ordering"
+ ],
+ "typst_task/task6554|feature8": [
+  "SPEC",
+  "exact unknown-case-option diagnostic"
+ ],
+ "typst_task/task6554|feature9": [
+  "OK",
+  "strip param stated with examples"
+ ]
+}

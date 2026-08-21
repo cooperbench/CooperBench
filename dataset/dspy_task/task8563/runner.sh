@@ -78,7 +78,9 @@ pip install -e ".[dev]"
 
 # Run tests with timeout and better error handling
 echo "Running tests..."
-timeout 300 python -m pytest "tests/adapters/test_tool.py" "tests/adapters/test_chat_adapter.py" -v --tb=short --maxfail=1
+# No --maxfail: stopping at the first failure leaves later tests unexecuted, so the reported
+# failure count is a floor rather than a count. `timeout 300` already bounds the run.
+timeout 300 python -m pytest "tests/adapters/test_tool.py" "tests/adapters/test_chat_adapter.py" -v --tb=short
 
 # Run secondary tests if they exist (only after feature patches are applied)
 if [[ -n "$FEATURE_PATCH" ]]; then

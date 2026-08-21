@@ -1,8 +1,8 @@
 diff --git a/tests/test_ext.py b/tests/test_ext.py
-index b54e905f..6de3a267 100644
+index b54e905f..21d9708e 100644
 --- a/tests/test_ext.py
 +++ b/tests/test_ext.py
-@@ -599,6 +599,273 @@ class TestNewstyleInternationalization:
+@@ -599,6 +599,320 @@ class TestNewstyleInternationalization:
          assert tmpl.render(LANGUAGE="de", apples=5) == "5 Apples"
  
  
@@ -272,6 +272,53 @@ index b54e905f..6de3a267 100644
 +        assert result == "Hola"
 +
 +
++    def test_priority_retries_until_translation_found(self):
++        """gettext is retried at incrementing priority levels until it returns a translation."""
++        calls = []
++
++        def counting_gettext(message):
++            calls.append(message)
++            # Untranslated at the first two priority levels, translated at the third.
++            return "TRANSLATED" if len(calls) >= 3 else message
++
++        env = Environment(extensions=["jinja2.ext.i18n"])
++        env.globals.update({
++            "gettext": counting_gettext,
++            "ngettext": lambda s, p, n: s if n == 1 else p,
++        })
++
++        tmpl = env.from_string('{% trans priority=5 %}Hello{% endtrans %}')
++        assert tmpl.render() == "TRANSLATED"
++        assert len(calls) == 3
++
++    def test_priority_zero_calls_gettext_once(self):
++        """priority=0 must not retry, so a missing translation stays untranslated."""
++        calls = []
++
++        def counting_gettext(message):
++            calls.append(message)
++            return message
++
++        env = Environment(extensions=["jinja2.ext.i18n"])
++        env.globals.update({
++            "gettext": counting_gettext,
++            "ngettext": lambda s, p, n: s if n == 1 else p,
++        })
++
++        tmpl = env.from_string('{% trans priority=0 %}Hello{% endtrans %}')
++        assert tmpl.render() == "Hello"
++        assert len(calls) == 1
++
++    def test_priority_is_not_a_template_variable(self):
++        """priority is consumed by the tag, not exposed for substitution."""
++        env = Environment(extensions=["jinja2.ext.i18n"])
++        env.globals.update({
++            "gettext": lambda x: x,
++            "ngettext": lambda s, p, n: s if n == 1 else p,
++        })
++
++        tmpl = env.from_string('{% trans priority=7, name="World" %}Hello {{ name }}{% endtrans %}')
++        assert tmpl.render() == "Hello World"
 +
  class TestAutoEscape:
      def test_scoped_setting(self):

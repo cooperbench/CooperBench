@@ -1,8 +1,8 @@
 diff --git a/tests/test_loader.py b/tests/test_loader.py
-index b300c8f2..8a269a21 100644
+index b300c8f2..91287439 100644
 --- a/tests/test_loader.py
 +++ b/tests/test_loader.py
-@@ -116,6 +116,129 @@ class TestLoaders:
+@@ -116,6 +116,170 @@ class TestLoaders:
          assert split_template_path("./foo/bar") == ["foo", "bar"]
          pytest.raises(TemplateNotFound, split_template_path, "../foo")
  
@@ -103,31 +103,72 @@ index b300c8f2..8a269a21 100644
 +        tmpl_nested = env.get_template("foo/test.html")
 +        assert tmpl_nested.render().strip() == "FOO"
 +
-+    def test_filesystem_loader_cache_performance(self):
-+        """Test that caching works correctly on repeated access."""
-+        import time
-+ 
++    def test_filesystem_loader_records_resolved_path(self):
++        """A successful lookup stores the resolved path under the template name."""
 +        searchpath = (Path(__file__) / ".." / "res" / "templates").resolve()
-+        loader1 = loaders.FileSystemLoader(str(searchpath))
-+        loader2 = loaders.FileSystemLoader(str(searchpath))
-+        env1 = Environment(loader=loader1)
-+        env2 = Environment(loader=loader2)
-+ 
-+        # Time repeated access with same loader (should benefit from caching)
-+        start_time = time.time()
-+        for _ in range(10):
-+            env1.get_template("test.html")
-+        cached_time = time.time() - start_time
-+ 
-+        # Time access with fresh loader (no cache benefit)
-+        start_time = time.time()
-+        for _ in range(10):
-+            env2.get_template("test.html")
-+        fresh_time = time.time() - start_time
-+ 
-+        # Both should be fast, this verifies the cache mechanism works without accessing internals
-+        assert cached_time >= 0
-+        assert fresh_time >= 0
++        loader = loaders.FileSystemLoader(str(searchpath))
++        env = Environment(loader=loader)
++
++        assert loader._path_cache == {}
++
++        loader.get_source(env, "test.html")
++
++        assert "test.html" in loader._path_cache
++        cached = loader._path_cache["test.html"]
++        assert cached is not None
++        assert os.path.isfile(cached)
++
++    def test_filesystem_loader_records_miss_as_none(self):
++        """A failed lookup is stored as None and short-circuits later lookups."""
++        import shutil
++        import tempfile
++
++        temp_dir = tempfile.mkdtemp()
++        try:
++            loader = loaders.FileSystemLoader(temp_dir)
++            env = Environment(loader=loader)
++
++            with pytest.raises(TemplateNotFound):
++                loader.get_source(env, "later.html")
++
++            assert "later.html" in loader._path_cache
++            assert loader._path_cache["later.html"] is None
++
++            # The file exists now, but the cached miss answers without touching
++            # the filesystem, so the template is still reported as not found.
++            with open(os.path.join(temp_dir, "later.html"), "w") as f:
++                f.write("appeared")
++
++            with pytest.raises(TemplateNotFound):
++                loader.get_source(env, "later.html")
++        finally:
++            shutil.rmtree(temp_dir, ignore_errors=True)
++
++    def test_filesystem_loader_drops_cached_path_when_file_vanishes(self):
++        """A cached path whose file was removed is re-resolved, not reused."""
++        import shutil
++        import tempfile
++
++        temp_dir = tempfile.mkdtemp()
++        try:
++            path = os.path.join(temp_dir, "gone.html")
++            with open(path, "w") as f:
++                f.write("here")
++
++            loader = loaders.FileSystemLoader(temp_dir)
++            env = Environment(loader=loader)
++
++            contents, filename, _ = loader.get_source(env, "gone.html")
++            assert contents == "here"
++            assert loader._path_cache["gone.html"] == filename
++
++            os.remove(path)
++
++            with pytest.raises(TemplateNotFound):
++                loader.get_source(env, "gone.html")
++            assert loader._path_cache["gone.html"] is None
++        finally:
++            shutil.rmtree(temp_dir, ignore_errors=True)
 +
  
  class TestFileSystemLoader:

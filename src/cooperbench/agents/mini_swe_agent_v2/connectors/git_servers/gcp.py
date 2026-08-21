@@ -58,7 +58,7 @@ class GCPGitServer:
         zone: str = "us-central1-a",
         machine_type: str = "e2-micro",
         network: str | None = None,
-        timeout: int = 3600,
+        timeout: int = 10800,
     ) -> GCPGitServer:
         """Create and start a git server VM.
 

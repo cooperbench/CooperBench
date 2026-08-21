@@ -27,6 +27,10 @@ from typing import Any
 
 import redis
 
+# Long enough to outlast a slow step -- a single agent turn can run minutes on a long prompt
+# plus a test run, and a heartbeat that expires mid-step would declare a working agent dead.
+ALIVE_TTL = 600
+
 
 class MessagingConnector:
     """Redis-based mailbox messaging between agents."""
@@ -51,13 +55,31 @@ class MessagingConnector:
 
         self._client = redis.from_url(url)
         self._inbox_key = f"{self._prefix}{agent_id}:inbox"
+        self._seen_alive: set[str] = set()
 
         # Clear stale messages from previous runs
         self._client.delete(self._inbox_key)
         self._client.delete(self._exited_key(agent_id))
+        self.heartbeat()
 
     def _exited_key(self, agent_id: str) -> str:
         return f"{self._prefix}{agent_id}:exited"
+
+    def _alive_key(self, agent_id: str) -> str:
+        return f"{self._prefix}{agent_id}:alive"
+
+    def heartbeat(self) -> None:
+        """Refresh this agent's liveness key.
+
+        `mark_exited` is self-reported, so it cannot fire when the sandbox is reclaimed --
+        the process is killed outright and no `finally` runs. The peer then waits forever on
+        someone who is already gone. A key that must be refreshed inverts that: silence is
+        the signal, so death needs no cooperation from the dead.
+        """
+        try:
+            self._client.setex(self._alive_key(self.agent_id), ALIVE_TTL, "1")
+        except redis.RedisError:  # never let bookkeeping take down a run
+            pass
 
     def mark_exited(self, published: bool = False) -> None:
         """Record that this agent has finished, so peers stop waiting on it.
@@ -76,9 +98,27 @@ class MessagingConnector:
             pass
 
     def has_exited(self, agent_id: str) -> bool:
-        """True when ``agent_id`` has finished its work and left."""
+        """True when ``agent_id`` is gone -- whether it said so or simply stopped.
+
+        Only report a lapsed heartbeat for an agent we have actually seen alive, so a peer
+        that has not started yet is never mistaken for one that has died.
+        """
         try:
-            return bool(self._client.exists(self._exited_key(agent_id)))
+            if self._client.exists(self._exited_key(agent_id)):
+                return True
+            if self._client.exists(self._alive_key(agent_id)):
+                self._seen_alive.add(agent_id)
+                return False
+            return agent_id in self._seen_alive
+        except redis.RedisError:
+            return False
+
+    def is_unreachable(self, agent_id: str) -> bool:
+        """Gone WITHOUT announcing it, i.e. killed rather than finished."""
+        try:
+            if self._client.exists(self._exited_key(agent_id)):
+                return False
+            return agent_id in self._seen_alive and not self._client.exists(self._alive_key(agent_id))
         except redis.RedisError:
             return False
 

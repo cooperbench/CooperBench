@@ -81,18 +81,31 @@ done
 
 TEST_PATTERN=""
 if [ ${#TEST_FUNCS[@]} -gt 0 ]; then
-    TEST_PATTERN=$(IFS="|"; echo "${TEST_FUNCS[*]}" | sort -u)
+    # Anchored: `-run` takes an unanchored regex, so a bare `TestFoo` is also satisfied by an
+    # agent-authored `TestFooExtra`. Anchoring makes the filter mean the functions the test
+    # patch actually declares.
+    TEST_PATTERN="^($(IFS="|"; echo "${TEST_FUNCS[*]}" | sort -u))$"
     echo "Found test functions to run: $TEST_PATTERN"
 fi
 
 # Run Go tests with timeout
 echo "Running Go tests..."
 if [ -n "$TEST_PATTERN" ]; then
-    timeout 300 go test -run "$TEST_PATTERN" ./...
+    TEST_OUTPUT=$(timeout 300 go test -v -run "$TEST_PATTERN" ./... 2>&1)
     TEST_EXIT_CODE=$?
 else
-    timeout 300 go test ./...
+    TEST_OUTPUT=$(timeout 300 go test -v ./... 2>&1)
     TEST_EXIT_CODE=$?
+fi
+echo "$TEST_OUTPUT"
+
+# A filter that selects nothing is a failed run, not a passing one. `go test` exits 0 and prints
+# `ok <pkg> <time> [no tests to run]` when its -run pattern matches no test, which would let a
+# feature score without any implementation at all.
+if [ "$(echo "$TEST_OUTPUT" | grep -c '^=== RUN')" -eq 0 ]; then
+    echo "Error: no test was executed. The filter '$TEST_PATTERN' matched nothing, which means the"
+    echo "       graded tests are absent, excluded by a build constraint, or failed to compile."
+    exit 1
 fi
 
 if [ "$TEST_EXIT_CODE" -ne 0 ]; then

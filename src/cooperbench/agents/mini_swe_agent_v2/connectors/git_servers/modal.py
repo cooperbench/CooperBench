@@ -28,7 +28,9 @@ class ModalGitServer:
         cls,
         app: modal.App,
         run_id: str,
-        timeout: int = 3600,
+        # Must outlive the agents: this is the shared remote they push and fetch through, so
+        # when it expires mid-run every git operation in the pair fails at once.
+        timeout: int = 10800,
     ) -> ModalGitServer:
         """Create and start a git server sandbox.
 

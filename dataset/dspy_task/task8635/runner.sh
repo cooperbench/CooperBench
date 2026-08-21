@@ -78,7 +78,9 @@ pip install -e ".[dev]"
 
 # Run tests with timeout and better error handling
 echo "Running tests..."
-timeout 300 python -m pytest "tests/teleprompt/test_utils.py" "tests/propose/test_grounded_proposer.py" -v --tb=short --maxfail=1
+# No --maxfail: stopping at the first failure leaves later tests unexecuted, so the reported
+# failure count is a floor rather than a count. `timeout 300` already bounds the run.
+timeout 300 python -m pytest "tests/teleprompt/test_utils.py" "tests/propose/test_grounded_proposer.py" -v --tb=short
 
 # Run secondary tests if they exist (only after feature patches are applied)
 if [[ -n "$FEATURE_PATCH" ]]; then
@@ -95,5 +97,22 @@ if [[ -n "$FEATURE_PATCH" ]]; then
         done
     fi
 fi
+
+# Run whatever test files this feature's patch actually creates or modifies, in addition to the
+# primary suite. Two failure modes this avoids, both observed:
+#   * gating secondary tests on "$FEATURE_PATCH" means the base run never executes the feature's
+#     own tests, so a feature scores as passing on an untouched tree;
+#   * hardcoding a filename misses per-feature files (test_grounded_proposer1.py .. 5.py), so the
+#     graded tests never run at all in either pass.
+PATCH_TARGETS=$(grep -oE '^\+\+\+ b/.*' "/patches/$TEST_PATCH" 2>/dev/null | sed 's|^+++ b/||' | sort -u)
+for file in $PATCH_TARGETS; do
+    if [[ -e "$file" ]]; then
+        echo "Running tests from the test patch: $file"
+        timeout 300 python -m pytest "$file" -v || exit $?
+    else
+        echo "Error: test target named by the patch is missing: $file"
+        exit 1
+    fi
+done
 
 echo "Test execution completed!"

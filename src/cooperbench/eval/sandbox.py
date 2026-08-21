@@ -1040,10 +1040,11 @@ cd /workspace/repo
 # Remove any stale git lock left by a previous operation
 rm -f .git/index.lock .git/refs/heads/.lock
 
-# Reset to base commit
+# Reset to base commit. No -x: it deletes the build output the images pre-compile, which
+# forced a full recompile per graded feature (335 crate compiles for typst).
 git checkout --force {base_sha} 2>&1
 git reset --hard {base_sha} 2>&1
-git clean -fdx 2>&1
+git clean -fd 2>&1
 
 echo "Reset to base: $(git rev-parse HEAD)"
 
