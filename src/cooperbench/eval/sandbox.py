@@ -745,12 +745,13 @@ if git merge agent{i} --no-commit --no-ff 2>&1; then
 else
     echo "STEP_{i}=conflicts"
     git merge --abort 2>/dev/null || true
-    echo "FOLD_STOPPED"
+    touch /tmp/fold_stopped
 fi
 if [ -f /tmp/fold_stopped ]; then exit 0; fi
 """)
     merge_cmds = "\n".join(merge_cmds_parts)
     commands = f"""
+rm -f /tmp/fold_stopped
 cd /workspace/repo
 git checkout agent1 2>&1
 {merge_cmds}

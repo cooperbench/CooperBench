@@ -452,3 +452,47 @@ class TestNAgents:
         )
         feature_sets = [tuple(t["features"]) for t in tasks]
         assert sorted(feature_sets) == [(1,), (2,), (3,)]
+
+
+class TestLoadSubsetEdgeCases:
+    """Edge cases for load_subset: missing keys and malformed JSON."""
+
+    def test_load_raises_value_error_on_invalid_json(self, tmp_path):
+        """Truncated/invalid JSON raises ValueError with the file path in the message."""
+        subset_dir = tmp_path / "dataset" / "subsets"
+        subset_dir.mkdir(parents=True)
+        (subset_dir / "bad.json").write_text("this is not json}")
+
+        with pytest.raises(ValueError, match="bad"):
+            load_subset("bad", dataset_dir=tmp_path / "dataset")
+
+    def test_load_raises_value_error_on_missing_tasks_key(self, tmp_path):
+        """Valid JSON but missing 'tasks' key raises ValueError naming the key."""
+        import json
+        subset_dir = tmp_path / "dataset" / "subsets"
+        subset_dir.mkdir(parents=True)
+        (subset_dir / "notasks.json").write_text(json.dumps({"entries": []}))
+
+        with pytest.raises(ValueError, match="tasks"):
+            load_subset("notasks", dataset_dir=tmp_path / "dataset")
+
+    def test_discover_tasks_no_pairs_no_groups_falls_back_to_all_combos(self, tmp_path):
+        """A subset entry with neither 'pairs' nor 'groups' silently expands to all nC2 combos."""
+        import json
+        os.chdir(tmp_path)
+
+        dataset = tmp_path / "dataset"
+        repo = dataset / "test_repo_task" / "task1"
+        for fid in [1, 2, 3]:
+            (repo / f"feature{fid}").mkdir(parents=True)
+
+        subset_dir = dataset / "subsets"
+        subset_dir.mkdir(parents=True)
+        subset_data = {
+            "tasks": [{"repo": "test_repo_task", "task_id": 1}]
+        }
+        (subset_dir / "nopairs.json").write_text(json.dumps(subset_data))
+
+        tasks = discover_tasks(subset="nopairs", dataset_dir=dataset)
+        feature_sets = {tuple(t["features"]) for t in tasks}
+        assert feature_sets == {(1, 2), (1, 3), (2, 3)}

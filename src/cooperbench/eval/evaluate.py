@@ -434,9 +434,14 @@ def _evaluate_single(
     else:
         # Team (any N) or coop with N>2 — N agents, one patch per feature
         agent_patches = []
+        missing_patch_fids = []
         for fid in features:
             pf = log_dir / f"agent{fid}.patch"
-            agent_patches.append(pf.read_text() if pf.exists() else "")
+            if pf.exists():
+                agent_patches.append(pf.read_text())
+            else:
+                agent_patches.append("")
+                missing_patch_fids.append(fid)
 
         result = test_merged_n(
             repo_name=repo,
@@ -446,6 +451,14 @@ def _evaluate_single(
             backend=backend,
             dataset_dir=dataset_dir,
         )
+
+        # If any agent produced no patch file at all, the merge result
+        # should reflect missing input rather than a spuriously clean merge.
+        if missing_patch_fids:
+            merge_dict = dict(result.get("merge") or {})
+            if merge_dict.get("status") == "clean":
+                merge_dict["status"] = "missing_input"
+                result = {**result, "merge": merge_dict, "all_passed": False}
 
         eval_result = {
             "repo": repo,

@@ -26,11 +26,19 @@ def load_subset(subset_name: str, dataset_dir: Path | str | None = None) -> dict
         raise ValueError(f"Subset '{subset_name}' not found at {subset_path}")
 
     with open(subset_path) as f:
-        data = json.load(f)
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Subset '{subset_name}' at {subset_path} is not valid JSON: {e}") from e
+
+    try:
+        task_list = data["tasks"]
+    except KeyError:
+        raise ValueError(f"Subset '{subset_name}' at {subset_path} is missing required key 'tasks'")
 
     tasks = set()
     pairs = {}
-    for t in data["tasks"]:
+    for t in task_list:
         key = (t["repo"], t["task_id"])
         tasks.add(key)
         # If pairs are specified, store them
