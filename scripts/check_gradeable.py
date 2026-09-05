@@ -19,12 +19,14 @@ measurement. Runs on Modal; nothing is built locally.
     python scripts/check_gradeable.py                        # all 199
     python scripts/check_gradeable.py pillow_task/task290     # one task
     python scripts/check_gradeable.py --workers 16
+    python scripts/check_gradeable.py --backend docker   # local daemon, i.e. arm64 on a Mac
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import functools
 import json
 import subprocess
 import sys
@@ -38,10 +40,15 @@ from cooperbench.eval.backends import get_backend  # noqa: E402
 from cooperbench.utils import get_image_name  # noqa: E402
 
 DATASET = Path(__file__).resolve().parents[1] / "dataset"
-REPORT = DATASET / "gradeable_report.json"
-REPORT_LOCAL = DATASET / "gradeable_report_localrunner.json"
 
 
+def report_path(backend: str, local_runner: bool) -> Path:
+    suffix = "" if backend == "modal" else f"_{backend}"
+    suffix += "_localrunner" if local_runner else ""
+    return DATASET / f"gradeable_report{suffix}.json"
+
+
+@functools.cache
 def _amd64_ref(image: str) -> str:
     """Pin the amd64 manifest by digest.
 
@@ -49,10 +56,15 @@ def _amd64_ref(image: str) -> str:
     pick the arm64 manifest and fail the image build with "image architecture arm64 not supported"
     — then CACHE that failure, so every later run of that task fails instantly. Handing it a
     digest removes the choice. Falls back to the plain tag if the registry cannot be reached.
+
+    Cached per image: each call is a manifest request against Docker Hub from THIS machine, which
+    anonymous pulls cap at 100/hour per IP — one call per feature (199) exhausted it mid-sweep and
+    starved every local `docker pull` for the next hour.
     """
     try:
-        raw = subprocess.run(["docker", "buildx", "imagetools", "inspect", image, "--raw"],
-                             capture_output=True, text=True, timeout=60)
+        raw = subprocess.run(
+            ["docker", "buildx", "imagetools", "inspect", image, "--raw"], capture_output=True, text=True, timeout=60
+        )
         if raw.returncode != 0:
             return image
         for m in json.loads(raw.stdout).get("manifests", []):
@@ -65,20 +77,26 @@ def _amd64_ref(image: str) -> str:
 
 
 def _write(sb, path: str, content: str) -> None:
+    # Chunked: the whole command line rides in the exec's argv, and Modal caps that at 64 KiB
+    # (ARG_MAX). pallets_jinja/1465's combined.patch alone is >100 KB.
     enc = base64.b64encode(content.encode()).decode()
-    sb.exec("bash", "-c", f"echo '{enc}' | base64 -d > {path}")
+    sb.exec("bash", "-c", f": > {path}")
+    for i in range(0, len(enc), 32_000):
+        sb.exec("bash", "-c", f"echo '{enc[i : i + 32_000]}' | base64 -d >> {path}")
 
 
-def check_feature(repo: str, task: str, feature: str, local_runner: bool = False) -> dict:
+def check_feature(repo: str, task: str, feature: str, local_runner: bool = False, backend: str = "modal") -> dict:
     fd = DATASET / repo / task / feature
     tests, gold = fd / "tests.patch", fd / "feature.patch"
     out = {"task": f"{repo}/{task}", "feature": feature}
     if not (tests.is_file() and gold.is_file()):
         return {**out, "verdict": "SKIP", "note": "missing tests.patch or feature.patch"}
 
-    image = _amd64_ref(get_image_name(repo, int(task.replace("task", ""))))
+    image = get_image_name(repo, int(task.replace("task", "")))
+    if backend == "modal":
+        image = _amd64_ref(image)  # local docker picks the host arch itself
     started = time.time()
-    sb = get_backend("modal").create_sandbox(image, timeout=3600)
+    sb = get_backend(backend).create_sandbox(image, timeout=3600)
     try:
         sb.exec("bash", "-c", "mkdir -p /patches")
         if local_runner:
@@ -96,11 +114,14 @@ def check_feature(repo: str, task: str, feature: str, local_runner: bool = False
         def run(args: str):
             # Grep the signal out rather than tail blindly: these runners print a long
             # `git clean` inventory on exit, which pushes the actual error off the end.
-            r = sb.exec("bash", "-c",
-                        f"bash /usr/local/bin/runner.sh {args} > /tmp/out.log 2>&1; echo RC=$?; "
-                        "grep -iE 'does not apply|failed to apply|error:|FAILED|assert|"
-                        "[0-9]+ (passed|failed)|no tests|collected|panic|cannot' /tmp/out.log "
-                        "| grep -viE 'Removing |Repository (cleaned|restored)' | tail -25")
+            r = sb.exec(
+                "bash",
+                "-c",
+                f"bash /usr/local/bin/runner.sh {args} > /tmp/out.log 2>&1; echo RC=$?; "
+                "grep -iE 'does not apply|failed to apply|error:|FAILED|assert|"
+                "[0-9]+ (passed|failed)|no tests|collected|panic|cannot' /tmp/out.log "
+                "| grep -viE 'Removing |Repository (cleaned|restored)' | tail -25",
+            )
             body = r.stdout_read() + r.stderr_read()
             rc = next((int(ln[3:]) for ln in body.splitlines() if ln.startswith("RC=")), -1)
             return rc, body
@@ -109,9 +130,9 @@ def check_feature(repo: str, task: str, feature: str, local_runner: bool = False
         gold_rc, gold_body = run("tests.patch feature.patch")
 
         if gold_rc != 0:
-            verdict = "GOLD_FAILS"          # reference contradicts its own tests
+            verdict = "GOLD_FAILS"  # reference contradicts its own tests
         elif base_rc == 0:
-            verdict = "PASSES_ON_BASE"      # tests do not measure the feature
+            verdict = "PASSES_ON_BASE"  # tests do not measure the feature
         else:
             verdict = "OK"
         return {
@@ -133,9 +154,19 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("task", nargs="?", help="repo/taskN, default all")
     ap.add_argument("--workers", type=int, default=12)
-    ap.add_argument("--local-runner", action="store_true",
-                    help="overwrite the image's baked-in runner.sh with the one in dataset/, so "
-                         "runner fixes are exercised without rebuilding and pushing images")
+    ap.add_argument(
+        "--backend",
+        choices=["modal", "docker"],
+        default="modal",
+        help="modal = linux/amd64 sandboxes; docker = the local daemon (arm64 on Apple "
+        "Silicon), so the two together cover both published architectures",
+    )
+    ap.add_argument(
+        "--local-runner",
+        action="store_true",
+        help="overwrite the image's baked-in runner.sh with the one in dataset/, so "
+        "runner fixes are exercised without rebuilding and pushing images",
+    )
     args = ap.parse_args()
 
     feats = [
@@ -145,27 +176,30 @@ def main() -> None:
     ]
     if not feats:
         raise SystemExit(f"no features matched {args.task!r}")
-    print(f"checking {len(feats)} features, {args.workers} sandboxes at a time\n", flush=True)
+    report = report_path(args.backend, args.local_runner)
+    print(f"checking {len(feats)} features on {args.backend}, {args.workers} sandboxes at a time\n", flush=True)
 
     results, done = [], 0
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = {pool.submit(check_feature, *f, args.local_runner): f for f in feats}
+        futures = {pool.submit(check_feature, *f, args.local_runner, args.backend): f for f in feats}
         for fut in as_completed(futures):
             r = fut.result()
             results.append(r)
             done += 1
             if r["verdict"] != "OK":
-                print(f"  [{done}/{len(feats)}] {r['verdict']:15s} {r['task']} {r['feature']}"
-                      f" {r.get('note','')}", flush=True)
+                print(
+                    f"  [{done}/{len(feats)}] {r['verdict']:15s} {r['task']} {r['feature']} {r.get('note', '')}",
+                    flush=True,
+                )
             elif done % 20 == 0:
                 print(f"  [{done}/{len(feats)}] ...", flush=True)
 
-    (REPORT_LOCAL if args.local_runner else REPORT).write_text(json.dumps(sorted(results, key=lambda r: (r["task"], r["feature"])), indent=1))
+    report.write_text(json.dumps(sorted(results, key=lambda r: (r["task"], r["feature"])), indent=1))
     tally: dict[str, int] = {}
     for r in results:
         tally[r["verdict"]] = tally.get(r["verdict"], 0) + 1
     print("\n" + " · ".join(f"{k} {v}" for k, v in sorted(tally.items())))
-    print(f"report -> {REPORT_LOCAL if args.local_runner else REPORT}")
+    print(f"report -> {report}")
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@
  ],
  "dottxt_ai_outlines_task/task1655|feature10": [
   "OK",
-  "over-complete \u2014 spec contains the answer verbatim"
+  "over-complete — spec contains the answer verbatim"
  ],
  "dottxt_ai_outlines_task/task1655|feature2": [
   "OK",
@@ -49,7 +49,7 @@
  ],
  "dottxt_ai_outlines_task/task1655|feature8": [
   "OK",
-  "format-only is explicit ('format' x3, XXX-XX-XXXX given) \u2014 note 000-00-0000 and 999-99-9999 are valid, so real SSN area rules must NOT be applied"
+  "format-only is explicit ('format' x3, XXX-XX-XXXX given) — note 000-00-0000 and 999-99-9999 are valid, so real SSN area rules must NOT be applied"
  ],
  "dottxt_ai_outlines_task/task1655|feature9": [
   "OK",
@@ -57,7 +57,7 @@
  ],
  "dottxt_ai_outlines_task/task1706|feature1": [
   "OK",
-  "'\u2026is not available' is pre-existing outlines text (0 occurrences in gold)"
+  "'…is not available' is pre-existing outlines text (0 occurrences in gold)"
  ],
  "dottxt_ai_outlines_task/task1706|feature2": [
   "OK",
@@ -73,7 +73,7 @@
  ],
  "dottxt_ai_outlines_task/task1706|feature5": [
   "SPEC",
-  "exact custom_adapter ValueError texts \u2014 conditions stated, wording was not"
+  "exact custom_adapter ValueError texts — conditions stated, wording was not"
  ],
  "dottxt_ai_outlines_task/task1706|feature6": [
   "OK",
@@ -93,7 +93,7 @@
  ],
  "dspy_task/task8394|feature2": [
   "OK",
-  "over-complete \u2014 gives the exact ns_hash formula and key format"
+  "over-complete — gives the exact ns_hash formula and key format"
  ],
  "dspy_task/task8394|feature3": [
   "OK",
@@ -112,72 +112,72 @@
   "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
  ],
  "dspy_task/task8563|feature2": [
-  "OK",
-  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+  "TEST",
+  "pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1)"
  ],
  "dspy_task/task8563|feature3": [
-  "OK",
-  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+  "TEST",
+  "pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1)"
  ],
  "dspy_task/task8563|feature4": [
-  "OK",
-  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+  "TEST",
+  "pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1)"
  ],
  "dspy_task/task8563|feature5": [
-  "OK",
-  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+  "TEST",
+  "pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1)"
  ],
  "dspy_task/task8563|feature6": [
-  "OK",
-  "ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation"
+  "TEST",
+  "pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1)"
  ],
  "dspy_task/task8587|feature1": [
   "OK",
-  "nothing flagged \u2014 streaming API fully named in each spec"
+  "nothing flagged — streaming API fully named in each spec"
  ],
  "dspy_task/task8587|feature2": [
   "OK",
-  "nothing flagged \u2014 streaming API fully named in each spec"
+  "nothing flagged — streaming API fully named in each spec"
  ],
  "dspy_task/task8587|feature3": [
   "OK",
-  "nothing flagged \u2014 streaming API fully named in each spec"
+  "nothing flagged — streaming API fully named in each spec"
  ],
  "dspy_task/task8587|feature4": [
   "OK",
-  "nothing flagged \u2014 streaming API fully named in each spec"
+  "nothing flagged — streaming API fully named in each spec"
  ],
  "dspy_task/task8587|feature5": [
   "OK",
-  "nothing flagged \u2014 streaming API fully named in each spec"
+  "nothing flagged — streaming API fully named in each spec"
  ],
  "dspy_task/task8587|feature6": [
   "OK",
-  "nothing flagged \u2014 streaming API fully named in each spec"
+  "nothing flagged — streaming API fully named in each spec"
  ],
  "dspy_task/task8635|feature1": [
-  "OK",
-  "nothing flagged \u2014 proposer params fully named in each spec"
+  "TEST",
+  "pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6"
  ],
  "dspy_task/task8635|feature2": [
-  "OK",
-  "nothing flagged \u2014 proposer params fully named in each spec"
+  "TEST",
+  "pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6"
  ],
  "dspy_task/task8635|feature3": [
-  "OK",
-  "nothing flagged \u2014 proposer params fully named in each spec"
+  "TEST",
+  "pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6"
  ],
  "dspy_task/task8635|feature4": [
-  "OK",
-  "nothing flagged \u2014 proposer params fully named in each spec"
+  "TEST",
+  "pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6"
  ],
  "dspy_task/task8635|feature5": [
-  "OK",
-  "nothing flagged \u2014 proposer params fully named in each spec"
+  "TEST",
+  "pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6"
  ],
  "dspy_task/task8635|feature6": [
   "OK",
-  "nothing flagged \u2014 proposer params fully named in each spec"
+  "nothing flagged — proposer params fully named in each spec; combined.patch min_instr_chars default restored to 30 (spec + gold), reverting #40"
  ],
  "go_chi_task/task26|feature1": [
   "OK",
@@ -189,7 +189,7 @@
  ],
  "go_chi_task/task26|feature3": [
   "SPEC",
-  "added RouteSelector API \u2014 spec named no identifiers at all"
+  "added RouteSelector API — spec named no identifiers at all"
  ],
  "go_chi_task/task26|feature4": [
   "SPEC",
@@ -205,7 +205,7 @@
  ],
  "go_chi_task/task27|feature3": [
   "SPEC",
-  "added EnableDebugLogging() \u2014 gold introduces it, spec named nothing"
+  "added EnableDebugLogging() — gold introduces it, spec named nothing"
  ],
  "go_chi_task/task27|feature4": [
   "OK",
@@ -237,7 +237,7 @@
  ],
  "huggingface_datasets_task/task3997|feature2": [
   "SPEC",
-  "added set_custom_decoding_criteria \u2014 gold introduces it, spec named nothing"
+  "added set_custom_decoding_criteria — gold introduces it, spec named nothing"
  ],
  "huggingface_datasets_task/task3997|feature3": [
   "SPEC",
@@ -329,7 +329,7 @@
  ],
  "llama_index_task/task18813|feature2": [
   "SPEC",
-  "exact 'exceeds maximum allowed size' message \u2014 spec gave only the condition"
+  "exact 'exceeds maximum allowed size' message — spec gave only the condition"
  ],
  "llama_index_task/task18813|feature3": [
   "OK",
@@ -361,7 +361,7 @@
  ],
  "openai_tiktoken_task/task0|feature3": [
   "OK",
-  "encode() parameter named with its post-processing semantics stated"
+  "encode() parameter named with its post-processing semantics stated; combined.patch renamed return_frequency -> analyze_frequency to match spec/gold (#46 missed it)"
  ],
  "openai_tiktoken_task/task0|feature4": [
   "OK",
@@ -381,7 +381,7 @@
  ],
  "openai_tiktoken_task/task0|feature8": [
   "OK",
-  "recomputed the dict \u2014 exactly \"top 3 adjacent pairs\""
+  "recomputed the dict — exactly \"top 3 adjacent pairs\""
  ],
  "openai_tiktoken_task/task0|feature9": [
   "OK",
@@ -405,7 +405,7 @@
  ],
  "pallets_click_task/task2068|feature2": [
   "SPEC",
-  "exact timeout message \u2014 and gold does not pluralise, so \"after 1 seconds\""
+  "exact timeout message — and gold does not pluralise, so \"after 1 seconds\""
  ],
  "pallets_click_task/task2068|feature3": [
   "SPEC",
@@ -437,7 +437,7 @@
  ],
  "pallets_click_task/task2800|feature1": [
   "OK",
-  "over-complete \u2014 names function, call sites, construct"
+  "over-complete — names function, call sites, construct"
  ],
  "pallets_click_task/task2800|feature2": [
   "OK",
@@ -549,11 +549,11 @@
  ],
  "pallets_jinja_task/task1559|feature3": [
   "OK",
-  "i18n extension API and tag syntax fully named in the spec"
+  "i18n extension API and tag syntax fully named in the spec; combined.patch gained the priority= implementation, which it did not contain at all"
  ],
  "pallets_jinja_task/task1559|feature4": [
   "OK",
-  "over-complete \u2014 error strings quoted verbatim"
+  "over-complete — error strings quoted verbatim"
  ],
  "pallets_jinja_task/task1559|feature5": [
   "OK",
@@ -677,47 +677,47 @@
  ],
  "react_hook_form_task/task153|feature1": [
   "OK",
-  "over-complete \u2014 callback signature, ordering and target file all stated"
+  "over-complete — callback signature, ordering and target file all stated"
  ],
  "react_hook_form_task/task153|feature2": [
   "OK",
-  "over-complete \u2014 callback signature, ordering and target file all stated"
+  "over-complete — callback signature, ordering and target file all stated"
  ],
  "react_hook_form_task/task153|feature3": [
   "OK",
-  "over-complete \u2014 callback signature, ordering and target file all stated"
+  "over-complete — callback signature, ordering and target file all stated"
  ],
  "react_hook_form_task/task153|feature4": [
   "OK",
-  "over-complete \u2014 callback signature, ordering and target file all stated"
+  "over-complete — callback signature, ordering and target file all stated"
  ],
  "react_hook_form_task/task153|feature5": [
   "OK",
-  "over-complete \u2014 callback signature, ordering and target file all stated"
+  "over-complete — callback signature, ordering and target file all stated"
  ],
  "react_hook_form_task/task153|feature6": [
   "OK",
-  "over-complete \u2014 callback signature, ordering and target file all stated"
+  "over-complete — callback signature, ordering and target file all stated"
  ],
  "react_hook_form_task/task85|feature1": [
   "OK",
-  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+  "over-complete — names the prop, its type, the file and often the implementation shape"
  ],
  "react_hook_form_task/task85|feature2": [
   "OK",
-  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+  "over-complete — names the prop, its type, the file and often the implementation shape"
  ],
  "react_hook_form_task/task85|feature3": [
   "OK",
-  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+  "over-complete — names the prop, its type, the file and often the implementation shape"
  ],
  "react_hook_form_task/task85|feature4": [
   "OK",
-  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+  "over-complete — names the prop, its type, the file and often the implementation shape"
  ],
  "react_hook_form_task/task85|feature5": [
   "OK",
-  "over-complete \u2014 names the prop, its type, the file and often the implementation shape"
+  "over-complete — names the prop, its type, the file and often the implementation shape"
  ],
  "samuelcolvin_dirty_equals_task/task43|feature1": [
   "OK",
@@ -737,7 +737,7 @@
  ],
  "samuelcolvin_dirty_equals_task/task43|feature5": [
   "SPEC",
-  "country codes are case-insensitive \u2014 gold does .upper(), spec silent"
+  "country codes are case-insensitive — gold does .upper(), spec silent"
  ],
  "samuelcolvin_dirty_equals_task/task43|feature6": [
   "SPEC",
