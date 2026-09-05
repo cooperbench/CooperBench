@@ -111,8 +111,9 @@ SMALL_CONTEXT_DISALLOWED_TOOLS = [
 _MODEL_PROFILES: dict[str, dict[str, Any]] = {
     "qwen": {
         "max_output_tokens": 4096,
-        "file_read_max_tokens": 4000,
-        "mcp_max_output_tokens": 2000,
+        "file_read_max_tokens": 800,  # 4k was too large; single reads filled 32k context
+        "mcp_max_output_tokens": 1000,
+        "max_turns": 20,  # hard stop before conversation history exhausts 32k
         "disallowed_tools": SMALL_CONTEXT_DISALLOWED_TOOLS,
     },
 }
@@ -429,7 +430,8 @@ class ClaudeCodeRunner:
             if "--add-host=host.docker.internal:host-gateway" not in extra_run_args:
                 extra_run_args.append("--add-host=host.docker.internal:host-gateway")
 
-        max_turns = config.get("max_turns")
+        effective_config = {**_lookup_model_profile(model_name), **config}
+        max_turns = effective_config.get("max_turns")
         extra_flags = ""
         if max_turns:
             extra_flags = f"--max-turns {int(max_turns)} "

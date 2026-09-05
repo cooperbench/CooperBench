@@ -32,21 +32,48 @@ from cooperbench.eval.backends.base import ExecResult, Sandbox
 
 @dataclass
 class EvalTask:
-    """A single evaluation task to run in batch mode."""
+    """A single evaluation task to run in batch mode.
+
+    N-agent runs pass ``feature_ids``/``patches``/``tests_patches`` directly;
+    the legacy 2-feature fields (``feature1_id``, ``patch1``, ...) remain for
+    backward compatibility and are normalised into the list fields in
+    ``__post_init__``.
+    """
 
     task_index: int
     repo_name: str
     task_id: int
-    feature1_id: int
-    feature2_id: int
-    setting: str  # "solo" or "coop"
-    log_dir: str  # Where to save results
+    feature1_id: int = 0
+    feature2_id: int = 0
+    setting: str = "coop"  # "solo", "coop", or "team"
+    log_dir: str = ""  # Where to save results
     # Patches (content, not paths)
     patch1: str = ""
     patch2: str = ""  # Only for coop mode
     # Test patches (read from dataset)
     tests1_patch: str = ""
     tests2_patch: str = ""
+    # N-agent fields (take precedence over the legacy pairs above)
+    feature_ids: list[int] | None = None
+    patches: list[str] | None = None  # one per agent (solo: single element)
+    tests_patches: list[str] | None = None  # one per feature
+
+    def __post_init__(self) -> None:
+        if self.feature_ids is None:
+            self.feature_ids = [self.feature1_id, self.feature2_id]
+        else:
+            self.feature1_id = self.feature_ids[0]
+            self.feature2_id = self.feature_ids[1] if len(self.feature_ids) > 1 else self.feature_ids[0]
+        if self.patches is None:
+            self.patches = [self.patch1] if self.setting == "solo" else [self.patch1, self.patch2]
+        else:
+            self.patch1 = self.patches[0] if self.patches else ""
+            self.patch2 = self.patches[1] if len(self.patches) > 1 else ""
+        if self.tests_patches is None:
+            self.tests_patches = [self.tests1_patch, self.tests2_patch]
+        else:
+            self.tests1_patch = self.tests_patches[0] if self.tests_patches else ""
+            self.tests2_patch = self.tests_patches[1] if len(self.tests_patches) > 1 else ""
 
 
 @dataclass
@@ -66,6 +93,16 @@ class EvalResult:
     error: str | None = None
     feature1_output: str = ""
     feature2_output: str = ""
+    # N-agent fields (parallel to ``features``)
+    features_passed: list[bool] | None = None
+    features_output: list[str] | None = None
+    all_passed: bool = False
+
+    def __post_init__(self) -> None:
+        if self.features_passed is None:
+            self.features_passed = [self.feature1_passed, self.feature2_passed]
+        if self.features_output is None:
+            self.features_output = [self.feature1_output, self.feature2_output]
 
 
 # =============================================================================
@@ -135,12 +172,12 @@ echo "Task config: $CONFIG"
 # Parse config
 REPO_NAME=$(echo $CONFIG | python3 -c "import json,sys; print(json.load(sys.stdin)['repo_name'])")
 TASK_ID=$(echo $CONFIG | python3 -c "import json,sys; print(json.load(sys.stdin)['task_id'])")
-FEATURE1_ID=$(echo $CONFIG | python3 -c "import json,sys; print(json.load(sys.stdin)['feature1_id'])")
-FEATURE2_ID=$(echo $CONFIG | python3 -c "import json,sys; print(json.load(sys.stdin)['feature2_id'])")
+FEATURE_IDS=$(echo $CONFIG | python3 -c "import json,sys; c=json.load(sys.stdin); print(','.join(str(f) for f in c.get('feature_ids', [c['feature1_id'], c['feature2_id']])))")
+N_FEATURES=$(echo $CONFIG | python3 -c "import json,sys; c=json.load(sys.stdin); print(len(c.get('feature_ids', [0, 0])))")
 SETTING=$(echo $CONFIG | python3 -c "import json,sys; print(json.load(sys.stdin)['setting'])")
 IMAGE=$(echo $CONFIG | python3 -c "import json,sys; print(json.load(sys.stdin)['image'])")
 
-echo "Repo: $REPO_NAME, Task: $TASK_ID, Features: $FEATURE1_ID,$FEATURE2_ID, Setting: $SETTING"
+echo "Repo: $REPO_NAME, Task: $TASK_ID, Features: $FEATURE_IDS, Setting: $SETTING"
 
 # Pull the task image (skip if already cached on this VM)
 if ! docker image inspect $IMAGE &> /dev/null; then
@@ -155,11 +192,12 @@ WORKSPACE=$WORKSPACE_ROOT/eval_$TASK_INDEX
 mkdir -p $WORKSPACE
 cd $WORKSPACE
 
-# Download patches from GCS (path includes job_id)
-$GSUTIL cp gs://$BUCKET_NAME/$JOB_ID/tasks/$TASK_INDEX/patch1.patch $WORKSPACE/ 2>/dev/null || touch $WORKSPACE/patch1.patch
-$GSUTIL cp gs://$BUCKET_NAME/$JOB_ID/tasks/$TASK_INDEX/patch2.patch $WORKSPACE/ 2>/dev/null || touch $WORKSPACE/patch2.patch
-$GSUTIL cp gs://$BUCKET_NAME/$JOB_ID/tasks/$TASK_INDEX/tests1.patch $WORKSPACE/
-$GSUTIL cp gs://$BUCKET_NAME/$JOB_ID/tasks/$TASK_INDEX/tests2.patch $WORKSPACE/
+# Download patches from GCS (path includes job_id).  Agent patches may be
+# missing (e.g. solo mode uploads a single patch); fall back to empty files.
+for i in $(seq 1 $N_FEATURES); do
+    $GSUTIL cp gs://$BUCKET_NAME/$JOB_ID/tasks/$TASK_INDEX/patch$i.patch $WORKSPACE/ 2>/dev/null || touch $WORKSPACE/patch$i.patch
+    $GSUTIL cp gs://$BUCKET_NAME/$JOB_ID/tasks/$TASK_INDEX/tests$i.patch $WORKSPACE/
+done
 
 # Run evaluation in Docker container
 echo "Running evaluation in Docker..."
@@ -177,79 +215,66 @@ git config user.name "CooperBench Eval"
 BASE_SHA=$(git rev-parse HEAD)
 SETTING="$1"
 RESULT_FILE="$2"
+N="${3:-2}"
 
 # Initialize result
-echo '{"feature1_passed": false, "feature2_passed": false, "error": null}' > $RESULT_FILE
+echo '{"feature1_passed": false, "feature2_passed": false, "features_passed": [], "error": null}' > $RESULT_FILE
 
+apply_patch_file() {
+    local pf=$1
+    if [ -s /patches/$pf ]; then
+        git apply /patches/$pf 2>&1 || git apply --3way /patches/$pf 2>&1 || true
+    fi
+}
+
+MERGE_STATUS=null
 if [ "$SETTING" = "solo" ]; then
-    # Solo mode: apply one patch, test both features
-    if [ -s /patches/patch1.patch ]; then
-        git apply /patches/patch1.patch 2>&1 || git apply --3way /patches/patch1.patch 2>&1 || true
-    fi
-
-    # Test feature 1
-    git checkout --force $BASE_SHA 2>&1
-    if [ -s /patches/patch1.patch ]; then
-        git apply /patches/patch1.patch 2>&1 || git apply --3way /patches/patch1.patch 2>&1 || true
-    fi
-    bash /usr/local/bin/runner.sh tests1.patch patch1.patch > /tmp/test1.log 2>&1 && F1_PASS=true || F1_PASS=false
-
-    # Test feature 2
-    git checkout --force $BASE_SHA 2>&1
-    if [ -s /patches/patch1.patch ]; then
-        git apply /patches/patch1.patch 2>&1 || git apply --3way /patches/patch1.patch 2>&1 || true
-    fi
-    bash /usr/local/bin/runner.sh tests2.patch patch1.patch > /tmp/test2.log 2>&1 && F2_PASS=true || F2_PASS=false
-
+    # Solo mode: one patch, tested against every feature suite
+    TEST_PATCH=patch1.patch
 else
-    # Coop mode: merge patches, then test both features
-    # Create agent1 branch
-    git checkout -b agent1 2>&1
-    if [ -s /patches/patch1.patch ]; then
-        git apply /patches/patch1.patch 2>&1 || git apply --3way /patches/patch1.patch 2>&1 || true
-    fi
-    git add -A && git commit -m "Agent 1" --allow-empty 2>&1
+    # Coop/team mode: one branch per agent, sequential fold merge into agent1
+    for i in $(seq 1 $N); do
+        git checkout $BASE_SHA 2>&1
+        git checkout -b agent$i 2>&1
+        apply_patch_file patch$i.patch
+        git add -A && git commit -m "Agent $i" --allow-empty 2>&1
+    done
 
-    # Create agent2 branch
-    git checkout $BASE_SHA 2>&1
-    git checkout -b agent2 2>&1
-    if [ -s /patches/patch2.patch ]; then
-        git apply /patches/patch2.patch 2>&1 || git apply --3way /patches/patch2.patch 2>&1 || true
-    fi
-    git add -A && git commit -m "Agent 2" --allow-empty 2>&1
-
-    # Try merge
+    git checkout agent1 2>&1
     MERGE_STATUS="clean"
-    if ! git merge agent1 --no-commit --no-ff 2>&1; then
-        MERGE_STATUS="conflicts"
-        git merge --abort 2>/dev/null || true
-        # Try union merge
-        echo "* merge=union" >> .gitattributes
-        if git merge agent1 --no-commit --no-ff 2>&1; then
-            MERGE_STATUS="union"
+    for i in $(seq 2 $N); do
+        if git merge agent$i --no-commit --no-ff 2>&1; then
+            git commit -m "Fold agent$i" --allow-empty 2>&1
         else
-            echo '{"feature1_passed": false, "feature2_passed": false, "error": "merge_failed"}' > $RESULT_FILE
-            exit 0
+            git merge --abort 2>/dev/null || true
+            # Try union merge for this step
+            grep -q "merge=union" .gitattributes 2>/dev/null || echo "* merge=union" >> .gitattributes
+            if git merge agent$i --no-commit --no-ff 2>&1; then
+                MERGE_STATUS="union"
+                git commit -m "Fold agent$i (union)" --allow-empty 2>&1
+            else
+                echo '{"feature1_passed": false, "feature2_passed": false, "features_passed": [], "merge_status": "conflicts", "error": "merge_failed"}' > $RESULT_FILE
+                exit 0
+            fi
         fi
-    fi
-    git commit -m "Merged" --allow-empty 2>&1
+    done
     git diff $BASE_SHA HEAD > /patches/merged.patch
-
-    # Test feature 1
-    git checkout --force $BASE_SHA 2>&1
-    git apply /patches/merged.patch 2>&1 || true
-    bash /usr/local/bin/runner.sh tests1.patch merged.patch > /tmp/test1.log 2>&1 && F1_PASS=true || F1_PASS=false
-
-    # Test feature 2
-    git checkout --force $BASE_SHA 2>&1
-    git apply /patches/merged.patch 2>&1 || true
-    bash /usr/local/bin/runner.sh tests2.patch merged.patch > /tmp/test2.log 2>&1 && F2_PASS=true || F2_PASS=false
+    TEST_PATCH=merged.patch
 fi
+
+# Test each feature's suite against the (merged or solo) patch
+for i in $(seq 1 $N); do
+    git checkout --force $BASE_SHA 2>&1
+    git clean -fdx 2>&1 || true
+    bash /usr/local/bin/runner.sh tests$i.patch $TEST_PATCH > /tmp/test$i.log 2>&1 && echo true > /tmp/pass_$i || echo false > /tmp/pass_$i
+done
 
 # Write result
 python3 -c "
 import json
 import os
+
+n = int('$N')
 
 def read_log(path, max_len=10000):
     try:
@@ -260,12 +285,24 @@ def read_log(path, max_len=10000):
         pass
     return ''
 
+def read_flag(path):
+    try:
+        with open(path) as f:
+            return f.read().strip() == 'true'
+    except Exception:
+        return False
+
+features_passed = [read_flag('/tmp/pass_%d' % i) for i in range(1, n + 1)]
+features_output = [read_log('/tmp/test%d.log' % i) for i in range(1, n + 1)]
+
 result = {
-    'feature1_passed': $([[ $F1_PASS == true ]] && echo 'True' || echo 'False'),
-    'feature2_passed': $([[ $F2_PASS == true ]] && echo 'True' || echo 'False'),
+    'features_passed': features_passed,
+    'features_output': features_output,
+    'feature1_passed': features_passed[0] if features_passed else False,
+    'feature2_passed': features_passed[1] if len(features_passed) > 1 else False,
+    'feature1_output': features_output[0] if features_output else '',
+    'feature2_output': features_output[1] if len(features_output) > 1 else '',
     'merge_status': '${MERGE_STATUS:-null}',
-    'feature1_output': read_log('/tmp/test1.log'),
-    'feature2_output': read_log('/tmp/test2.log'),
     'error': None
 }
 with open('$RESULT_FILE', 'w') as f:
@@ -276,17 +313,16 @@ EVALSCRIPT
 chmod +x $WORKSPACE/run_eval.sh
 
 # Run in Docker
-# NOTE: CooperBench images have ENTRYPOINT set to runner.sh, so we must override it
+# NOTE: CooperBench images have ENTRYPOINT set to runner.sh, so we must override it.
+# The whole workspace is mounted at /patches so any number of patch{i}/tests{i}
+# files are visible without per-file mounts.
 docker run --rm \
     --entrypoint /bin/bash \
-    -v $WORKSPACE/patch1.patch:/patches/patch1.patch \
-    -v $WORKSPACE/patch2.patch:/patches/patch2.patch \
-    -v $WORKSPACE/tests1.patch:/patches/tests1.patch \
-    -v $WORKSPACE/tests2.patch:/patches/tests2.patch \
+    -v $WORKSPACE:/patches \
     -v $WORKSPACE/run_eval.sh:/run_eval.sh \
     -v $WORKSPACE:/output \
     $IMAGE \
-    /run_eval.sh "$SETTING" /output/result.json
+    /run_eval.sh "$SETTING" /output/result.json "$N_FEATURES"
 
 # Upload result to GCS (path includes job_id)
 $GSUTIL cp $WORKSPACE/result.json gs://$BUCKET_NAME/$JOB_ID/results/$TASK_INDEX/result.json
@@ -507,12 +543,13 @@ echo "Task $TASK_INDEX completed"
                                 task_index=task.task_index,
                                 repo_name=task.repo_name,
                                 task_id=task.task_id,
-                                features=[task.feature1_id, task.feature2_id],
+                                features=task.feature_ids or [task.feature1_id, task.feature2_id],
                                 setting=task.setting,
                                 feature1_passed=False,
                                 feature2_passed=False,
                                 both_passed=False,
                                 error=str(e),
+                                features_passed=[False] * len(task.feature_ids or []),
                             )
                         )
                     completed += len(tasks)
@@ -534,6 +571,7 @@ echo "Task $TASK_INDEX completed"
 
         for task in tasks:
             image = get_image_name(task.repo_name, task.task_id)
+            feature_ids = task.feature_ids or []
             manifest["tasks"].append(
                 {
                     "task_index": task.task_index,
@@ -541,6 +579,7 @@ echo "Task $TASK_INDEX completed"
                     "task_id": task.task_id,
                     "feature1_id": task.feature1_id,
                     "feature2_id": task.feature2_id,
+                    "feature_ids": feature_ids,
                     "setting": task.setting,
                     "image": image,
                 }
@@ -555,10 +594,10 @@ echo "Task $TASK_INDEX completed"
                     return content + "\n"
                 return content
 
-            bucket.blob(f"{prefix}/patch1.patch").upload_from_string(ensure_newline(task.patch1 or ""))
-            bucket.blob(f"{prefix}/patch2.patch").upload_from_string(ensure_newline(task.patch2 or ""))
-            bucket.blob(f"{prefix}/tests1.patch").upload_from_string(ensure_newline(task.tests1_patch))
-            bucket.blob(f"{prefix}/tests2.patch").upload_from_string(ensure_newline(task.tests2_patch))
+            for i, patch in enumerate(task.patches or [], start=1):
+                bucket.blob(f"{prefix}/patch{i}.patch").upload_from_string(ensure_newline(patch or ""))
+            for i, tests_patch in enumerate(task.tests_patches or [], start=1):
+                bucket.blob(f"{prefix}/tests{i}.patch").upload_from_string(ensure_newline(tests_patch))
 
         # Upload manifest
         manifest_path = f"{job_id}/manifest.json"
@@ -704,25 +743,39 @@ echo "Task $TASK_INDEX completed"
 
         for task in tasks:
             result_blob = bucket.blob(f"{job_id}/results/{task.task_index}/result.json")
+            feature_ids = task.feature_ids or []
 
             try:
                 if result_blob.exists():
                     data = json.loads(result_blob.download_as_text())
+                    features_passed = data.get("features_passed")
+                    if features_passed is None:
+                        # Legacy result schema from older eval scripts
+                        features_passed = [data.get("feature1_passed", False), data.get("feature2_passed", False)]
+                    features_output = data.get("features_output")
+                    if features_output is None:
+                        features_output = [data.get("feature1_output", ""), data.get("feature2_output", "")]
+                    all_passed = (
+                        data.get("error") is None and len(features_passed) == len(feature_ids) and all(features_passed)
+                    )
                     results.append(
                         EvalResult(
                             task_index=task.task_index,
                             repo_name=task.repo_name,
                             task_id=task.task_id,
-                            features=[task.feature1_id, task.feature2_id],
+                            features=feature_ids,
                             setting=task.setting,
-                            feature1_passed=data.get("feature1_passed", False),
-                            feature2_passed=data.get("feature2_passed", False),
-                            both_passed=data.get("feature1_passed", False) and data.get("feature2_passed", False),
+                            feature1_passed=bool(features_passed[0]) if features_passed else False,
+                            feature2_passed=bool(features_passed[1]) if len(features_passed) > 1 else False,
+                            both_passed=all_passed,
                             merge_status=data.get("merge_status"),
                             merge_strategy=data.get("merge_strategy"),
                             error=data.get("error"),
-                            feature1_output=data.get("feature1_output", ""),
-                            feature2_output=data.get("feature2_output", ""),
+                            feature1_output=features_output[0] if features_output else "",
+                            feature2_output=features_output[1] if len(features_output) > 1 else "",
+                            features_passed=[bool(p) for p in features_passed],
+                            features_output=list(features_output),
+                            all_passed=all_passed,
                         )
                     )
                 else:
@@ -731,12 +784,13 @@ echo "Task $TASK_INDEX completed"
                             task_index=task.task_index,
                             repo_name=task.repo_name,
                             task_id=task.task_id,
-                            features=[task.feature1_id, task.feature2_id],
+                            features=feature_ids,
                             setting=task.setting,
                             feature1_passed=False,
                             feature2_passed=False,
                             both_passed=False,
                             error="Result not found",
+                            features_passed=[False] * len(feature_ids),
                         )
                     )
             except Exception as e:
@@ -745,12 +799,13 @@ echo "Task $TASK_INDEX completed"
                         task_index=task.task_index,
                         repo_name=task.repo_name,
                         task_id=task.task_id,
-                        features=[task.feature1_id, task.feature2_id],
+                        features=feature_ids,
                         setting=task.setting,
                         feature1_passed=False,
                         feature2_passed=False,
                         both_passed=False,
                         error=str(e),
+                        features_passed=[False] * len(feature_ids),
                     )
                 )
 

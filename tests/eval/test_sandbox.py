@@ -13,10 +13,14 @@ from cooperbench.eval.sandbox import (
     _error_result,
     _filter_test_files,
     _load_patch,
+    _merge_fold,
     _merged_error_result,
+    _merged_n_error_result,
     _parse_results,
     _sanitize_patch,
+    _setup_branches_n,
     _solo_error_result,
+    _solo_n_error_result,
 )
 
 
@@ -418,3 +422,360 @@ class TestErrorResults:
         assert result["feature2"]["passed"] is False
         assert result["both_passed"] is False
         assert result["error"] == "Solo agent failed"
+
+
+class TestMergedNErrorResult:
+    """Tests for _merged_n_error_result helper."""
+
+    def test_two_feature_ids_includes_legacy_keys(self):
+        """2-agent error result must include legacy feature1/feature2/both_passed."""
+        result = _merged_n_error_result("boom", [3, 7])
+        assert result["error"] == "boom"
+        assert result["all_passed"] is False
+        assert "feature1" in result
+        assert "feature2" in result
+        assert result["both_passed"] is False
+        assert result["features"]["3"]["passed"] is False
+        assert result["features"]["7"]["passed"] is False
+
+    def test_three_feature_ids_no_legacy_keys(self):
+        """3-agent error result must NOT include feature1/feature2/both_passed."""
+        result = _merged_n_error_result("boom", [1, 2, 3])
+        assert result["error"] == "boom"
+        assert result["all_passed"] is False
+        assert "feature1" not in result
+        assert "feature2" not in result
+        assert "both_passed" not in result
+        assert len(result["features"]) == 3
+
+    def test_apply_status_keys_match_agent_count(self):
+        result = _merged_n_error_result("err", [1, 2, 4])
+        assert set(result["apply_status"].keys()) == {"agent1", "agent2", "agent3"}
+
+    def test_merge_steps_is_empty_list(self):
+        result = _merged_n_error_result("err", [1, 2])
+        assert result["merge"]["steps"] == []
+
+
+class TestTestMergedNSignature:
+    """Verify test_merged_n has the expected signature and source-level invariants."""
+
+    def test_function_exists_and_is_callable(self):
+        assert callable(_sandbox_module.test_merged_n)
+
+    def test_signature_has_feature_ids_and_patches(self):
+        import inspect
+
+        sig = inspect.signature(_sandbox_module.test_merged_n)
+        params = list(sig.parameters)
+        assert "feature_ids" in params
+        assert "patches" in params
+        assert "repo_name" in params
+        assert "task_id" in params
+
+    def test_source_contains_sequential_fold(self):
+        src = inspect.getsource(_sandbox_module.test_merged_n)
+        assert "sequential-fold" in src, "test_merged_n must record sequential-fold strategy"
+
+    def test_source_contains_identical_shortcircuit(self):
+        src = inspect.getsource(_sandbox_module.test_merged_n)
+        assert "identical" in src, "test_merged_n must short-circuit on identical patches"
+
+    def test_source_contains_lead_fallback(self):
+        src = inspect.getsource(_sandbox_module.test_merged_n)
+        assert "agent1" in src and "fallback" in src.lower() or "solo-agent1" in src, (
+            "test_merged_n must implement lead-alone fallback"
+        )
+
+    def test_setup_branches_n_source_uses_loop(self):
+        src = inspect.getsource(_setup_branches_n)
+        assert "range(1, n + 1)" in src, "_setup_branches_n must generate N branches via a loop"
+
+    def test_merge_fold_source_contains_loop(self):
+        src = inspect.getsource(_merge_fold)
+        assert "range(2, n + 1)" in src, "_merge_fold must fold agents 2..N via a loop"
+
+    def test_dual_write_legacy_keys_for_two_agents(self):
+        """test_merged_n source must dual-write feature1/feature2/both_passed for N==2."""
+        src = inspect.getsource(_sandbox_module.test_merged_n)
+        assert "feature1" in src
+        assert "feature2" in src
+        assert "both_passed" in src
+
+    def test_rejects_length_mismatch(self):
+        """feature_ids and patches with different lengths must return an error result."""
+        result = _sandbox_module.test_merged_n("repo", 1, [1, 2], patches=["only-one-patch"])
+        assert result["error"] is not None
+        assert result["all_passed"] is False
+
+    def test_rejects_fewer_than_two_features(self):
+        """A single-feature call must return an error, mirroring test_solo_n."""
+        result = _sandbox_module.test_merged_n("repo", 1, [1], patches=[""])
+        assert result["error"] is not None
+        assert result["all_passed"] is False
+
+
+class TestTestMergedNBehavioral:
+    """Behavioral tests for test_merged_n that exercise paths via mocking."""
+
+    def _fake_test_results(self, feature_ids, passed=True):
+        return {
+            str(fid): {
+                "passed": passed,
+                "exit_code": 0 if passed else 1,
+                "tests_passed": 1 if passed else 0,
+                "tests_failed": 0 if passed else 1,
+                "output": "",
+            }
+            for fid in feature_ids
+        }
+
+    def test_identical_patch_short_circuit_fires(self, tmp_path):
+        """All N patches identical and non-empty → merge.status == 'identical'."""
+        import json
+        from unittest.mock import MagicMock, patch
+
+        feature_ids = [1, 2, 3]
+        patches = ["diff --git a/x.py b/x.py\n+foo\n"] * 3
+
+        dataset = tmp_path / "dataset"
+        for fid in feature_ids:
+            td = dataset / "repo" / "task1" / f"feature{fid}"
+            td.mkdir(parents=True)
+            (td / "tests.patch").write_text(f"tests patch {fid}")
+
+        fake_sb = MagicMock()
+        fake_sb.exec.return_value = MagicMock(
+            stdout_read=lambda: "NORMALIZED\n",
+            stderr_read=lambda: "",
+            returncode=0,
+        )
+
+        def fake_run_tests(sb, tests_patch, merged_patch, base_sha):
+            return {"passed": True, "exit_code": 0, "tests_passed": 1, "tests_failed": 0, "output": ""}
+
+        with patch("cooperbench.eval.sandbox.get_backend") as mock_backend, \
+             patch("cooperbench.eval.sandbox._run_tests", side_effect=fake_run_tests), \
+             patch("cooperbench.eval.sandbox._setup_branches_n") as mock_setup:
+            mock_backend.return_value.create_sandbox.return_value = fake_sb
+            mock_setup.return_value = {
+                "error": None,
+                "base_sha": "abc123",
+                "apply_status": {f"agent{i}": "applied" for i in range(1, 4)},
+            }
+            result = _sandbox_module.test_merged_n(
+                "repo", 1, feature_ids, patches=patches, dataset_dir=dataset
+            )
+
+        assert result["merge"]["status"] == "identical"
+        assert result["all_passed"] is True
+
+    def test_identical_short_circuit_does_not_fire_when_one_patch_empty(self, tmp_path):
+        """Two identical patches + one empty → short-circuit must NOT fire (setup runs)."""
+        from unittest.mock import MagicMock, patch
+
+        feature_ids = [1, 2, 3]
+        non_empty = "diff --git a/x.py b/x.py\n+foo\n"
+        patches = [non_empty, non_empty, ""]
+
+        dataset = tmp_path / "dataset"
+        for fid in feature_ids:
+            td = dataset / "repo" / "task1" / f"feature{fid}"
+            td.mkdir(parents=True)
+            (td / "tests.patch").write_text(f"tests patch {fid}")
+
+        fake_exec = MagicMock()
+        fake_exec.returncode = 0
+        fake_exec.stdout_read = lambda: ""
+        fake_exec.stderr_read = lambda: ""
+        fake_sb = MagicMock()
+        fake_sb.exec.return_value = fake_exec
+
+        mock_setup_result = {
+            "error": None,
+            "base_sha": "abc123",
+            "apply_status": {"agent1": "applied", "agent2": "applied", "agent3": "skipped"},
+        }
+
+        with patch("cooperbench.eval.sandbox.get_backend") as mock_backend, \
+             patch("cooperbench.eval.sandbox._setup_branches_n", return_value=mock_setup_result) as mock_setup, \
+             patch("cooperbench.eval.sandbox._merge_fold", return_value={"conflict": False, "steps": [], "diff": "d", "output": ""}), \
+             patch("cooperbench.eval.sandbox._run_tests", return_value={"passed": True, "exit_code": 0, "tests_passed": 1, "tests_failed": 0, "output": ""}):
+            mock_backend.return_value.create_sandbox.return_value = fake_sb
+            result = _sandbox_module.test_merged_n(
+                "repo", 1, feature_ids, patches=patches, dataset_dir=dataset
+            )
+
+        mock_setup.assert_called_once()
+        assert result["merge"]["status"] != "identical"
+
+    def test_identical_short_circuit_does_not_fire_when_patches_differ(self, tmp_path):
+        """Two identical + one different patch → short-circuit must NOT fire."""
+        from unittest.mock import MagicMock, patch
+
+        feature_ids = [1, 2, 3]
+        patches = ["diff --git a/x.py b/x.py\n+foo\n", "diff --git a/x.py b/x.py\n+foo\n", "diff --git a/y.py b/y.py\n+bar\n"]
+
+        dataset = tmp_path / "dataset"
+        for fid in feature_ids:
+            td = dataset / "repo" / "task1" / f"feature{fid}"
+            td.mkdir(parents=True)
+            (td / "tests.patch").write_text(f"tests patch {fid}")
+
+        fake_exec = MagicMock()
+        fake_exec.returncode = 0
+        fake_exec.stdout_read = lambda: ""
+        fake_exec.stderr_read = lambda: ""
+        fake_sb = MagicMock()
+        fake_sb.exec.return_value = fake_exec
+
+        mock_setup_result = {
+            "error": None,
+            "base_sha": "abc123",
+            "apply_status": {f"agent{i}": "applied" for i in range(1, 4)},
+        }
+
+        with patch("cooperbench.eval.sandbox.get_backend") as mock_backend, \
+             patch("cooperbench.eval.sandbox._setup_branches_n", return_value=mock_setup_result) as mock_setup, \
+             patch("cooperbench.eval.sandbox._merge_fold", return_value={"conflict": False, "steps": [], "diff": "d", "output": ""}), \
+             patch("cooperbench.eval.sandbox._run_tests", return_value={"passed": True, "exit_code": 0, "tests_passed": 1, "tests_failed": 0, "output": ""}):
+            mock_backend.return_value.create_sandbox.return_value = fake_sb
+            result = _sandbox_module.test_merged_n(
+                "repo", 1, feature_ids, patches=patches, dataset_dir=dataset
+            )
+
+        mock_setup.assert_called_once()
+        assert result["merge"]["status"] != "identical"
+
+    def test_lead_alone_fallback_all_pass(self, tmp_path):
+        """Fold conflict + agent1 passes all features → strategy == 'solo-agent1', all_passed True."""
+        from unittest.mock import MagicMock, patch
+
+        feature_ids = [1, 2]
+        patches = ["diff a\n+x\n", "diff b\n+y\n"]
+
+        dataset = tmp_path / "dataset"
+        for fid in feature_ids:
+            td = dataset / "repo" / "task1" / f"feature{fid}"
+            td.mkdir(parents=True)
+            (td / "tests.patch").write_text(f"tests patch {fid}")
+
+        fake_sb = MagicMock()
+        fake_sb.exec.return_value = MagicMock(stdout_read=lambda: "", stderr_read=lambda: "", returncode=0)
+
+        with patch("cooperbench.eval.sandbox.get_backend") as mock_backend, \
+             patch("cooperbench.eval.sandbox._setup_branches_n", return_value={
+                 "error": None, "base_sha": "abc123",
+                 "apply_status": {"agent1": "applied", "agent2": "applied"},
+             }), \
+             patch("cooperbench.eval.sandbox._merge_fold", return_value={
+                 "conflict": True, "steps": [{"step": 1, "branch": "agent2", "status": "conflicts"}], "diff": "", "output": "",
+             }), \
+             patch("cooperbench.eval.sandbox._run_tests", return_value={
+                 "passed": True, "exit_code": 0, "tests_passed": 2, "tests_failed": 0, "output": "2 passed",
+             }):
+            mock_backend.return_value.create_sandbox.return_value = fake_sb
+            result = _sandbox_module.test_merged_n(
+                "repo", 1, feature_ids, patches=patches, dataset_dir=dataset
+            )
+
+        assert result["merge"]["strategy"] == "solo-agent1"
+        assert result["all_passed"] is True
+
+    def test_lead_alone_fallback_partial_fail(self, tmp_path):
+        """Fold conflict + agent1 fails one feature → all_passed False, strategy != 'solo-agent1'."""
+        from unittest.mock import MagicMock, patch, call
+
+        feature_ids = [1, 2, 3]
+        patches = ["diff a\n+x\n", "diff b\n+y\n", "diff c\n+z\n"]
+
+        dataset = tmp_path / "dataset"
+        for fid in feature_ids:
+            td = dataset / "repo" / "task1" / f"feature{fid}"
+            td.mkdir(parents=True)
+            (td / "tests.patch").write_text(f"tests patch {fid}")
+
+        fake_sb = MagicMock()
+        fake_sb.exec.return_value = MagicMock(stdout_read=lambda: "", stderr_read=lambda: "", returncode=0)
+
+        run_tests_results = iter([
+            {"passed": True, "exit_code": 0, "tests_passed": 1, "tests_failed": 0, "output": ""},
+            {"passed": False, "exit_code": 1, "tests_passed": 0, "tests_failed": 1, "output": "FAILED"},
+        ])
+
+        with patch("cooperbench.eval.sandbox.get_backend") as mock_backend, \
+             patch("cooperbench.eval.sandbox._setup_branches_n", return_value={
+                 "error": None, "base_sha": "abc123",
+                 "apply_status": {f"agent{i}": "applied" for i in range(1, 4)},
+             }), \
+             patch("cooperbench.eval.sandbox._merge_fold", return_value={
+                 "conflict": True, "steps": [], "diff": "", "output": "",
+             }), \
+             patch("cooperbench.eval.sandbox._run_tests", side_effect=run_tests_results):
+            mock_backend.return_value.create_sandbox.return_value = fake_sb
+            result = _sandbox_module.test_merged_n(
+                "repo", 1, feature_ids, patches=patches, dataset_dir=dataset
+            )
+
+        assert result["all_passed"] is False
+        assert result["merge"]["strategy"] != "solo-agent1"
+        assert result["merge"]["status"] == "conflicts"
+
+    def test_fold_sentinel_in_bash_script(self):
+        """_merge_fold bash script must use 'touch /tmp/fold_stopped', not 'echo'."""
+        src = inspect.getsource(_merge_fold)
+        assert "touch /tmp/fold_stopped" in src, "_merge_fold must create sentinel file, not just echo"
+        assert "rm -f /tmp/fold_stopped" in src, "_merge_fold must clear stale sentinel at start"
+
+
+class TestSoloNErrorResult:
+    """Tests for _solo_n_error_result helper."""
+
+    def test_two_feature_ids_includes_legacy_keys(self):
+        """2-feature error result must include legacy feature1/feature2/both_passed."""
+        result = _solo_n_error_result("boom", [3, 7])
+        assert result["setting"] == "solo"
+        assert result["error"] == "boom"
+        assert result["all_passed"] is False
+        assert "feature1" in result
+        assert "feature2" in result
+        assert result["both_passed"] is False
+        assert result["features"]["3"]["passed"] is False
+        assert result["features"]["7"]["passed"] is False
+
+    def test_three_feature_ids_no_legacy_keys(self):
+        """3-feature error result must NOT include feature1/feature2/both_passed."""
+        result = _solo_n_error_result("boom", [1, 2, 3])
+        assert result["error"] == "boom"
+        assert result["all_passed"] is False
+        assert "feature1" not in result
+        assert "feature2" not in result
+        assert "both_passed" not in result
+        assert len(result["features"]) == 3
+
+
+class TestTestSoloNSignature:
+    """Verify test_solo_n has the expected signature and source-level invariants."""
+
+    def test_function_exists_and_is_callable(self):
+        assert callable(_sandbox_module.test_solo_n)
+
+    def test_signature_has_feature_ids_and_patch(self):
+        sig = inspect.signature(_sandbox_module.test_solo_n)
+        params = list(sig.parameters)
+        assert "feature_ids" in params
+        assert "patch" in params
+        assert "repo_name" in params
+        assert "task_id" in params
+
+    def test_rejects_fewer_than_two_features(self):
+        result = _sandbox_module.test_solo_n("repo", 1, [1], patch="")
+        assert result["error"] is not None
+        assert result["all_passed"] is False
+
+    def test_dual_write_legacy_keys_for_two_features(self):
+        """test_solo_n source must dual-write feature1/feature2/both_passed for N==2."""
+        src = inspect.getsource(_sandbox_module.test_solo_n)
+        assert "feature1" in src
+        assert "feature2" in src
+        assert "both_passed" in src

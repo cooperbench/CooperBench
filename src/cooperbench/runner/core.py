@@ -56,6 +56,7 @@ def run(
     dataset_dir: str | None = None,
     logs_dir: str | None = None,
     team_features: TeamHarnessConfig | None = None,
+    n_agents: int = 2,
 ) -> None:
     """Run benchmark tasks.
 
@@ -64,13 +65,13 @@ def run(
         subset: Use a predefined subset (e.g., 'lite')
         repo: Filter by repository (e.g., "llama_index_task")
         task_id: Filter by specific task ID
-        features: Specific feature pair [f1, f2] to run
+        features: Specific feature set to run
         model_name: LLM model (e.g., "gpt-4o", "vertex_ai/gemini-3-flash-preview")
         agent: Agent framework to use (default: "mini_swe")
         concurrency: Max parallel tasks
         force: Rerun even if results exist
         redis_url: Redis URL for agent communication (coop mode)
-        setting: "coop" (2 agents) or "solo" (1 agent)
+        setting: "coop" (N agents) or "solo" (1 agent)
         git_enabled: Enable git collaboration (agents can push/pull/merge)
         messaging_enabled: Enable messaging (send_message command)
         auto_eval: Automatically evaluate runs after completion
@@ -79,6 +80,7 @@ def run(
         agent_config: Path to agent-specific configuration file (optional)
         dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
         logs_dir: Root to write run logs under.  Defaults to ``./logs``.
+        n_agents: Number of agents per task (default: 2).
     """
     # Install cleanup handler to terminate Modal sandboxes on Ctrl+C
     if install_cleanup_handler:
@@ -90,6 +92,7 @@ def run(
         task_filter=task_id,
         features_filter=features,
         dataset_dir=dataset_dir,
+        n_agents=n_agents,
     )
 
     if not tasks:
@@ -332,7 +335,7 @@ def _process_eval_result(eval_result: dict | None, task_info: dict) -> tuple | N
 
     if eval_result.get("error"):
         return (0, 0, 1, 0)
-    elif eval_result.get("both_passed"):
+    elif eval_result.get("all_passed") or eval_result.get("both_passed"):
         return (1, 0, 0, 1 if is_skipped else 0)
     else:
         return (0, 1, 0, 1 if is_skipped else 0)
@@ -502,7 +505,7 @@ def _run_with_progress(
                                             {
                                                 "task": f"{task_name}/{feat_str}",
                                                 "status": "pass"
-                                                if eval_result.get("both_passed")
+                                                if eval_result.get("all_passed") or eval_result.get("both_passed")
                                                 else "fail"
                                                 if not eval_result.get("error")
                                                 else "error",
@@ -514,7 +517,7 @@ def _run_with_progress(
                                         is_skipped = eval_result.get("skipped", False)
                                         if eval_result.get("error"):
                                             eval_status = "[yellow]✗ error[/yellow]"
-                                        elif eval_result.get("both_passed"):
+                                        elif eval_result.get("all_passed") or eval_result.get("both_passed"):
                                             eval_status = "[dim]→ pass[/dim]" if is_skipped else "[green]✓ pass[/green]"
                                         else:
                                             eval_status = "[dim]→ fail[/dim]" if is_skipped else "[red]✗ fail[/red]"
@@ -550,7 +553,7 @@ def _run_with_progress(
                                 {
                                     "task": f"{task_name}/{feat_str}",
                                     "status": "pass"
-                                    if eval_result.get("both_passed")
+                                    if eval_result.get("all_passed") or eval_result.get("both_passed")
                                     else "fail"
                                     if not eval_result.get("error")
                                     else "error",
@@ -561,7 +564,7 @@ def _run_with_progress(
                             is_skipped = eval_result.get("skipped", False)
                             if eval_result.get("error"):
                                 eval_status = "[yellow]✗ error[/yellow]"
-                            elif eval_result.get("both_passed"):
+                            elif eval_result.get("all_passed") or eval_result.get("both_passed"):
                                 eval_status = "[dim]→ pass[/dim]" if is_skipped else "[green]✓ pass[/green]"
                             else:
                                 eval_status = "[dim]→ fail[/dim]" if is_skipped else "[red]✗ fail[/red]"
