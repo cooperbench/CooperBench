@@ -170,7 +170,7 @@ index 6bc9736..a15c50c 100644
 -    ) -> list[int]:
 +        max_tokens: int | None = None,
 +        return_positions: bool = False,
-+        return_frequency: bool = False,
++        analyze_frequency: bool = False,
 +        chunk_size: int | None = None,
 +        filter_tokens: list[int] | None = None,
 +        transformers: Sequence[Callable[[str], str]] | None = None,
@@ -238,7 +238,7 @@ index 6bc9736..a15c50c 100644
 +            and not transformers
 +            and not compression
 +            and not return_positions
-+            and not return_frequency
++            and not analyze_frequency
 +            and not return_repeated_pattern
 +            and max_tokens is None
 +        )
@@ -302,7 +302,7 @@ index 6bc9736..a15c50c 100644
 +        if return_positions:
 +            metadata["positions"] = positions or []
 +
-+        if return_frequency:
++        if analyze_frequency:
 +            metadata["frequency"] = self._count_token_frequency(tokens)
 +
 +        if return_repeated_pattern:
