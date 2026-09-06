@@ -156,6 +156,38 @@ def _needs_modal_redis(comm_url: str | None) -> bool:
     return "localhost" in comm_url or "127.0.0.1" in comm_url
 
 
+def _build_shared_doc_section(teammate: str) -> str:
+    """System-prompt block describing the Redis-backed shared design doc.
+
+    Mirrors the ``--shared-doc`` prompt used by the mini_swe_agent_v2
+    adapter, but documents the ``design-show`` / ``design-note`` shell
+    commands (openhands sandboxes are network-isolated, so the doc is
+    Redis-backed rather than a shared file).
+    """
+    return (
+        "## Shared design document\n"
+        f"You and {teammate} share a single design document. It is NOT a scratchpad — "
+        "treat it as the living design that keeps your two parallel features integrating "
+        "cleanly. Record and agree on: shared interfaces and exact function/method "
+        "signatures, which files & symbols each of you owns, data formats passed between "
+        "your features, and design decisions + open questions.\n\n"
+        "Two shell commands (run them with your terminal tool) operate on it:\n"
+        "- `design-show` — print the current shared document (read it BEFORE you design "
+        "and again BEFORE you submit).\n"
+        "- `design-note` — append an attributed entry; it reads stdin, e.g.:\n"
+        "  ```bash\n"
+        "  design-note <<'EOF'\n"
+        "  ## Interface: parse failures\n"
+        f"  Both features raise ParseError(msg, pos) from errors.py (owned by {teammate}).\n"
+        "  EOF\n"
+        "  ```\n"
+        f"Whatever you write is immediately visible to {teammate} via `design-show`, and "
+        "vice-versa. When you make a decision that affects the other's code, post it here "
+        "(and message them if it's urgent). The document is separate from the repo, so it "
+        "never becomes part of your submitted patch.\n"
+    )
+
+
 def _parse_redis_url(redis_url: str) -> tuple[str, str]:
     """Parse Redis URL and extract namespace prefix.
     
@@ -376,8 +408,15 @@ class OpenHandsSDKRunner:
         status = "Error"
         error = None
         
+        # Coop shared design doc (Redis-backed; see design_doc.py).  Signalled
+        # by the runner through ``config["shared_doc"]``.  Needs Redis even if
+        # messaging is off, so it widens both ``is_coop`` and the Redis-create
+        # condition below.
+        shared_doc = bool((config or {}).get("shared_doc"))
+        design_key = None
+
         # Determine if this is a coop run
-        is_coop = (messaging_enabled or git_enabled) and agents and len(agents) > 1
+        is_coop = (messaging_enabled or git_enabled or shared_doc) and agents and len(agents) > 1
         redis_url = comm_url
         # OpenHands adapter manages its own git server - ignore git_server_url from coop.py
         # This ensures git setup works correctly with RemoteWorkspace
@@ -400,10 +439,16 @@ class OpenHandsSDKRunner:
                 import uuid
                 run_id = uuid.uuid4().hex[:8]
             
-            # Create Modal Redis if needed (localhost not reachable from Modal)
-            if messaging_enabled and _needs_modal_redis(comm_url):
+            # Create Modal Redis if needed (localhost not reachable from Modal).
+            # The shared design doc also rides on Redis, so create it when
+            # shared_doc is on even if plain messaging is off.
+            if (messaging_enabled or shared_doc) and _needs_modal_redis(comm_url):
                 redis_url = _get_or_create_redis(run_id, agents, self.timeout)
                 owns_redis = True
+
+            # Per-run Redis key holding the shared design doc.
+            if shared_doc:
+                design_key = f"cb:design:{run_id}"
             
             # Create Modal Git server if git is enabled
             # OpenHands adapter always creates its own git server (ignores git_server_url from coop.py)
@@ -425,6 +470,13 @@ class OpenHandsSDKRunner:
                 "messaging_enabled": redis_url is not None,
                 "git_enabled": git_enabled and git_url is not None,
             } if is_coop else None
+
+            # Wire the Redis-backed shared design doc into the sandbox + prompt.
+            if coop_info is not None and shared_doc and design_key and redis_url:
+                coop_info["shared_doc"] = True
+                coop_info["design_key"] = design_key
+                teammate = next((a for a in (agents or []) if a != agent_id), "your colleague")
+                coop_info["shared_doc_section"] = _build_shared_doc_section(teammate)
             # In team mode, fold team-mode env vars into coop_info so
             # _build_credentials_dict (which already understands
             # coop_info) propagates them to the sandbox.
@@ -721,6 +773,10 @@ class ModalSandboxContext:
                 creds["AGENT_ID"] = self.coop_info["agent_id"]
             if self.coop_info.get("agents"):
                 creds["AGENTS"] = ",".join(self.coop_info["agents"])
+            # Shared design-doc Redis key (consumed by the design-show /
+            # design-note CLI layered into the sandbox image).
+            if self.coop_info.get("design_key"):
+                creds["CB_DESIGN_KEY"] = self.coop_info["design_key"]
             # Team-mode env vars consumed by the in-container
             # coop-task-* CLI.
             team_env = self.coop_info.get("team_env") or {}
@@ -826,9 +882,27 @@ class ModalSandboxContext:
                 )
             )
         
+        # Layer the shared design-doc CLI (design-show / design-note) onto
+        # the image when the feature is on.  Redis-backed, so it just needs
+        # the script + redis + two wrappers; Modal caches the layered image.
+        if (self.coop_info or {}).get("shared_doc"):
+            from pathlib import Path as _Path
+
+            design_script = _Path(__file__).resolve().parent / "design_doc.py"
+            image = (
+                image.add_local_file(str(design_script), "/usr/local/bin/cb-design-doc.py", copy=True)
+                .pip_install("redis")
+                .run_commands(
+                    'printf "#!/bin/bash\\nexec python3 /usr/local/bin/cb-design-doc.py show\\n" '
+                    "> /usr/local/bin/design-show && chmod +x /usr/local/bin/design-show",
+                    'printf "#!/bin/bash\\nexec python3 /usr/local/bin/cb-design-doc.py note\\n" '
+                    "> /usr/local/bin/design-note && chmod +x /usr/local/bin/design-note",
+                )
+            )
+
         # Get or create app
         app = modal.App.lookup("cooperbench", create_if_missing=True)
-        
+
         # Collect credentials and create Modal secret
         creds = self._collect_credentials()
         secrets = [modal.Secret.from_dict(creds)] if creds else []

@@ -49,6 +49,7 @@ def execute_coop(
     force: bool = False,
     quiet: bool = False,
     git_enabled: bool = False,
+    shared_doc: bool = False,
     messaging_enabled: bool = True,
     backend: str = "docker",
     agent_config: str | None = None,
@@ -58,6 +59,9 @@ def execute_coop(
     """Execute a cooperative task (two agents, separate features).
 
     Args:
+        shared_doc: When True, mount a per-run shared design-doc volume into
+            every agent container at ``/workspace/shared`` and prompt the
+            agents to use ``DESIGN.md`` to agree on interfaces/ownership.
         agent_config: Path to agent-specific configuration file (optional)
         dataset_dir: Root of the dataset tree.  Defaults to ``./dataset``.
         logs_dir: Root to write run logs under.  Defaults to ``./logs``.
@@ -66,6 +70,11 @@ def execute_coop(
     agents = [f"agent{i + 1}" for i in range(n_agents)]
     run_id = uuid.uuid4().hex[:8]
     start_time = datetime.now()
+
+    # One named docker volume per run, shared by both agent containers.
+    # Docker auto-creates it on first ``--volume`` mount, so we only need
+    # to coin the name here.  ``None`` when the feature is off -> no mount.
+    shared_volume = f"cb-coop-shared-{run_id}" if shared_doc and n_agents > 1 else None
 
     logs_root = Path(logs_dir) if logs_dir is not None else DEFAULT_LOGS_DIR
     feature_str = "_".join(f"f{f}" for f in sorted(features))
@@ -124,6 +133,7 @@ def execute_coop(
                 git_server_url=git_server_url,
                 git_enabled=git_enabled,
                 git_network=git_network,
+                shared_volume=shared_volume,
                 messaging_enabled=messaging_enabled,
                 quiet=quiet,
                 backend=backend,
@@ -265,6 +275,7 @@ def _spawn_agent(
     git_server_url: str | None = None,
     git_enabled: bool = False,
     git_network: str | None = None,
+    shared_volume: str | None = None,
     messaging_enabled: bool = True,
     quiet: bool = False,
     backend: str = "docker",
@@ -306,6 +317,12 @@ def _spawn_agent(
     config = {"backend": backend, "run_id": redis_url.split("#run:")[1] if redis_url and "#run:" in redis_url else None}
     if git_network:
         config["git_network"] = git_network
+    if shared_volume:
+        # mini_swe_agent_v2 mounts this docker volume at /workspace/shared;
+        # openhands_sdk (Modal, no docker volume) keys off the boolean and
+        # backs the shared design doc with Redis instead.
+        config["shared_volume"] = shared_volume
+        config["shared_doc"] = True
     if agent_config:
         config_path = Path(agent_config)
         if config_path.exists():
