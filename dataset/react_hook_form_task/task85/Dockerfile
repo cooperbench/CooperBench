@@ -10,7 +10,10 @@ RUN apt-get update && apt-get install -y \
     && rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED
 
 # Install pnpm globally
-RUN npm install -g pnpm
+# Pinned: unpinned pnpm resolved to v10 in Sept 2026, which fails `pnpm install` with
+# ERR_PNPM_IGNORED_BUILDS (it refuses to run @swc/core / cypress / msw build scripts without an
+# explicit approve-builds step). The published amd64 image was built with pnpm 8; task153 pins 8 too.
+RUN npm install -g pnpm@8
 
 # Clone the repository and checkout the specific commit
 WORKDIR /workspace

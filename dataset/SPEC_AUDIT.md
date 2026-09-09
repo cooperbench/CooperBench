@@ -47,7 +47,7 @@ reasoner covers it. **Verdict: derivable, no change.**
 
 ## Status — 199/199 features audited
 
-`OK` 174 · `SPEC` 23 · `TEST` 2
+`OK` 164 · `SPEC` 23 · `TEST` 12
 
 `OK` sufficient, no change · `SPEC` feature.md amended · `TEST` tests.patch amended · `RUN?` defect identified, fix needs a container run · `-` not yet audited
 
@@ -81,23 +81,23 @@ reasoner covers it. **Verdict: derivable, no change.**
 |  | f4 | `OK  ` | both candidate gaps derivable; amendment reverted |
 |  | f5 | `OK  ` | compression + magic-header format stated in the spec |
 | dspy_task/task8563 | f1 | `OK  ` | ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation |
-|  | f2 | `OK  ` | ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation |
-|  | f3 | `OK  ` | ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation |
-|  | f4 | `OK  ` | ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation |
-|  | f5 | `OK  ` | ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation |
-|  | f6 | `OK  ` | ToolCall / convert_input_schema_to_tool_args are pre-existing; 'Arg X is invalid' is pre-existing dspy validation |
+|  | f2 | `TEST` | pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1) |
+|  | f3 | `TEST` | pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1) |
+|  | f4 | `TEST` | pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1) |
+|  | f5 | `TEST` | pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1) |
+|  | f6 | `TEST` | pre-existing format() tests made shape-tolerant: f1 switches format() to the compact dict shape, which failed these tests in any tree containing f1 (combined, or any coop pair with f1) |
 | dspy_task/task8587 | f1 | `OK  ` | nothing flagged — streaming API fully named in each spec |
 |  | f2 | `OK  ` | nothing flagged — streaming API fully named in each spec |
 |  | f3 | `OK  ` | nothing flagged — streaming API fully named in each spec |
 |  | f4 | `OK  ` | nothing flagged — streaming API fully named in each spec |
 |  | f5 | `OK  ` | nothing flagged — streaming API fully named in each spec |
 |  | f6 | `OK  ` | nothing flagged — streaming API fully named in each spec |
-| dspy_task/task8635 | f1 | `OK  ` | nothing flagged — proposer params fully named in each spec |
-|  | f2 | `OK  ` | nothing flagged — proposer params fully named in each spec |
-|  | f3 | `OK  ` | nothing flagged — proposer params fully named in each spec |
-|  | f4 | `OK  ` | nothing flagged — proposer params fully named in each spec |
-|  | f5 | `OK  ` | nothing flagged — proposer params fully named in each spec |
-|  | f6 | `OK  ` | nothing flagged — proposer params fully named in each spec |
+| dspy_task/task8635 | f1 | `TEST` | pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6 |
+|  | f2 | `TEST` | pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6 |
+|  | f3 | `TEST` | pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6 |
+|  | f4 | `TEST` | pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6 |
+|  | f5 | `TEST` | pre-existing proposer tests accept the signature-default instruction too: f6's min_instr_chars=30 replaces the 11-char dummy proposal, which failed these tests in any tree containing f6 |
+|  | f6 | `OK  ` | nothing flagged — proposer params fully named in each spec; combined.patch min_instr_chars default restored to 30 (spec + gold), reverting #40 |
 | go_chi_task/task26 | f1 | `OK  ` | "alias for chi.URLParam" carries the ordering requirement |
 |  | f2 | `SPEC` | added RouteMetric/SimpleMetricsCollector field names |
 |  | f3 | `SPEC` | added RouteSelector API — spec named no identifiers at all |
@@ -143,7 +143,7 @@ reasoner covers it. **Verdict: derivable, no change.**
 | openai_tiktoken_task/task0 | f1 | `OK  ` | encode() parameter named with its post-processing semantics stated |
 |  | f10 | `OK  ` | encode() parameter named with its post-processing semantics stated |
 |  | f2 | `OK  ` | encode() parameter named with its post-processing semantics stated |
-|  | f3 | `OK  ` | encode() parameter named with its post-processing semantics stated |
+|  | f3 | `OK  ` | encode() parameter named with its post-processing semantics stated; combined.patch renamed return_frequency -> analyze_frequency to match spec/gold (#46 missed it) |
 |  | f4 | `OK  ` | encode() parameter named with its post-processing semantics stated |
 |  | f5 | `OK  ` | encode() parameter named with its post-processing semantics stated |
 |  | f6 | `OK  ` | composition order stated with an example |
@@ -190,7 +190,7 @@ reasoner covers it. **Verdict: derivable, no change.**
 | pallets_jinja_task/task1559 | f1 | `OK  ` | i18n extension API and tag syntax fully named in the spec |
 |  | f10 | `OK  ` | i18n extension API and tag syntax fully named in the spec |
 |  | f2 | `OK  ` | i18n extension API and tag syntax fully named in the spec |
-|  | f3 | `OK  ` | i18n extension API and tag syntax fully named in the spec |
+|  | f3 | `OK  ` | i18n extension API and tag syntax fully named in the spec; combined.patch gained the priority= implementation, which it did not contain at all |
 |  | f4 | `OK  ` | over-complete — error strings quoted verbatim |
 |  | f5 | `OK  ` | i18n extension API and tag syntax fully named in the spec |
 |  | f6 | `OK  ` | i18n extension API and tag syntax fully named in the spec |
@@ -878,3 +878,70 @@ Nothing blocking. Every one of the 199 features has been measured base-fails / g
 The one item deliberately left unfixed is `pillow/290` f4's reference threshold semantics
 (above) — gradeability holds, but the reference does not honour its own `error_threshold`, and
 correcting it would mean editing `feature.patch`.
+
+---
+
+# Second pass (2026-09-05) — the third invariant
+
+The first pass established two properties per feature and re-verified them here on both
+published architectures (Modal, linux/amd64; local Docker on Apple Silicon, linux/arm64):
+
+    tests alone            -> FAIL       199/199
+    tests + feature.patch  -> PASS       199/199
+
+This pass adds the third, which nothing had ever measured:
+
+    tests + combined.patch -> PASS       `scripts/check_combined.py`
+
+`combined.patch` is the whole PR, i.e. the reference for "every feature landed in one tree". If a
+feature's tests fail against it, that feature's tests cannot pass in *any* tree that also contains
+the sibling feature responsible — and the coop eval runs each feature's `tests.patch` against the
+merged tree (`eval/sandbox.py::test_merged`), so the pair is unwinnable no matter what the agents
+do. That is the property that actually matters for the benchmark; the combined patch is just the
+cheapest way to test it for all siblings at once.
+
+**Result: 180/199 passed; 19 failures in 5 tasks.** (10 of the 19 first surfaced as harness
+`ERROR`s: `pallets_jinja/1465`'s 107 KB combined.patch exceeded Modal's 64 KiB `ARG_MAX` in the
+checker's file write. Chunking the write showed all 10 were real failures too.)
+
+| task | features | cause | fix |
+|---|---|---|---|
+| `dspy/8563` | f2 f3 f4 f5 f6 | f1's gold changes `ToolCalls.format()` from `[{"type": "tool_calls", ...}]` to `{"tool_calls": [...]}`. The two pre-existing tests asserting the old shape live in `tests/adapters/test_tool.py`, which every feature's runner executes in full — so they fail in every tree containing f1. f1's own `tests.patch` rewrites them; the others carried the originals. | `tests.patch` of f2–f6: the two pre-existing tests normalise a dict result to the list shape before asserting. Coverage unchanged; each still fails on base and passes on its own gold. **8 of the task's 15 pairs (every pair containing f1) were unwinnable before this.** |
+| `dspy/8635` | f6 (and f1–f5 latently) | f6's spec and gold set `min_instr_chars=30`; the base tests propose an 11-char `"instruction"` and assert it comes back verbatim, which f6 correctly replaces with the signature default. #40 (March) "fixed" this by setting the default to **0 in combined.patch only** — which silenced f1–f5 against combined but made combined contradict f6's spec and gold. | combined.patch default restored to 30 (revert of #40). `tests.patch` of f1–f5: the two pre-existing assertions accept either the verbatim proposal or the signature default. **5 of 15 pairs (every pair containing f6) were unwinnable before this.** |
+| `openai_tiktoken/0` | f3 | #46 renamed the parameter `return_frequency → analyze_frequency` in f3's gold and tests to match the spec, but not in combined.patch. | combined.patch renamed to match. Pure consistency; no coop pair was affected because no sibling touches that parameter. |
+| `pallets_jinja/1465` | all 10 | combined.patch carried the PR's **test-file** diffs (`tests/test_filters.py`, `tests/test_async_filters.py`) alongside `src/jinja2/filters.py`. The runner applies `tests.patch` first, so combined then failed to apply for every feature. The only combined.patch in the dataset that touched a test path. | test-file diffs stripped from combined.patch; source diff untouched. All 10 features pass against it. Consistency only — the eval never applies combined.patch. |
+| `pallets_jinja/1559` | f3 | combined.patch did not implement `{% trans priority=N %}` at all — it carried a different design (`_make_new_gettext_with_fallback`) from the original PR, while f3's spec, gold and tests describe the priority retry. Zero occurrences of `priority` in combined. | combined.patch regenerated: the combined tree with f3's gold hunks merged in by hand (five conflicting regions in `parse()` / `_make_node()`, resolved so `priority=` is parsed alongside `domain=` and the metadata parameters). All 10 features pass against it. |
+
+No `feature.patch` was touched. Where a fix had a choice it went to `tests.patch` (loosening a
+pre-existing assertion that was never about the feature) or to `combined.patch` (which is a
+derived artefact of the gold patches and is not read by the eval at all — `grep combined src/`
+finds nothing).
+
+Two of the five are a single pattern worth naming: **a feature that changes pre-existing behaviour
+breaks the pre-existing tests, and every sibling's `tests.patch` inherits those tests because the
+runners execute whole files.** The first pass noted this as a source of noise ("a feature's score
+depends on its partner not breaking anything in the same file"); this pass shows it was not noise
+but a hard zero for 13 pairs. `check_combined.py` is the regression test for it.
+
+Two transients, both confirmed by re-runs on Modal and locally (3/3): `go_chi/56` f1 failed once
+against combined with no test output; `dspy/8587` f4 failed once with two
+`TimeoutError: Server on port N did not become ready within 10 seconds` errors. The latter comes
+from dspy's own `tests/test_utils/server/__init__.py`, which the runner pulls in via
+`tests/streaming/test_streaming.py` — a 10 s fixed readiness wait that a loaded sandbox can miss.
+It is pre-existing test infrastructure, not part of any `tests.patch`, so it was left alone, but
+it is a known source of false negatives for every feature of that task under heavy eval
+concurrency.
+
+## Architecture coverage of the published images
+
+The first pass documented the images as multi-arch (linux/amd64 + linux/arm64) and warned that a
+plain `docker build` on Apple Silicon would break amd64. The inverse was never checked: on
+2026-09-05, 3 of the 30 tags had **no arm64 manifest at all** — `react-hook-form:task153`,
+`react-hook-form:task85`, `huggingface-datasets:task3997` — so those 3 tasks (13 features, 35
+pairs) could not run on any arm64 Docker host, and every local sweep on a Mac would have failed
+them with `no matching manifest for linux/arm64/v8`. The other 27 were fine.
+
+Fixed without touching amd64: the arm64 image is built natively from the task's Dockerfile and
+stitched into the existing index next to the *unchanged* amd64 manifest
+(`docker buildx imagetools create -t <tag> <tag>@<amd64 digest> <tag>-arm64`), so the bytes every
+Modal result above was measured against are the same bytes.

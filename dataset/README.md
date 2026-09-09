@@ -19,9 +19,12 @@ size_categories:
 
 This dataset contains the benchmark tasks for evaluating multi-agent coordination in code collaboration.
 
-**Paper**: [CooperBench: Why Coding Agents Cannot be Your Teammates Yet](https://arxiv.org/abs/2601.13295)
-**Code**: [github.com/cooperbench/CooperBench](https://github.com/cooperbench/CooperBench)
-**Website**: [cooperbench.com](https://cooperbench.com)
+**Run it with the official harness:** [github.com/cooperbench/CooperBench](https://github.com/cooperbench/CooperBench) (`pip install cooperbench`, then `cooperbench prepare` downloads this dataset). The harness, the Docker images, and this dataset are versioned together — use the GitHub repo's `dataset/` tree or this mirror at the matching tag.
+
+- **Paper**: [CooperBench: Why Coding Agents Cannot be Your Teammates Yet](https://arxiv.org/abs/2601.13295)
+- **Code**: [github.com/cooperbench/CooperBench](https://github.com/cooperbench/CooperBench)
+- **Website**: [cooperbench.com](https://cooperbench.com)
+- **Task images**: `akhatua/cooperbench-<repo>:task<id>` on Docker Hub, multi-arch (linux/amd64 + linux/arm64)
 
 ## Structure
 
@@ -42,6 +45,20 @@ dataset/
 ```
 
 
+## Patches: what each one is for
+
+Each task is one real pull request split into N independent features. The eval never merges gold patches — it tests **an agent's** patch (or the merge of two agents' patches) against each feature's hidden tests. The three patch files mean different things:
+
+| file | what it is | property it must satisfy |
+|---|---|---|
+| `feature{N}/feature.patch` | the gold implementation of feature N **alone** | passes `feature{N}/tests.patch` on the base commit |
+| `feature{N}/tests.patch` | feature N's hidden tests | **fails** on the untouched base commit |
+| `combined.patch` | the whole PR — every feature landed in one tree, conflicts already resolved | passes **every** feature's `tests.patch` |
+
+**Gold patches for two different features are not meant to be merged.** They were carved out of the same PR and edit the same files, so `git merge` of `feature1.patch` and `feature2.patch` conflicts for 499 of the 652 pairs (see `gold_conflict_report.json`). That is the coordination challenge the benchmark measures, not a defect: two agents each implementing one feature must produce patches that *do* merge. The resolved oracle for any pair is `combined.patch` — it contains both features and passes both test suites.
+
+All three properties are verified for all 199 features on both architectures with the harness's `scripts/check_gradeable.py` and `scripts/check_combined.py`; every fix and its reasoning is logged in [`SPEC_AUDIT.md`](SPEC_AUDIT.md).
+
 ## Repositories
 
 | Directory | Repository | Tasks | Features |
@@ -57,7 +74,7 @@ dataset/
 | `pillow_task` | [python-pillow/Pillow](https://github.com/python-pillow/Pillow) | 3 | 15 |
 | `react_hook_form_task` | [react-hook-form/react-hook-form](https://github.com/react-hook-form/react-hook-form) | 2 | 11 |
 | `samuelcolvin_dirty_equals_task` | [samuelcolvin/dirty-equals](https://github.com/samuelcolvin/dirty-equals) | 1 | 9 |
-| `typst` | [typst/typst](https://github.com/typst/typst) | 1 | 10 |
+| `typst_task` | [typst/typst](https://github.com/typst/typst) | 1 | 10 |
 
 ## Subsets
 

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Every feature's tests now pass against its task's `combined.patch`** — the third dataset
+  invariant, alongside fail-on-base / pass-on-gold, and the one the coop eval actually depends on:
+  `test_merged` runs each feature's `tests.patch` against the merged tree, so a feature whose tests
+  fail once a sibling's gold is present is unwinnable for every pair containing that sibling.
+  Swept all 199 on Modal (linux/amd64) and local Docker (linux/arm64): 19 features in 5 tasks failed.
+  `dspy/8563` f2–f6 (f1 changes `ToolCalls.format()`'s return shape; the pre-existing shape tests
+  in the shared file failed in any tree with f1 — **8/15 pairs were hard zeros**) and `dspy/8635`
+  f1–f6 (f6's `min_instr_chars=30` replaces the base tests' 11-char dummy instruction — **5/15
+  pairs**; March's #40 had papered over it by setting the default to 0 in combined.patch only,
+  contradicting f6's spec and gold) are fixed by making the pre-existing assertions in the sibling
+  `tests.patch` files tolerant of the sibling behaviour; `openai_tiktoken/0` f3 (combined.patch
+  still used the pre-#46 parameter name) and `pallets_jinja/1559` f3 (combined.patch did not
+  implement `priority=` at all) and `pallets_jinja/1465` all 10 (combined.patch carried the PR's test-file diffs, so it could not apply on top of any `tests.patch`) are fixed in combined.patch. No `feature.patch` changed. Reasoning
+  in `dataset/SPEC_AUDIT.md` ("Second pass").
+- Re-verified fail-on-base / pass-on-gold for all 199 features on both architectures: 199/199.
+- **Three task images had no linux/arm64 manifest** (`react-hook-form:task153`, `:task85`,
+  `huggingface-datasets:task3997`), so those 13 features could not run on an arm64 Docker host at
+  all. arm64 images were built natively and added to the existing indexes alongside the untouched
+  amd64 manifests.
+
+### Added
+
+- **`scripts/check_combined.py`** — the sweep above; one sandbox per feature through the image's
+  own `runner.sh`, `--backend modal|docker`.
+- **`scripts/check_gradeable.py --backend docker`** — run the fail-on-base / pass-on-gold sweep on
+  the local daemon (arm64 on Apple Silicon) as well as Modal (amd64). Both scripts now write
+  sandbox files in 32 KB chunks; a single `echo` of `pallets_jinja/1465`'s 107 KB combined.patch
+  exceeded Modal's 64 KiB `ARG_MAX` and showed up as 10 spurious `ERROR`s.
+
 ## [0.0.29] - 2026-08-14
 
 ### Fixed
