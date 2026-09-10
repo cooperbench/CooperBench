@@ -82,12 +82,14 @@ def execute_coop(
 
     namespaced_redis = f"{redis_url}#run:{run_id}"
 
-    # Create git server if enabled
-    # Note: openhands_sdk manages its own git server internally, so we skip creation here
+    # Create git server if enabled.
+    # openhands_sdk self-manages its git server on the Modal backend (because
+    # Modal sandboxes can't reach a host-side git daemon). On the docker
+    # backend it uses the shared DockerGitServer like every other adapter.
     git_server = None
     git_server_url = None
     git_network = None
-    if git_enabled and agent_name != "openhands_sdk":
+    if git_enabled and not (agent_name == "openhands_sdk" and backend == "modal"):
         if not quiet:
             console.print("  [dim]git[/dim] creating shared server...")
         app = modal.App.lookup("cooperbench", create_if_missing=True) if backend == "modal" else None

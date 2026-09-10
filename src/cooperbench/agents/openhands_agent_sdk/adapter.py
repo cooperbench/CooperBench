@@ -17,6 +17,7 @@ from typing import Any
 import modal
 
 from cooperbench.agents import AgentResult
+from cooperbench.agents._coop.runtime import rewrite_comm_url_for_container
 from cooperbench.agents.openhands_agent_sdk.utils import git_push_with_retry, wait_for_git_server
 from cooperbench.agents.registry import register
 
@@ -198,39 +199,141 @@ def _retrieve_sent_messages(redis_url: str, agent_id: str) -> list[dict]:
         return []
 
 
-def _extract_patch(workspace: Any, base_commit: str | None) -> str:
-    """Extract git diff patch from workspace.
-    
-    Captures all changes: staged, unstaged, and new untracked files.
-    Uses `git add -A` first to ensure new files are included in the diff.
-    
-    Args:
-        workspace: RemoteWorkspace instance
-        base_commit: Base commit SHA to diff from
-        
-    Returns:
-        Patch content as string, or empty string on failure
+def _submission_instructions(*, is_coop: bool) -> str:
+    """Submission block appended to the user task message.
+
+    Mirrors mini_swe_agent_v2's ``coop.yaml`` submission section so both
+    adapters extract patches the same way: the agent writes a unified diff
+    to ``patch.txt`` and the harness reads it. OpenHands ends via its own
+    ``finish`` flow rather than the mini-swe echo signal, so the wording
+    is adapted accordingly. In coop runs we also remind the agent that
+    overlapping line edits cause both patches to be discarded.
     """
-    if not base_commit or not workspace:
-        return ""
-    
-    try:
-        # Stage all changes (including new files) so they appear in diff
-        workspace.execute_command(
-            "git add -A",
-            cwd="/workspace/repo",
-            timeout=30.0
-        )
-        # Diff from base commit to working tree (includes all staged/unstaged changes)
-        diff_result = workspace.execute_command(
-            f"git diff {base_commit}",
-            cwd="/workspace/repo",
-            timeout=60.0
-        )
-        return diff_result.stdout if diff_result.exit_code == 0 else ""
-    except Exception as e:
-        logger.warning(f"Failed to extract patch: {e}")
-        return ""
+    coop_reminder = (
+        "\nThe goal is for your patch to NOT conflict with your teammate's when our\n"
+        "harness merges them — if any of your edits touch the same lines they\n"
+        "touched, both patches are thrown away. Keep `patch.txt` scoped to the\n"
+        "files and hunks you actually need.\n"
+        if is_coop
+        else ""
+    )
+    return (
+        "\n\n## Submission\n\n"
+        "`patch.txt` is the artifact we evaluate — write whatever unified diff\n"
+        "you want to submit to that file, however it makes sense given how you\n"
+        "worked.\n\n"
+        "Write the patch (one common way — `git diff` of your in-place edits):\n\n"
+        "```bash\n"
+        "git diff -- path/to/file1 path/to/file2 > patch.txt\n"
+        "```\n\n"
+        "Verify it contains what you intend:\n\n"
+        "```bash\n"
+        "cat patch.txt\n"
+        "```\n"
+        f"{coop_reminder}"
+        "\nOnce `patch.txt` contains the diff you want submitted, finish the task.\n\n"
+        "The patch must be a unified diff and contain only source files you\n"
+        "intentionally modified. Exclude:\n\n"
+        "- reproduction or scratch test scripts you wrote\n"
+        "- helper scripts or tools you created\n"
+        "- installation, build, packaging, or configuration files\n"
+        "- binaries or compiled files\n\n"
+        "<CRITICAL>\n"
+        "Do NOT run `rm -rf .git`, `git init`, `git rm -rf .`, or `git reset --hard`\n"
+        "inside `/workspace/repo` — these corrupt `.git/` and your patch will be\n"
+        "unapplyable.\n"
+        "</CRITICAL>\n"
+    )
+
+
+def _collect_sandbox_credentials(
+    coop_info: dict | None,
+    *,
+    rewrite_localhost: bool,
+) -> dict[str, str]:
+    """Collect API keys, credentials, and coop info as env vars for the agent-server.
+
+    Shared by ModalSandboxContext and DockerSandboxContext. When
+    ``rewrite_localhost`` is True, ``REDIS_URL`` is rewritten so that
+    ``localhost`` / ``127.0.0.1`` resolve to the host gateway from
+    inside a docker container (mirrors what every other adapter does).
+    """
+    creds: dict[str, str] = {}
+
+    for key in [
+        "GEMINI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "GOOGLE_CLOUD_PROJECT",
+        "VERTEXAI_PROJECT",
+        "VERTEXAI_LOCATION",
+    ]:
+        if value := os.environ.get(key):
+            creds[key] = value
+
+    gcp_creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if not gcp_creds_path:
+        home = os.path.expanduser("~")
+        default_adc_path = os.path.join(home, ".config", "gcloud", "application_default_credentials.json")
+        if os.path.exists(default_adc_path):
+            gcp_creds_path = default_adc_path
+
+    if gcp_creds_path and os.path.exists(gcp_creds_path):
+        with open(gcp_creds_path) as f:
+            creds_content = f.read()
+        creds["GOOGLE_APPLICATION_CREDENTIALS_JSON"] = creds_content
+        if "VERTEXAI_PROJECT" not in creds:
+            try:
+                adc_data = json.loads(creds_content)
+                if project_id := adc_data.get("quota_project_id"):
+                    creds["VERTEXAI_PROJECT"] = project_id
+                    creds["GOOGLE_CLOUD_PROJECT"] = project_id
+            except json.JSONDecodeError:
+                pass
+
+    if coop_info:
+        redis_url = coop_info.get("redis_url")
+        if redis_url:
+            if rewrite_localhost:
+                redis_url = rewrite_comm_url_for_container(redis_url) or redis_url
+            creds["REDIS_URL"] = redis_url
+        if coop_info.get("git_url"):
+            creds["GIT_URL"] = coop_info["git_url"]
+        if coop_info.get("agent_id"):
+            creds["AGENT_ID"] = coop_info["agent_id"]
+        if coop_info.get("agents"):
+            creds["AGENTS"] = ",".join(coop_info["agents"])
+        team_env = coop_info.get("team_env") or {}
+        for k, v in team_env.items():
+            if v:
+                creds[k] = v
+
+    return creds
+
+
+def _wait_for_agent_server(url: str, timeout: int = 120) -> None:
+    """Block until the agent-server's /health endpoint returns 200.
+
+    Shared by ModalSandboxContext and DockerSandboxContext.
+    """
+    import httpx
+
+    start = time.time()
+    last_error: Exception | None = None
+    while time.time() - start < timeout:
+        try:
+            response = httpx.get(f"{url}/health", timeout=10)
+            if response.status_code == 200:
+                return
+        except Exception as e:
+            last_error = e
+        time.sleep(2)
+
+    raise TimeoutError(
+        f"Agent-server did not become ready within {timeout}s. Last error: {last_error}"
+    )
 
 
 @register("openhands_sdk")
@@ -376,44 +479,50 @@ class OpenHandsSDKRunner:
         status = "Error"
         error = None
         
+        config = config or {}
+        backend = config.get("backend", "docker")
+
         # Determine if this is a coop run
         is_coop = (messaging_enabled or git_enabled) and agents and len(agents) > 1
         redis_url = comm_url
-        # OpenHands adapter manages its own git server - ignore git_server_url from coop.py
-        # This ensures git setup works correctly with RemoteWorkspace
+        # On Modal we self-manage the git server (ignoring git_server_url from
+        # coop.py); on Docker we use the shared DockerGitServer that coop.py
+        # creates and passes through git_server_url.
         git_url = None
         run_id = None
-        owns_redis = False  # Track if we need to release Redis reference
-        owns_git = False  # Track if we need to release Git server reference
-        
+        owns_redis = False  # Track if we need to release Redis reference (Modal only)
+        owns_git = False  # Track if we need to release Git server reference (Modal only)
+
         if is_coop:
             # Extract run_id from config or comm_url namespace
-            config = config or {}
             if comm_url and "#run:" in comm_url:
                 # Extract run_id from namespaced URL: redis://host:port#run:abc123
                 run_id = comm_url.split("#run:")[1]
             else:
                 run_id = config.get("run_id")
-            
+
             # Generate run_id if not provided
             if not run_id:
                 import uuid
                 run_id = uuid.uuid4().hex[:8]
-            
-            # Create Modal Redis if needed (localhost not reachable from Modal)
-            if messaging_enabled and _needs_modal_redis(comm_url):
-                redis_url = _get_or_create_redis(run_id, agents, self.timeout)
-                owns_redis = True
-            
-            # Create Modal Git server if git is enabled
-            # OpenHands adapter always creates its own git server (ignores git_server_url from coop.py)
-            # to ensure git setup works correctly with RemoteWorkspace
-            if git_enabled:
-                git_url = _get_or_create_git_server(run_id, agents, self.timeout)
-                owns_git = True
+
+            if backend == "modal":
+                # Modal can't reach host-side Redis/Git, so self-manage them.
+                if messaging_enabled and _needs_modal_redis(comm_url):
+                    redis_url = _get_or_create_redis(run_id, agents, self.timeout)
+                    owns_redis = True
+                if git_enabled:
+                    git_url = _get_or_create_git_server(run_id, agents, self.timeout)
+                    owns_git = True
+            else:
+                # Docker backend: reuse host Redis (ensure_redis) + shared
+                # DockerGitServer (created by coop.py). REDIS_URL gets
+                # rewritten to host.docker.internal inside the credential
+                # collector when injected into the sandbox.
+                if git_enabled:
+                    git_url = git_server_url
 
         workspace = None
-        base_commit = None
 
         try:
             # Build coop_info for both sandbox env vars AND agent system prompt
@@ -455,7 +564,8 @@ class OpenHandsSDKRunner:
                 # message gets ignored (oh_team_v2 failure mode).
                 coop_info["team_section"] = team_session.prompt_section(agent_id=agent_id)
             
-            with ModalSandboxContext(oh_image, self.timeout, coop_info=coop_info) as sandbox_url:
+            sandbox_cls = ModalSandboxContext if backend == "modal" else DockerSandboxContext
+            with sandbox_cls(oh_image, self.timeout, coop_info=coop_info) as sandbox_url:
 
                 # Import SDK components
                 from openhands.sdk import LLM
@@ -492,18 +602,6 @@ class OpenHandsSDKRunner:
                     host=sandbox_url,
                     working_dir="/workspace/repo",
                 )
-                
-                # Capture base commit for patch generation (before any changes)
-                try:
-                    base_result = workspace.execute_command(
-                        "git rev-parse HEAD",
-                        cwd="/workspace/repo",
-                        timeout=10.0
-                    )
-                    base_commit = base_result.stdout.strip() if base_result.exit_code == 0 else None
-                except Exception as e:
-                    logger.warning(f"Failed to get base commit: {e}")
-                    base_commit = None
                 
                 # Set up git remote if git collaboration is enabled
                 if coop_info and coop_info.get("git_enabled") and coop_info.get("git_url"):
@@ -557,10 +655,12 @@ class OpenHandsSDKRunner:
                     visualizer=None,
                 )
 
-                # Send task and run the conversation
+                # Send task and run the conversation. Append the patch.txt
+                # submission instructions so the agent writes its diff to a
+                # known file before finishing (matches mini_swe_agent's flow).
                 # Message checking for coop mode happens inside the agent loop
                 # (in LocalConversation._check_inbox_messages before each step)
-                conversation.send_message(task)
+                conversation.send_message(task + _submission_instructions(is_coop=is_coop))
                 try:
                     conversation.run(blocking=True, timeout=float(self.timeout))
                     status = "Submitted"
@@ -575,8 +675,22 @@ class OpenHandsSDKRunner:
                         error = error_str
                         status = "Error"
 
-                # Extract patch while sandbox is still alive
-                patch = _extract_patch(workspace, base_commit)
+                # Read patch.txt that the agent wrote during submission.
+                # Mirrors mini_swe_agent_v2's submission flow (see config/coop.yaml):
+                # the agent is prompted to write its diff to patch.txt before
+                # finishing, and we extract that file as-is.
+                patch = ""
+                try:
+                    patch_result = workspace.execute_command(
+                        "cat patch.txt 2>/dev/null",
+                        cwd="/workspace/repo",
+                        timeout=30.0,
+                    )
+                    if patch_result.exit_code == 0:
+                        from cooperbench.agents._coop.runtime import normalize_patch
+                        patch = normalize_patch(patch_result.stdout or "")
+                except Exception as e:
+                    logger.warning(f"Failed to read patch.txt: {e}")
 
                 # Get cost and token usage from conversation stats
                 try:
@@ -669,66 +783,7 @@ class ModalSandboxContext:
 
     def _collect_credentials(self) -> dict[str, str]:
         """Collect API keys, credentials, and coop info from environment."""
-        creds = {}
-        
-        # Collect API keys and Vertex AI config (litellm reads VERTEXAI_* env vars)
-        for key in [
-            "GEMINI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "ANTHROPIC_BASE_URL",
-            "OPENAI_API_KEY",
-            "OPENAI_BASE_URL",
-            "GOOGLE_CLOUD_PROJECT",
-            "VERTEXAI_PROJECT",
-            "VERTEXAI_LOCATION",
-        ]:
-            if value := os.environ.get(key):
-                creds[key] = value
-        
-        # Read Google Cloud credentials JSON if available
-        gcp_creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        
-        # If not explicitly set, check standard gcloud ADC location
-        if not gcp_creds_path:
-            home = os.path.expanduser("~")
-            default_adc_path = os.path.join(home, ".config", "gcloud", "application_default_credentials.json")
-            if os.path.exists(default_adc_path):
-                gcp_creds_path = default_adc_path
-        
-        if gcp_creds_path and os.path.exists(gcp_creds_path):
-            with open(gcp_creds_path) as f:
-                creds_content = f.read()
-                creds["GOOGLE_APPLICATION_CREDENTIALS_JSON"] = creds_content
-                
-                # Extract project from ADC if not already set
-                if "VERTEXAI_PROJECT" not in creds:
-                    import json
-                    try:
-                        adc_data = json.loads(creds_content)
-                        if project_id := adc_data.get("quota_project_id"):
-                            creds["VERTEXAI_PROJECT"] = project_id
-                            creds["GOOGLE_CLOUD_PROJECT"] = project_id
-                    except json.JSONDecodeError:
-                        pass
-        
-        # Add coop info for collaboration tools
-        if self.coop_info:
-            if self.coop_info.get("redis_url"):
-                creds["REDIS_URL"] = self.coop_info["redis_url"]
-            if self.coop_info.get("git_url"):
-                creds["GIT_URL"] = self.coop_info["git_url"]
-            if self.coop_info.get("agent_id"):
-                creds["AGENT_ID"] = self.coop_info["agent_id"]
-            if self.coop_info.get("agents"):
-                creds["AGENTS"] = ",".join(self.coop_info["agents"])
-            # Team-mode env vars consumed by the in-container
-            # coop-task-* CLI.
-            team_env = self.coop_info.get("team_env") or {}
-            for k, v in team_env.items():
-                if v:
-                    creds[k] = v
-        
-        return creds
+        return _collect_sandbox_credentials(self.coop_info, rewrite_localhost=False)
 
     def __enter__(self) -> str:
         """Start sandbox, run agent-server, and return the tunnel URL."""
@@ -865,21 +920,239 @@ class ModalSandboxContext:
 
     def _wait_for_server(self, url: str, timeout: int = 120):
         """Wait for the agent-server to be ready."""
-        import httpx
+        _wait_for_agent_server(url, timeout=timeout)
 
-        start = time.time()
-        last_error = None
-        
-        while time.time() - start < timeout:
-            try:
-                response = httpx.get(f"{url}/health", timeout=10)
-                if response.status_code == 200:
-                    return
-            except Exception as e:
-                last_error = e
-            time.sleep(2)
 
-        raise TimeoutError(
-            f"Agent-server did not become ready within {timeout}s. "
-            f"Last error: {last_error}"
+class DockerSandboxContext:
+    """Context manager for a local Docker sandbox running the agent-server.
+
+    Mirrors ``ModalSandboxContext`` but uses local docker:
+
+    * ``docker run -d --rm --platform linux/amd64 -p 0:8000`` on the
+      ``-oh`` image, with a random host port for concurrency safety.
+    * Joins the shared ``cooperbench`` bridge network when ``git_enabled``
+      so the agent-server can resolve ``cooperbench-git`` by name.
+    * Adds ``--add-host=host.docker.internal:host-gateway`` whenever a
+      ``REDIS_URL`` is configured, so the agent-server can reach the
+      host-side ``cooperbench-redis`` container.
+    * Injects credentials via a temp ``--env-file`` (handles multi-line
+      ``GOOGLE_APPLICATION_CREDENTIALS_JSON``).
+    * Lays in the team-mode coop-task CLI via ``docker cp`` when needed,
+      matching the Modal path's image-layering behavior.
+    """
+
+    AGENT_SERVER_PORT = 8000
+
+    def __init__(self, image_name: str, timeout: int, coop_info: dict | None = None):
+        del timeout  # docker run has no equivalent timeout; lifecycle bounded by context manager.
+        self.image_name = image_name
+        self.coop_info = coop_info
+        self._container_name: str | None = None
+        self._env_file_path: str | None = None
+
+    def __enter__(self) -> str:
+        import secrets as _secrets
+        import shutil
+        import subprocess
+        import tempfile
+
+        if shutil.which("docker") is None:
+            raise RuntimeError("docker CLI not found on PATH — install Docker to use the docker backend")
+
+        self._container_name = f"cooperbench-oh-{_secrets.token_hex(4)}"
+
+        creds = _collect_sandbox_credentials(self.coop_info, rewrite_localhost=True)
+
+        # Write credentials to a temp env-file (handles multi-line ADC JSON).
+        env_file = tempfile.NamedTemporaryFile(
+            mode="w",
+            prefix="cooperbench-oh-env-",
+            suffix=".env",
+            delete=False,
         )
+        try:
+            for key, value in creds.items():
+                # docker --env-file is line-oriented; multi-line values
+                # (ADC JSON) need to be base64-encoded or passed via -e
+                # in their entirety. We pass single-line values through
+                # the env-file and multi-line values via -e with the
+                # raw value, which docker forwards correctly.
+                if "\n" not in value:
+                    env_file.write(f"{key}={value}\n")
+            env_file.close()
+        except Exception:
+            env_file.close()
+            os.unlink(env_file.name)
+            raise
+        self._env_file_path = env_file.name
+
+        multiline_env = {k: v for k, v in creds.items() if "\n" in v}
+
+        cmd: list[str] = [
+            "docker",
+            "run",
+            "-d",
+            "--rm",
+            "--platform",
+            "linux/amd64",
+            "--name",
+            self._container_name,
+            "-p",
+            f"0:{self.AGENT_SERVER_PORT}",
+            "--env-file",
+            self._env_file_path,
+            "--workdir",
+            "/",
+        ]
+
+        if self.coop_info and self.coop_info.get("git_enabled"):
+            cmd += ["--network", "cooperbench"]
+
+        if creds.get("REDIS_URL"):
+            cmd += ["--add-host", "host.docker.internal:host-gateway"]
+
+        for key, value in multiline_env.items():
+            cmd += ["-e", f"{key}={value}"]
+
+        cmd.append(self.image_name)
+
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            self._cleanup_env_file()
+            raise RuntimeError(
+                f"docker run failed for {self.image_name}: {e.stderr or e.stdout}"
+            ) from e
+
+        try:
+            self._install_team_cli_if_needed()
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
+
+        try:
+            host_port = self._discover_host_port()
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
+
+        url = f"http://localhost:{host_port}"
+        try:
+            _wait_for_agent_server(url)
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
+
+        return url
+
+    def _discover_host_port(self) -> int:
+        import subprocess
+
+        result = subprocess.run(
+            ["docker", "port", self._container_name or "", f"{self.AGENT_SERVER_PORT}/tcp"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        # Output looks like ``0.0.0.0:32773\n[::]:32773``; first line is enough.
+        first = result.stdout.strip().splitlines()[0]
+        return int(first.rsplit(":", 1)[1])
+
+    def _install_team_cli_if_needed(self) -> None:
+        """Drop coop-task CLI + tracker override into the running container.
+
+        Equivalent to the Modal path's image-layering block but done via
+        ``docker cp`` against the already-running container.  Triggered
+        on the same condition as the Modal path: ``team_env`` is set and
+        either ``task_list`` or ``protocol`` is enabled.
+        """
+        import subprocess
+        from pathlib import Path as _Path
+
+        team_env = (self.coop_info or {}).get("team_env") if self.coop_info else None
+        team_features = (self.coop_info or {}).get("team_features") if self.coop_info else None
+        install = bool(team_env) and (
+            team_features is None
+            or getattr(team_features, "task_list", True)
+            or getattr(team_features, "protocol", True)
+        )
+        if not install:
+            return
+
+        from cooperbench.team_harness import COOP_TASK_SCRIPT_PATH
+
+        oh_tools_dir = (
+            _Path(__file__).resolve().parent / "openhands-tools" / "openhands" / "tools"
+        )
+        coop_tracker_path = oh_tools_dir / "task_tracker" / "coop_definition.py"
+        init_override_path = oh_tools_dir / "task_tracker" / "_team_init_override.py"
+
+        name = self._container_name or ""
+
+        # Copy the coop-task script + task-tracker overrides into the container.
+        for src, dst in [
+            (COOP_TASK_SCRIPT_PATH, "/usr/local/bin/cb-coop-task.py"),
+            (coop_tracker_path, "/tmp/cb-coop-tracker.py"),
+            (init_override_path, "/tmp/cb-task-tracker-init.py"),
+        ]:
+            subprocess.run(
+                ["docker", "cp", str(src), f"{name}:{dst}"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+        # Patch the openhands install: drop coop_definition.py + override
+        # __init__, install redis, and create coop-task-* wrapper scripts.
+        patch_script = (
+            "set -e; "
+            "pip install --quiet redis >/dev/null 2>&1 || pip install redis; "
+            'OH_DIR="$(python3 -c \'import openhands.tools.task_tracker as t, os; '
+            "print(os.path.dirname(t.__file__))')\"; "
+            'cp /tmp/cb-coop-tracker.py "$OH_DIR/coop_definition.py"; '
+            'cp /tmp/cb-task-tracker-init.py "$OH_DIR/__init__.py"; '
+            'find "$OH_DIR" -name "*.pyc" -delete; '
+            'find "$OH_DIR" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true; '
+            "for sub in create claim update list request respond pending; do "
+            'printf "#!/bin/bash\\nexec python3 /usr/local/bin/cb-coop-task.py %s \\"\\$@\\"\\n" "$sub" '
+            '> "/usr/local/bin/coop-task-$sub" && chmod +x "/usr/local/bin/coop-task-$sub"; '
+            "done"
+        )
+        subprocess.run(
+            ["docker", "exec", name, "bash", "-c", patch_script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        import subprocess
+
+        if self._container_name:
+            # Skip the graceful `docker stop` step and go straight to
+            # `docker rm -f` (SIGKILL + remove in one call). The graceful
+            # stop was timing out under concurrent load (Docker Desktop on
+            # Apple Silicon emulating dozens of amd64 containers via
+            # Rosetta) and the agent-server doesn't need a clean shutdown —
+            # all artifacts we care about (patch.txt, trajectory) have
+            # already been extracted via the HTTP API before this point.
+            try:
+                subprocess.run(
+                    ["docker", "rm", "-f", self._container_name],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+            except Exception as e:
+                logger.warning(f"docker rm -f {self._container_name} failed: {e}")
+            self._container_name = None
+        self._cleanup_env_file()
+
+    def _cleanup_env_file(self) -> None:
+        if self._env_file_path and os.path.exists(self._env_file_path):
+            try:
+                os.unlink(self._env_file_path)
+            except OSError:
+                pass
+        self._env_file_path = None

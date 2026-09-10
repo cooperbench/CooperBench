@@ -95,16 +95,34 @@ class DockerBackend:
         # which would otherwise consume "sleep infinity" as an argument and
         # exit immediately, matching the handling in the Modal and GCP
         # backends).
-        container = client.containers.run(
+        #
+        # Benchmark images are a mix: most were built natively (so on Apple
+        # Silicon hosts they're arm64-only), a handful were built for Modal
+        # (amd64-only). Try the host's native architecture first; if that
+        # fails with "no matching manifest" / platform-mismatch, fall back
+        # to linux/amd64 (which works for the amd64-only minority via
+        # Rosetta emulation).
+        run_kwargs = dict(
             image=image,
             entrypoint="",
             command="sleep infinity",
             detach=True,
             working_dir=workdir,
             remove=False,
-            # Set timeout via stop_signal behavior (container can be stopped)
             stop_signal="SIGTERM",
         )
+        try:
+            container = client.containers.run(**run_kwargs)
+        except docker.errors.APIError as e:
+            msg = str(e).lower()
+            if (
+                "no matching manifest" in msg
+                or "does not provide the specified platform" in msg
+                or "no match for platform" in msg
+            ):
+                container = client.containers.run(platform="linux/amd64", **run_kwargs)
+            else:
+                raise
 
         sandbox = DockerSandbox(container, workdir, timeout)
 
