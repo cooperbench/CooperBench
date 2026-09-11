@@ -316,7 +316,247 @@ class DefaultAgent:
             summary = poller.poll()
             if summary:
                 self.add_messages(self.model.format_message(role="user", content=summary))
+            notice = self._team_conflict_notice()
+            if notice:
+                self.add_messages(self.model.format_message(role="user", content=notice))
         return self.execute_actions(self.query())
+
+    def _team_conflict_notice(self) -> str | None:
+        """Just-in-time merge-conflict notice via an in-container 3-way
+        trial merge of teammates' published diffs against this agent's
+        working tree.  Returns None on any failure so the agent loop
+        never breaks because the probe couldn't run."""
+        try:
+            from cooperbench.team_harness.jit_merge import (
+                build_probe_command,
+                format_conflict_notice,
+                parse_conflicts,
+            )
+
+            out = self.env.execute({"command": build_probe_command(self.agent_id)})
+            conflicts = parse_conflicts(out.get("output") or "")
+            return format_conflict_notice(conflicts) or None
+        except Exception:
+            return None
+
+    def _team_read_tasks(self) -> list[dict] | None:
+        """Return the live task list via the team poller's redis client,
+        or ``None`` if team mode isn't wired or Redis is unreachable.
+
+        Centralised so the gate / prefix / blocking helpers all read the
+        same state and fail uniformly (returning None never breaks the
+        loop)."""
+        poller = getattr(self, "team_poller", None)
+        if poller is None:
+            return None
+        try:
+            from cooperbench.team_harness.loop_refresh import _read_tasks
+
+            client = poller._ensure_client()  # type: ignore[attr-defined]
+            if client is None:
+                return None
+            return _read_tasks(client, poller._run_id)  # type: ignore[attr-defined]
+        except Exception:
+            return None
+
+    def _team_required_actions(self, cmd: str) -> list[dict]:
+        """Coordination actions to auto-apply *before* the agent's command.
+
+        Two cases (each fires once until its condition flips):
+
+        - Unclaimed-own-task: if any of my tasks is still ``status=open``
+          and the command isn't itself a claim, prepend a claim.
+        - Submit-with-in-progress: if the command is a final submit and any
+          of my tasks is still ``status=in_progress``, prepend an update to
+          mark it done first.
+
+        Returns a list of action dicts of the form
+        ``{"kind": "claim"|"update", "task_id": ..., "title": ..., ...}``.
+        Pure decision function — does not mutate state.
+        """
+        if not cmd:
+            return []
+        tasks = self._team_read_tasks()
+        if not tasks:
+            return []
+
+        mine = [t for t in tasks if t.get("owner") == self.agent_id]
+        actions: list[dict] = []
+
+        if "coop-task-claim" not in cmd:
+            for t in mine:
+                if t.get("status") == "open":
+                    actions.append({"kind": "claim", "task_id": t["id"], "title": t.get("title", "")})
+
+        is_submit = "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" in cmd
+        if is_submit and "coop-task-update" not in cmd:
+            for t in mine:
+                if t.get("status") == "in_progress":
+                    title = (t.get("title") or "")[:60].replace("'", "").replace("\n", " ")
+                    actions.append({"kind": "update", "task_id": t["id"], "status": "done", "note": f"auto: {title}"})
+
+        return actions
+
+    def _team_required_prefix(self, cmd: str) -> list[str]:
+        """Back-compat shim: render required actions as CLI strings.
+
+        Some tests assert the CLI-string shape directly.  Production uses
+        ``_team_apply_prefix`` which mutates Redis server-side.
+        """
+        out: list[str] = []
+        for a in self._team_required_actions(cmd):
+            if a["kind"] == "claim":
+                out.append(f"coop-task-claim {a['task_id']}")
+            elif a["kind"] == "update":
+                out.append(f"coop-task-update {a['task_id']} {a['status']} -n '{a['note']}'")
+        return out
+
+    def _team_apply_prefix(self, cmd: str) -> str | None:
+        """Apply required coordination actions server-side via the host
+        TaskListClient.  Returns a synthesized tool-output string to
+        prepend to the agent's observation, or ``None`` if nothing was
+        applied.
+
+        Bypasses the in-container ``coop-task-*`` shell CLI (which needs
+        the ``redis`` python module — not always available in task base
+        images, the install snippet silently no-ops if pip can't reach it).
+        The audit-log events still land in Redis so ``task_log.json`` and
+        downstream ``conversation.json`` see the claim/update events.
+        """
+        actions = self._team_required_actions(cmd)
+        if not actions:
+            return None
+        poller = getattr(self, "team_poller", None)
+        if poller is None:
+            return None
+        try:
+            from cooperbench.team_harness.task_list import TaskListClient
+
+            client = poller._ensure_client()  # type: ignore[attr-defined]
+            if client is None:
+                return None
+            tlc = TaskListClient(redis_client=client, run_id=poller._run_id)  # type: ignore[attr-defined]
+        except Exception:
+            return None
+
+        chunks: list[str] = []
+        for a in actions:
+            try:
+                if a["kind"] == "claim":
+                    ok = tlc.claim(a["task_id"], by=self.agent_id)
+                    if ok:
+                        chunks.append(
+                            f"$ coop-task-claim {a['task_id']}\n[auto] claimed: {a.get('title', '')}".rstrip()
+                        )
+                elif a["kind"] == "update":
+                    tlc.update(a["task_id"], by=self.agent_id, status=a["status"], note=a["note"])
+                    chunks.append(f'$ coop-task-update {a["task_id"]} {a["status"]} -n "{a["note"]}"\n[auto] updated')
+            except Exception:
+                continue
+        return "\n".join(chunks) if chunks else None
+
+    def _team_blocking_reason(self, cmd: str) -> str | None:
+        """Return a refusal message if the command must be blocked outright.
+
+        Only one case is auto-fix-impossible: a lead trying to submit while
+        a peer's task is not yet ``status=done``.  The lead has nothing to
+        auto-execute — it has to wait for the peer to update.
+        """
+        if not cmd:
+            return None
+        is_submit = "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" in cmd
+        if not is_submit:
+            return None
+        tasks = self._team_read_tasks()
+        if not tasks:
+            return None
+        mine = [t for t in tasks if t.get("owner") == self.agent_id]
+        if not mine:
+            return None
+        am_lead = any("Lead-only" in (t.get("title") or "") for t in mine)
+        if not am_lead:
+            return None
+        peer_open = [
+            t for t in tasks if t.get("owner") and t.get("owner") != self.agent_id and t.get("status") != "done"
+        ]
+        if not peer_open:
+            return None
+        lines = [
+            f"{t.get('id', '?')} [{t.get('status', '?')}] owner={t.get('owner', '?')}: {t.get('title', '')}"
+            for t in peer_open
+        ]
+        return "[coord-gate] Cannot submit yet: peer task(s) not yet done.\n  " + "\n  ".join(lines)
+
+    def _team_coord_gate(self, cmd: str) -> dict | None:
+        """Legacy combined gate, retained for backward-compat tests.
+
+        Returns a refusal observation if any rule applies, or ``None``.
+        Equivalent to the old behavior before split into auto-prefix +
+        blocking-reason.  Production execution uses the split helpers
+        directly so it can auto-execute the prefix rather than refuse.
+        """
+        poller = getattr(self, "team_poller", None)
+        if poller is None or not cmd:
+            return None
+        try:
+            from cooperbench.team_harness.loop_refresh import _read_tasks
+
+            client = poller._ensure_client()  # type: ignore[attr-defined]
+            if client is None:
+                return None
+            tasks = _read_tasks(client, poller._run_id)  # type: ignore[attr-defined]
+        except Exception:
+            return None
+        if not tasks:
+            return None
+
+        mine = [t for t in tasks if t.get("owner") == self.agent_id]
+        others = [t for t in tasks if t.get("owner") and t.get("owner") != self.agent_id]
+
+        # Rule 1: unclaimed-own-task gate
+        unclaimed = [t for t in mine if t.get("status") == "open"]
+        if unclaimed and "coop-task-claim" not in cmd:
+            ids = ", ".join(t.get("id", "?") for t in unclaimed)
+            msg = (
+                f"[coord-gate] You have unclaimed task(s) assigned to you: {ids}. "
+                f"Claim before running other commands:  coop-task-claim <task_id>"
+            )
+            return {"output": msg, "returncode": 1, "exception_info": ""}
+
+        is_submit = "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" in cmd
+
+        # Rule 2: own-task-not-done gate (on submit)
+        if is_submit:
+            in_prog = [t for t in mine if t.get("status") == "in_progress"]
+            if in_prog:
+                ids = ", ".join(t.get("id", "?") for t in in_prog)
+                msg = (
+                    f"[coord-gate] Cannot submit: your task(s) {ids} still in_progress. "
+                    f'Mark done first:  coop-task-update <task_id> done -n "<summary>"'
+                )
+                return {"output": msg, "returncode": 1, "exception_info": ""}
+
+            # Rule 3: peer-not-done gate (on submit) — applies to lead only
+            # in practice; member submissions are independent of peers.
+            peer_open = [t for t in others if t.get("status") != "done"]
+            if peer_open and mine:  # only gate if I'm a coordinator (have my own task)
+                # Heuristic: a "lead" task has "Lead-only" in its title (per the
+                # current task-creation prompts).  If none of my tasks look like
+                # a lead task, don't gate on peer state — members can submit
+                # independently.
+                am_lead = any("Lead-only" in (t.get("title") or "") for t in mine)
+                if am_lead:
+                    open_lines = [
+                        f"{t.get('id', '?')} [{t.get('status', '?')}] owner={t.get('owner', '?')}: {t.get('title', '')}"
+                        for t in peer_open
+                    ]
+                    msg = (
+                        "[coord-gate] Cannot submit: peer task(s) not yet done. "
+                        "Wait for them to update, then integrate:\n  " + "\n  ".join(open_lines)
+                    )
+                    return {"output": msg, "returncode": 1, "exception_info": ""}
+
+        return None
 
     def _get_prompt_tokens(self, message: dict) -> int:
         return message.get("extra", {}).get("response", {}).get("usage", {}).get("prompt_tokens", 0)
@@ -423,6 +663,17 @@ class DefaultAgent:
                 continue
 
             cmd = action.get("command", "")
+
+            # Team-mode coordination gate: block what can't be auto-fixed,
+            # auto-execute required prefix commands (claim, update) for the
+            # rest.  See _team_blocking_reason / _team_required_prefix.
+            blocked = self._team_blocking_reason(cmd)
+            if blocked is not None:
+                outputs.append({"output": blocked, "returncode": 1, "exception_info": ""})
+                continue
+
+            prefix_text = self._team_apply_prefix(cmd) or ""
+
             if self.comm:
                 sm_matches = _parse_send_messages(cmd)
                 if not sm_matches and re.search(r"\bsend_message\b", cmd):
@@ -453,14 +704,23 @@ class DefaultAgent:
                     remaining = _strip_send_message(cmd)
                     combined = "\n".join(sm_outputs)
                     if not remaining.strip():
-                        outputs.append({"output": combined, "returncode": 0, "exception_info": ""})
+                        output = combined
+                        if prefix_text:
+                            output = prefix_text + "\n" + output
+                        outputs.append({"output": output, "returncode": 0, "exception_info": ""})
                         continue
                     env_out = self.env.execute({**action, "command": remaining})
-                    env_out["output"] = combined + "\n" + env_out.get("output", "")
+                    output = combined + "\n" + env_out.get("output", "")
+                    if prefix_text:
+                        output = prefix_text + "\n" + output
+                    env_out["output"] = output
                     outputs.append(env_out)
                     continue
 
-            outputs.append(self.env.execute(action))
+            env_out = self.env.execute(action)
+            if prefix_text:
+                env_out["output"] = prefix_text + "\n" + (env_out.get("output") or "")
+            outputs.append(env_out)
         return self.add_messages(*self.model.format_observation_messages(message, outputs, self.get_template_vars()))
 
     def _announce_departed_peers(self) -> None:
