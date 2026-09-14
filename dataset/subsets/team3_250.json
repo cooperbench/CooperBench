@@ -9,7 +9,7 @@
     {
       "repo": "dottxt_ai_outlines_task",
       "task_id": 1371,
-      "groups": [
+      "pairs": [
         [
           1,
           2,
@@ -20,7 +20,7 @@
     {
       "repo": "dottxt_ai_outlines_task",
       "task_id": 1655,
-      "groups": [
+      "pairs": [
         [
           1,
           2,
@@ -131,7 +131,7 @@
     {
       "repo": "dottxt_ai_outlines_task",
       "task_id": 1706,
-      "groups": [
+      "pairs": [
         [
           3,
           5,
@@ -187,7 +187,7 @@
     {
       "repo": "dspy_task",
       "task_id": 8394,
-      "groups": [
+      "pairs": [
         [
           2,
           3,
@@ -203,7 +203,7 @@
     {
       "repo": "dspy_task",
       "task_id": 8563,
-      "groups": [
+      "pairs": [
         [
           1,
           4,
@@ -229,7 +229,7 @@
     {
       "repo": "dspy_task",
       "task_id": 8587,
-      "groups": [
+      "pairs": [
         [
           1,
           2,
@@ -255,7 +255,7 @@
     {
       "repo": "dspy_task",
       "task_id": 8635,
-      "groups": [
+      "pairs": [
         [
           2,
           3,
@@ -281,7 +281,7 @@
     {
       "repo": "go_chi_task",
       "task_id": 26,
-      "groups": [
+      "pairs": [
         [
           2,
           3,
@@ -292,7 +292,7 @@
     {
       "repo": "go_chi_task",
       "task_id": 27,
-      "groups": [
+      "pairs": [
         [
           1,
           2,
@@ -303,7 +303,7 @@
     {
       "repo": "go_chi_task",
       "task_id": 56,
-      "groups": [
+      "pairs": [
         [
           2,
           3,
@@ -319,7 +319,7 @@
     {
       "repo": "huggingface_datasets_task",
       "task_id": 3997,
-      "groups": [
+      "pairs": [
         [
           2,
           4,
@@ -335,7 +335,7 @@
     {
       "repo": "huggingface_datasets_task",
       "task_id": 6252,
-      "groups": [
+      "pairs": [
         [
           4,
           5,
@@ -361,7 +361,7 @@
     {
       "repo": "llama_index_task",
       "task_id": 17070,
-      "groups": [
+      "pairs": [
         [
           1,
           2,
@@ -372,7 +372,7 @@
     {
       "repo": "llama_index_task",
       "task_id": 17244,
-      "groups": [
+      "pairs": [
         [
           1,
           6,
@@ -408,7 +408,7 @@
     {
       "repo": "llama_index_task",
       "task_id": 18813,
-      "groups": [
+      "pairs": [
         [
           2,
           3,
@@ -434,7 +434,7 @@
     {
       "repo": "openai_tiktoken_task",
       "task_id": 0,
-      "groups": [
+      "pairs": [
         [
           1,
           4,
@@ -545,7 +545,7 @@
     {
       "repo": "pallets_click_task",
       "task_id": 2068,
-      "groups": [
+      "pairs": [
         [
           4,
           5,
@@ -726,7 +726,7 @@
     {
       "repo": "pallets_click_task",
       "task_id": 2800,
-      "groups": [
+      "pairs": [
         [
           1,
           3,
@@ -762,7 +762,7 @@
     {
       "repo": "pallets_click_task",
       "task_id": 2956,
-      "groups": [
+      "pairs": [
         [
           6,
           7,
@@ -818,7 +818,7 @@
     {
       "repo": "pallets_jinja_task",
       "task_id": 1465,
-      "groups": [
+      "pairs": [
         [
           2,
           5,
@@ -929,7 +929,7 @@
     {
       "repo": "pallets_jinja_task",
       "task_id": 1559,
-      "groups": [
+      "pairs": [
         [
           1,
           4,
@@ -1040,7 +1040,7 @@
     {
       "repo": "pallets_jinja_task",
       "task_id": 1621,
-      "groups": [
+      "pairs": [
         [
           4,
           9,
@@ -1151,7 +1151,7 @@
     {
       "repo": "pillow_task",
       "task_id": 25,
-      "groups": [
+      "pairs": [
         [
           1,
           2,
@@ -1167,7 +1167,7 @@
     {
       "repo": "pillow_task",
       "task_id": 68,
-      "groups": [
+      "pairs": [
         [
           2,
           3,
@@ -1183,7 +1183,7 @@
     {
       "repo": "pillow_task",
       "task_id": 290,
-      "groups": [
+      "pairs": [
         [
           1,
           2,
@@ -1199,7 +1199,7 @@
     {
       "repo": "react_hook_form_task",
       "task_id": 85,
-      "groups": [
+      "pairs": [
         [
           1,
           3,
@@ -1215,7 +1215,7 @@
     {
       "repo": "react_hook_form_task",
       "task_id": 153,
-      "groups": [
+      "pairs": [
         [
           1,
           3,
@@ -1241,7 +1241,7 @@
     {
       "repo": "samuelcolvin_dirty_equals_task",
       "task_id": 43,
-      "groups": [
+      "pairs": [
         [
           1,
           7,
@@ -1322,7 +1322,7 @@
     {
       "repo": "typst_task",
       "task_id": 6554,
-      "groups": [
+      "pairs": [
         [
           3,
           6,
