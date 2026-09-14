@@ -455,6 +455,9 @@ class TestAdapterRun:
         with mock_patch(
             "cooperbench.agents.claude_code.adapter._build_environment",
             return_value=env,
+        ), mock_patch(
+            "cooperbench.agents.claude_code.adapter.resolve_endpoint_overrides",
+            return_value={},
         ):
             runner = get_runner("claude_code")
             runner.run(

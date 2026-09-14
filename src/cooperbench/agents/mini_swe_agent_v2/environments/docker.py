@@ -27,16 +27,22 @@ class DockerEnvironmentConfig(BaseModel):
     """Timeout for executing commands in the container."""
     executable: str = os.getenv("MSWEA_DOCKER_EXECUTABLE", "docker")
     """Path to the docker/container executable."""
-    run_args: list[str] = ["--rm"]
+    run_args: list[str] = ["--rm", "--memory", "12g", "--memory-swap", "12g"]
     """Additional arguments to pass to the docker/container executable.
-    Default is ["--rm"], which removes the container after it exits.
+    Default removes the container after exit and caps memory at 12g: some task
+    test suites balloon to tens of GB, and an uncapped container takes the whole
+    host down with it (OOM-killing the runner and even sshd) instead of just
+    failing its own test run.
     """
     network: str | None = None
     """Docker network to attach the container to (passed as --network).
     Required for coop+git so agent containers can reach the git server's
     bridge network."""
-    container_timeout: str = "2h"
-    """Max duration to keep container running. Uses the same format as the sleep command."""
+    container_timeout: str = "6h"
+    """Max duration to keep container running. Uses the same format as the sleep
+    command. Long enough that a step-limited agent under a heavily loaded model
+    endpoint still outlives its container; 2h was measured too tight (100-step
+    episodes at degraded decode speeds exec into an already-dead container)."""
     pull_timeout: int = 120
     """Timeout in seconds for pulling images."""
     interpreter: list[str] = ["bash", "-lc"]

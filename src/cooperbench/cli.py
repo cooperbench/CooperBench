@@ -244,6 +244,12 @@ def main():
         help="Root to write run logs under (default: ./logs).",
     )
     run_parser.add_argument(
+        "--n-agents",
+        type=int,
+        default=2,
+        help="Number of agents per task (default: 2). Controls combination size in the default discovery path.",
+    )
+    run_parser.add_argument(
         "--base-url",
         default=None,
         help=(
@@ -411,6 +417,7 @@ def _run_command(args):
         dataset_dir=args.dataset_dir if hasattr(args, "dataset_dir") else None,
         logs_dir=args.log_dir if hasattr(args, "log_dir") else None,
         team_features=team_features,
+        n_agents=args.n_agents,
     )
 
 
