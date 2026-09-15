@@ -77,7 +77,7 @@ class DockerBackend:
     def _get_client(self) -> docker.DockerClient:
         """Get or create the Docker client."""
         if self._client is None:
-            self._client = docker.from_env()
+            self._client = docker.from_env(timeout=600)
         return self._client
 
     def create_sandbox(
