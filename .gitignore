@@ -47,6 +47,9 @@ misc/
 .cooperbench_cache/
 .cache/
 
+# Distillation data (downloaded from HF, not committed)
+data/
+
 # OS
 .DS_Store
 Thumbs.db

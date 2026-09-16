@@ -1,0 +1,5 @@
+config:
+  model:
+    model_kwargs:
+      api_base: "https://cooperbench--serve-qwen35-sft-serve-dev.modal.run/v1"
+      api_key: "dummy"
