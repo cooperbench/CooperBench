@@ -93,6 +93,33 @@ agent:
 
     {% endif %}
 
+    {% if shared_doc_enabled %}
+    ## Shared Design Document
+
+    You and your colleague share a single design document at `{{ design_doc_path }}`. It lives on a shared volume — when one of you writes to it, the other can read the change. It is **not** a scratchpad for throwaway notes or logs: treat it as the living design doc that keeps your two parallel features integrating cleanly.
+
+    Use it to record and agree on the things that determine whether your patches merge and pass together:
+    - Shared interfaces and exact function/method signatures either of you depends on.
+    - Which files and symbols each of you owns, so you don't edit the same lines.
+    - Data formats / contracts passed between your features.
+    - Design decisions and their rationale, and open questions awaiting your colleague's input.
+
+    Recommended habits:
+    - Read the document **before** you start designing, and again **before** you submit.
+    - When you make or change a decision that affects your colleague, write it into the doc (and mention it via `send_message` if it's urgent).
+    - Edit surgically — append to or update the relevant section rather than overwriting the whole file, since your colleague may be editing it too.
+
+    ```bash
+    cat {{ design_doc_path }}                       # read the current design
+    cat >> {{ design_doc_path }} <<'EOF'            # append a decision
+    ## Decision: error type for parse failures
+    Both features raise `ParseError(msg, pos)` from `errors.py` (owned by {{ agents | reject('equalto', agent_id) | first }}).
+    EOF
+    ```
+
+    The document is outside `/workspace/repo`, so it is never part of your submitted `patch.txt` — it is purely for coordination.
+    {% endif %}
+
     ## Command Execution Rules
 
     You are operating in an environment where

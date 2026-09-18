@@ -14,6 +14,11 @@ from typing import Any, Protocol
 # image clones the target repo at ``/workspace/repo``; we adopt the same
 # convention for outputs the adapter needs to harvest.
 CONTAINER_REPO_PATH = "/workspace/repo"
+# Shared design-doc volume mounted into every coop agent's container when
+# the ``--shared-doc`` feature is on.  Lives OUTSIDE ``/workspace/repo`` so
+# it never leaks into the submitted ``patch.txt`` (a git diff of the repo).
+CONTAINER_SHARED_DIR = "/workspace/shared"
+CONTAINER_DESIGN_DOC_PATH = f"{CONTAINER_SHARED_DIR}/DESIGN.md"
 CONTAINER_COOP_MSG_PATH = "/tmp/cb-coop-msg.py"
 CONTAINER_COOP_SEND_LOG = "/tmp/cb-coop-sent.jsonl"
 CONTAINER_SETUP_PATH = "/tmp/cb-setup.sh"

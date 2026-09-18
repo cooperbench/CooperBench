@@ -193,6 +193,15 @@ def get_default_agent(
                 + "\n"
             )
 
+        # Coop shared design doc: a Redis-backed document both agents read
+        # and append to via the ``design-show`` / ``design-note`` shell
+        # commands.  The host adapter pre-renders the section text and
+        # passes it through coop_info, same channel as ``team_section``,
+        # so it lands in the SYSTEM prompt rather than the user message.
+        shared_doc_section = coop_info.get("shared_doc_section")
+        if shared_doc_section:
+            collab_section += "\n\n" + shared_doc_section + "\n"
+
         system_prompt_kwargs["collaboration"] = collab_section
     
     agent = Agent(

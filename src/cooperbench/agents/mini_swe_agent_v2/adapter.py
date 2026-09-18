@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from cooperbench.agents import AgentResult
+from cooperbench.agents._coop.runtime import CONTAINER_DESIGN_DOC_PATH, CONTAINER_SHARED_DIR
 from cooperbench.agents.mini_swe_agent_v2.agents.default import DefaultAgent
 from cooperbench.agents.mini_swe_agent_v2.config import get_config_path
 from cooperbench.agents.mini_swe_agent_v2.connectors import GitConnector
@@ -159,6 +160,7 @@ class MiniSweAgentV2Runner:
         if container_env:
             env_kwargs["env"] = container_env
 
+        shared_volume = (config or {}).get("shared_volume")
         if backend == "docker":
             from cooperbench.agents.mini_swe_agent_v2.environments.docker import DockerEnvironment
 
@@ -168,11 +170,16 @@ class MiniSweAgentV2Runner:
             # coop-task-* CLI can reach Redis on the host (same as
             # claude_code / codex adapters).  Also mount the shared
             # team scratchpad if the feature is enabled.
+            run_args = list(env_kwargs.get("run_args") or ["--rm"])
             if team_session is not None:
-                run_args = list(env_kwargs.get("run_args") or ["--rm"])
                 if "--add-host=host.docker.internal:host-gateway" not in run_args:
                     run_args.append("--add-host=host.docker.internal:host-gateway")
                 run_args.extend(team_session.scratchpad_mount_args())
+            # Coop shared design-doc volume: both agent containers mount the
+            # same named volume at /workspace/shared so they share DESIGN.md.
+            if shared_volume:
+                run_args.extend(["--volume", f"{shared_volume}:{CONTAINER_SHARED_DIR}"])
+            if run_args != ["--rm"]:
                 env_kwargs["run_args"] = run_args
             env = DockerEnvironment(**env_kwargs)
         else:
@@ -221,12 +228,39 @@ class MiniSweAgentV2Runner:
         if team_session is not None and (team_session.config.task_list or team_session.config.protocol):
             _install_team_cli_in_container(env)
 
+        # Pre-seed the shared design doc with a skeleton.  ``noclobber``
+        # ensures only the first of the two concurrent agents wins the
+        # create, so neither clobbers the other's edits on startup.
+        if shared_volume:
+            skeleton = (
+                "# Shared Design Document\n\n"
+                "This file is shared between both engineers working on this codebase.\n"
+                "Use it to agree on the design *before* and *while* you build:\n"
+                "shared interfaces / function signatures, which files & symbols each\n"
+                "of you owns, data formats you pass between your features, and any\n"
+                "decisions that affect how your two patches will merge.\n\n"
+                "## Interfaces & contracts\n\n_TBD_\n\n"
+                "## File / symbol ownership\n\n_TBD_\n\n"
+                "## Open questions & decisions\n\n_TBD_\n"
+            )
+            seed_cmd = (
+                f"mkdir -p {CONTAINER_SHARED_DIR} && "
+                f"(set -o noclobber; cat > {CONTAINER_DESIGN_DOC_PATH} <<'CBDESIGN_EOF'\n"
+                f"{skeleton}\nCBDESIGN_EOF\n) 2>/dev/null || true"
+            )
+            try:
+                env.execute({"command": seed_cmd})
+            except Exception as e:  # noqa: BLE001 -- best-effort seed
+                logger.warning("shared design-doc seed failed: %s", e)
+
         # Create agent with template variables for collaboration
         extra_vars = {
             "agent_id": agent_id if (agents and len(agents) > 1) else None,
             "agents": agents if agents else [],
             "git_enabled": git_enabled,
             "messaging_enabled": messaging_enabled,
+            "shared_doc_enabled": bool(shared_volume),
+            "design_doc_path": CONTAINER_DESIGN_DOC_PATH,
         }
 
         agent = DefaultAgent(

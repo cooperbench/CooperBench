@@ -33,6 +33,7 @@ def _generate_run_name(
     repo: str | None = None,
     task: int | None = None,
     git_enabled: bool = False,
+    shared_doc: bool = False,
 ) -> str:
     """Generate experiment name from parameters.
 
@@ -49,6 +50,8 @@ def _generate_run_name(
 
     if git_enabled:
         parts.append("git")
+    if shared_doc:
+        parts.append("doc")
     parts.append(clean_model_name(model))
     if subset:
         parts.append(subset)
@@ -211,6 +214,15 @@ def main():
         "--no-messaging",
         action="store_true",
         help="Disable messaging (send_message command)",
+    )
+    run_parser.add_argument(
+        "--shared-doc",
+        action="store_true",
+        help=(
+            "(coop only) mount a shared design document at "
+            "/workspace/shared/DESIGN.md that both agents can read and write, "
+            "and prompt them to use it to agree on interfaces/ownership."
+        ),
     )
     run_parser.add_argument(
         "--no-auto-eval",
@@ -377,6 +389,7 @@ def _run_command(args):
             repo=args.repo,
             task=args.task,
             git_enabled=args.git,
+            shared_doc=args.shared_doc,
         )
 
     # Compose team-harness config from --team-no-* flags.  Only relevant
@@ -403,6 +416,7 @@ def _run_command(args):
         redis_url=args.redis,
         force=args.force,
         git_enabled=args.git,
+        shared_doc=args.shared_doc,
         messaging_enabled=not args.no_messaging,
         auto_eval=not args.no_auto_eval,
         eval_concurrency=args.eval_concurrency,

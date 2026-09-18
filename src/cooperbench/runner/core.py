@@ -48,6 +48,7 @@ def run(
     redis_url: str = "redis://localhost:6379",
     setting: str = "coop",
     git_enabled: bool = False,
+    shared_doc: bool = False,
     messaging_enabled: bool = True,
     auto_eval: bool = True,
     eval_concurrency: int = 10,
@@ -72,6 +73,7 @@ def run(
         redis_url: Redis URL for agent communication (coop mode)
         setting: "coop" (2 agents) or "solo" (1 agent)
         git_enabled: Enable git collaboration (agents can push/pull/merge)
+        shared_doc: (coop only) mount a shared design doc at /workspace/shared/DESIGN.md
         messaging_enabled: Enable messaging (send_message command)
         auto_eval: Automatically evaluate runs after completion
         eval_concurrency: Max parallel evaluations (default: 10)
@@ -102,7 +104,17 @@ def run(
     is_team = setting == "team"
 
     _print_header(
-        run_name, setting, tasks, agent, model_name, concurrency, is_single, is_solo, git_enabled, messaging_enabled
+        run_name,
+        setting,
+        tasks,
+        agent,
+        model_name,
+        concurrency,
+        is_single,
+        is_solo,
+        git_enabled,
+        messaging_enabled,
+        shared_doc,
     )
 
     # Solo mode doesn't need Redis or git server
@@ -171,6 +183,7 @@ def run(
                 force=force,
                 quiet=not is_single,
                 git_enabled=git_enabled,
+                shared_doc=shared_doc,
                 messaging_enabled=messaging_enabled,
                 backend=backend,
                 agent_config=agent_config,
@@ -252,6 +265,7 @@ def _print_header(
     is_solo: bool,
     git_enabled: bool,
     messaging_enabled: bool,
+    shared_doc: bool = False,
 ) -> None:
     """Print run header information."""
     tools = []
@@ -259,6 +273,8 @@ def _print_header(
         tools.append("messaging")
     if git_enabled:
         tools.append("git")
+    if shared_doc:
+        tools.append("shared-doc")
     tools_str = ", ".join(tools) if tools else "none"
 
     console.print()
