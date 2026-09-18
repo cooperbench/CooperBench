@@ -1,5 +1,7 @@
 """Default preset configuration for OpenHands agents."""
 
+import os
+
 from openhands.sdk import Agent
 from openhands.sdk.context.condenser import (
     LLMSummarizingCondenser,
@@ -116,6 +118,20 @@ Teammates' branches are at `team/<name>` (e.g., `team/{teammate_name}`).
 * Push: `git push team {agent_id}`
 * Fetch: `git fetch team`
 """
+    # Experiment knob: when CB_COOP_TRUST_EMPHASIS is set, add a strong
+    # instruction to trust the teammate's stated promises (rather than
+    # re-verifying or defensively duplicating their work).  Off by default
+    # so the baseline coop prompt is unchanged.
+    if os.environ.get("CB_COOP_TRUST_EMPHASIS"):
+        collab_section += (
+            "\n## Trust\n"
+            "YOU SHOULD TRY TO TRUST YOUR TEAMMATE REGARDING WHAT THEY PROMISED. "
+            f"When {teammate_name} tells you which files/functions they will handle or how an "
+            "interface will behave, take them at their word: build against what they promised, "
+            "do not re-implement or second-guess their part, and do not duplicate their changes. "
+            "Coordinate through messages and rely on their commitments.\n"
+        )
+
     collab_section += """
 </collaboration>
 """
