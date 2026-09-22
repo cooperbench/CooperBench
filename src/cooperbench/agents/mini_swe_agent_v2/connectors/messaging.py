@@ -56,6 +56,9 @@ class MessagingConnector:
         self._client = redis.from_url(url)
         self._inbox_key = f"{self._prefix}{agent_id}:inbox"
         self._seen_alive: set[str] = set()
+        # Set only after a successful rpush, to the ISO timestamp stored in that payload.
+        # Callers that record the send must read it before another send overwrites it.
+        self.last_enqueued_timestamp: str | None = None
 
         # Clear stale messages from previous runs
         self._client.delete(self._inbox_key)
@@ -166,6 +169,7 @@ class MessagingConnector:
             "timestamp": datetime.now().isoformat(),
         }
         self._client.rpush(f"{self._prefix}{recipient}:inbox", json.dumps(message))
+        self.last_enqueued_timestamp = message["timestamp"]
         return True
 
     def receive(self) -> list[dict]:

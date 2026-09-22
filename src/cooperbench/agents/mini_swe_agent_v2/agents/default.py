@@ -537,7 +537,7 @@ class DefaultAgent:
             if not delivered:
                 return self._peer_gone_result(recipient)
             self.log(f"SENT (blocking) to {recipient}: {content[:80]}...")
-            self.sent_messages.append({"to": recipient, "content": content})
+            self._record_sent_message(recipient, content)
             output = f"Message sent to {recipient}"
             if replies:
                 for r in replies:
@@ -552,8 +552,23 @@ class DefaultAgent:
         if not self.comm.send(recipient, content):
             return self._peer_gone_result(recipient)
         self.log(f"SENT to {recipient}: {content[:80]}...")
-        self.sent_messages.append({"to": recipient, "content": content})
+        self._record_sent_message(recipient, content)
         return {"output": f"Message sent to {recipient}", "returncode": 0, "exception_info": ""}
+
+    def _record_sent_message(self, recipient: str, content: str) -> None:
+        """Store a send that actually queued, with the enqueue timestamp when we have one.
+
+        ``send_and_wait`` returns only after the peer replies, so a clock read here
+        would stamp the reply rather than the send. ``MessagingConnector.send`` writes
+        the ISO timestamp into the Redis payload at ``rpush`` and copies it to
+        ``last_enqueued_timestamp``. Read that. If a connector has no such stamp,
+        omit the field; do not fill in ``time.time()``.
+        """
+        record = {"to": recipient, "content": content}
+        ts = getattr(self.comm, "last_enqueued_timestamp", None)
+        if isinstance(ts, str) and ts:
+            record["timestamp"] = ts
+        self.sent_messages.append(record)
 
     def _peer_gone_result(self, recipient: str) -> dict:
         """Tell the agent its peer is gone, and what to do about it.

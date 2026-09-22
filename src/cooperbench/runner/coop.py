@@ -1,6 +1,7 @@
 """Coop mode execution - multiple agents collaborate on separate features."""
 
 import json
+import math
 import re
 import threading
 import uuid
@@ -21,21 +22,40 @@ def _message_timestamp_key(msg: dict) -> float:
     """Return a sortable float for a conversation message.
 
     Timestamps in ``_extract_conversation`` output come from multiple agent
-    adapters: mini_swe_agent emits floats (``time.time()``), the OpenHands
-    SDK adapter can emit ISO strings, and some events have no timestamp at
-    all. Coerce to float on a best-effort basis so the sort doesn't blow up
-    with ``TypeError: '<' not supported between instances of 'int' and 'str'``
+    adapters: mini_swe_agent emits floats (``time.time()``) or ISO strings
+    from Redis (``datetime.now().isoformat()``), the OpenHands SDK adapter
+    can emit ISO strings, and some events have no timestamp at all. Coerce
+    to float on a best-effort basis so the sort doesn't blow up with
+    ``TypeError: '<' not supported between instances of 'int' and 'str'``
     mid-rollout — which used to crash :func:`execute_coop` before
     ``agent{fid}_traj.json`` was written, leaving callers with no structured
     output to evaluate.
+
+    Missing, non-finite, or unparseable values stay ``0.0``. Do not invent a timestamp
+    for a historical record that never had one. ``Z`` is accepted on
+    Python 3.10, whose ``fromisoformat`` rejects that suffix.
     """
     ts = msg.get("timestamp")
-    if ts is None:
+    if ts is None or isinstance(ts, bool):
+        return 0.0
+    if isinstance(ts, (int, float)):
+        value = float(ts)
+        return value if math.isfinite(value) else 0.0
+    if not isinstance(ts, str):
+        return 0.0
+    text = ts.strip()
+    if not text:
         return 0.0
     try:
-        return float(ts)
-    except (TypeError, ValueError):
+        value = float(text)
+        return value if math.isfinite(value) else 0.0
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
         return 0.0
+    return parsed.timestamp()
 
 
 def execute_coop(

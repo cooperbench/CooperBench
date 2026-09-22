@@ -1,5 +1,7 @@
 """Unit tests for cooperbench.runner.coop module."""
 
+import pytest
+
 from cooperbench.runner.coop import _extract_conversation, _message_timestamp_key
 
 
@@ -80,10 +82,74 @@ class TestSortDoesNotCrashOnMixedTimestampTypes:
         sorted_msgs = self._sort_like_production(conversation)
         # All five sent rows preserved (none received-flagged).
         assert len(sorted_msgs) == 5
-        # Numeric timestamps sort in order; unparseable strings + None +
-        # missing all coerce to 0.0 and end up at the front (stable order).
-        floats = [float(m["timestamp"]) for m in sorted_msgs if isinstance(m.get("timestamp"), (int, float))]
-        assert floats == sorted(floats)
+        # None and missing stay 0 and keep their relative order. Numeric
+        # values sort numerically. An ISO timestamp sorts by its instant,
+        # not as 0.
+        assert [m["message"] for m in sorted_msgs] == ["d", "e", "a", "c", "b"]
+
+    def test_iso_reply_sorts_after_the_message_it_answers(self):
+        """A reply recorded later must not be exported ahead of the send it answers.
+
+        The old key did ``float(ts)`` and mapped ISO strings to 0, so a
+        sender-grouped stable sort put the reply first.
+        """
+        conversation = [
+            {
+                "from": "agent2",
+                "to": "agent1",
+                "message": "reply",
+                "timestamp": "2026-05-13T22:47:05Z",
+            },
+            {
+                "from": "agent1",
+                "to": "agent2",
+                "message": "ask",
+                "timestamp": "2026-05-13T22:47:00+00:00",
+            },
+        ]
+        sorted_msgs = self._sort_like_production(conversation)
+        assert [m["message"] for m in sorted_msgs] == ["ask", "reply"]
+
+    def test_garbage_timestamp_still_sorts_as_zero(self):
+        conversation = [
+            {"from": "agent1", "to": "agent2", "message": "later", "timestamp": 2.0},
+            {"from": "agent2", "to": "agent1", "message": "bad", "timestamp": "not-a-time"},
+        ]
+        sorted_msgs = self._sort_like_production(conversation)
+        assert [m["message"] for m in sorted_msgs] == ["bad", "later"]
+
+    @pytest.mark.parametrize(
+        "timestamp", [float("nan"), float("inf"), float("-inf"), "nan", "inf", "-inf", "  NaN  ", "1e999"]
+    )
+    def test_nonfinite_timestamp_falls_back_to_zero(self, timestamp):
+        assert _message_timestamp_key({"timestamp": timestamp}) == 0.0
+
+    def test_nonfinite_timestamps_keep_stable_missing_group_in_mixed_sort(self):
+        conversation = [
+            {"message": "later", "timestamp": "1970-01-01T00:00:03Z"},
+            {"message": "nan", "timestamp": float("nan")},
+            {"message": "earlier", "timestamp": 1.0},
+            {"message": "missing"},
+            {"message": "infinity", "timestamp": "inf"},
+            {"message": "middle", "timestamp": "2"},
+            {"message": "negative-infinity", "timestamp": float("-inf")},
+        ]
+
+        sorted_msgs = self._sort_like_production(conversation)
+
+        assert [m["message"] for m in sorted_msgs] == [
+            "nan",
+            "missing",
+            "infinity",
+            "negative-infinity",
+            "earlier",
+            "middle",
+            "later",
+        ]
+
+    def test_iso_offsets_represent_the_same_utc_instant(self):
+        assert _message_timestamp_key({"timestamp": "1970-01-01T08:00:01+08:00"}) == 1.0
+        assert _message_timestamp_key({"timestamp": "1970-01-01T00:00:01Z"}) == 1.0
 
     def test_received_messages_excluded_before_sort(self):
         """Received entries must be filtered out before the sort, not after —
