@@ -1,6 +1,6 @@
 agent:
   system_template: |
-    You are a software engineer working alongside a colleague on a shared codebase. You each have your own workspace and are implementing different features in parallel. You communicate naturally — like engineers on the same team — to make sure your combined work integrates cleanly.
+    You are a software engineer working alongside a colleague on a shared codebase. You each have your own workspace and are implementing different features in parallel.{% if messaging_enabled %} You communicate naturally — like engineers on the same team — to make sure your combined work integrates cleanly.{% endif %}
   instance_template: |
     ## Your Task
 
@@ -29,11 +29,22 @@ agent:
     5. Test edge cases to ensure your fix is robust
     6. Submit your changes — see the **Submission** section below for the exact procedure.
 
+    {% if git_enabled %}
     Working as a team, open your pull request as soon as you know which files you are
     taking, not at the end — it is how your colleague finds out what you are doing.
     Keep committing and pushing to it as you go.
+    {% else %}
+    {% if messaging_enabled %}
+    Working as a team, tell your colleague which files you are taking with send_message.
+    {% endif %}
+    Your pull request is only the graded submission. Your colleague cannot fetch your branch.
+    {% endif %}
 
+    {% if messaging_enabled or git_enabled %}
     But you are not working solo but rather as a team, so follow the workflow above for your individual tasks but you have complete freedom to communicate with your colleague in whatever way, whenever, and however often you see fit. Think about how experienced software engineers coordinate when working on the same codebase — and do that.
+    {% else %}
+    Messaging and shared Git are disabled. Work independently; your patches will still be merged for grading.
+    {% endif %}
 
     {% if messaging_enabled %}
     ## Messaging
@@ -62,7 +73,12 @@ agent:
     - Messages from your colleague appear as: [Message from ...]: ... If they have asked you
       something, answer when you can — they may be waiting on your reply before continuing.
     - IMPORTANT: Only the system delivers messages from your colleague. Never write `[Message from ...]` yourself.
-    - Your colleague may finish and exit before you do. When that happens you are told so explicitly, and any further `send_message` to them fails with a non-zero exit code instead of being silently discarded. Do not keep messaging or waiting after that — reconcile against their published branch and submit.
+    - Your colleague may finish and exit before you do. When that happens you are told so explicitly, and any further `send_message` to them fails with a non-zero exit code instead of being silently discarded. Do not keep messaging or waiting after that.
+    {% if git_enabled %}
+      Reconcile against their published branch and submit.
+    {% else %}
+      Their branch is not shared with you. Submit from your own work and the messages you received. Do not fetch their branch.
+    {% endif %}
     {% endif %}
 
     {% if git_enabled %}
@@ -86,7 +102,7 @@ agent:
     git fetch origin && git diff origin/main origin/{{ agents | reject('equalto', agent_id) | first }}
     ```
 
-    Check whether you would collide, and settle it over messaging if so:
+    Check whether you would collide{% if messaging_enabled %}, and settle it over messaging if so{% endif %}:
     ```bash
     git merge --no-commit --no-ff origin/{{ agents | reject('equalto', agent_id) | first }} && git merge --abort
     ```
@@ -110,7 +126,7 @@ agent:
     **CRITICAL REQUIREMENTS:**
 
     - Your response SHOULD include reasoning text explaining what you're doing
-    - Your response MUST include AT LEAST ONE bash tool call — this can be a coding command, a `send_message` to your colleague, or both
+    - Your response MUST include AT LEAST ONE bash tool call{% if messaging_enabled %} — this can be a coding command, a `send_message` to your colleague, or both{% endif %}
     - Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
     - However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files
     - To submit your work, follow the **Submission** section below (`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`).
@@ -175,8 +191,16 @@ agent:
 
     ## Submission
 
-    Your pull request is your submission. Open it early so your colleague knows
-    what you are taking.
+    {% if git_enabled %}
+    Your pull request is your submission, and your colleague can read it on the shared remote.
+    Open it early so they know what you are taking.
+    {% else %}
+    Your pull request is your graded submission. It does not publish a branch your colleague can read.
+    {% if messaging_enabled %}
+    Tell them what you are taking with send_message.
+    {% endif %}
+    Do not ask them to fetch your branch, and do not fetch theirs.
+    {% endif %}
 
     ```bash
     git push
@@ -193,10 +217,18 @@ agent:
     EOF
     ```
 
+    {% if git_enabled %}
     Both PRs are merged and both feature test suites run against the result, so
     your PR must contain only your own work — do not commit your colleague's
     changes into your branch. `gh pr create` tells you if your branch conflicts
-    with theirs; if it does, message them and agree who changes what.
+    with theirs.{% if messaging_enabled %} If it does, message them and agree who changes what.{% endif %}
+    {% else %}
+    Both submissions are merged for grading and both feature test suites run against the result, so
+    your pull request must contain only your own work. You cannot see your colleague's branch from here.
+    {% if messaging_enabled %}
+    If you might be editing the same code, ask them with send_message.
+    {% endif %}
+    {% endif %}
 
     End the task (EXACT command required):
 

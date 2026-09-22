@@ -29,14 +29,15 @@ unsupported() {
     cat >&2 <<EOF
 gh: '$*' is not available in this environment.
 
-There is no GitHub here — PRs live on the shared 'origin' git remote. Available:
+There is no GitHub here — PRs live on this workspace's 'origin' git remote.
+Peer PRs are available only when shared Git is enabled. Available:
   gh pr create --title T --body B   open your PR (proposes your current commit)
   gh pr list                        PRs opened so far
   gh pr view <agent>                title, body and summary of their PR
   gh pr diff <agent>                the code they are proposing
   gh pr checkout <agent>            check out their PR locally
 
-Review happens over send_message, not PR comments.
+PR comments are not available.
 EOF
     exit 2
 }
@@ -106,7 +107,7 @@ $body" HEAD >/dev/null
             echo "WARNING: your branch conflicts with $peer's."
             echo "Both PRs are merged before testing, so this fails both of you."
             echo "See where:  git --no-pager diff $BASE $REMOTE/$peer"
-            echo "Then message them and agree who changes what."
+            echo "Resolve the overlap before submitting."
         fi
     done
 }

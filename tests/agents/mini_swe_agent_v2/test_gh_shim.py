@@ -117,6 +117,8 @@ def test_unsupported_subcommands_explain_themselves(team):
         assert r.returncode == 2, args
         assert "not available in this environment" in r.stderr
         assert "gh pr create" in r.stderr, "error should name what IS available"
+        assert "only when shared Git is enabled" in r.stderr
+        assert "send_message" not in r.stderr
 
 
 def test_create_requires_a_title(team):
@@ -389,6 +391,8 @@ def test_conflicting_branch_is_reported_when_the_pr_is_opened(team):
     out = gh("pr create --title 'palette' --body 'y'", a2, "agent2")
     combined = out.stdout + out.stderr
     assert "conflicts with agent1" in combined, f"no conflict warning:\n{combined}"
+    assert "Resolve the overlap" in combined
+    assert "message them" not in combined
 
 
 def test_no_conflict_warning_when_the_branches_are_disjoint(team):

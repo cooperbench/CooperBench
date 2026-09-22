@@ -497,6 +497,10 @@ class DefaultAgent:
                 )
             )
 
+    def _shared_git_enabled(self) -> bool:
+        """True only when this run attached a remote the peer can actually fetch."""
+        return bool(self.extra_template_vars.get("git_enabled"))
+
     def _peer_work_pointer(self, peer: str) -> str:
         """Where to find a departed peer's work — only claimed when it is really there.
 
@@ -504,7 +508,17 @@ class DefaultAgent:
         their submission when it does not would repeat exactly the failure this whole
         change exists to remove: telling the agent something untrue and letting it act
         on it.
+
+        With shared git off, each container has its own ``origin`` (a local shim used
+        to record the graded pull request). ``has_published`` on that remote does not
+        mean the peer can read the branch.
         """
+        if not self._shared_git_enabled():
+            return (
+                f"There is no shared git remote, so {GIT_REMOTE}/{peer} is not visible to you. "
+                "A local pull request is only a graded submission. Do not fetch or diff their "
+                "branch. Use the messages you actually received."
+            )
         if self.comm and self.comm.has_published(peer):
             return (
                 f"Their submitted patch is on branch {GIT_REMOTE}/{peer}. If your changes "

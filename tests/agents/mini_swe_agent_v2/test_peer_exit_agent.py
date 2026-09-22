@@ -44,7 +44,7 @@ class _StubEnv:
 
 
 def _agent(agent_id, comm):
-    return DefaultAgent(
+    agent = DefaultAgent(
         _StubModel(),
         _StubEnv(),
         comm=comm,
@@ -52,6 +52,9 @@ def _agent(agent_id, comm):
         system_template="s",
         instance_template="i",
     )
+    # These recovery-path tests model a run with an actual shared remote.
+    agent.extra_template_vars["git_enabled"] = True
+    return agent
 
 
 @pytest.fixture
