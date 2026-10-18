@@ -9,6 +9,8 @@ Provides:
 """
 
 import atexit
+import json
+import os
 import re
 import signal
 import sys
@@ -25,9 +27,38 @@ IMAGE_PREFIX = "cooperbench"
 
 
 def get_image_name(repo_name: str, task_id: int) -> str:
-    """Generate Docker Hub image name for a task."""
+    """Generate Docker Hub image name for a task.
+
+    Defaults to ``akhatua/cooperbench-<repo>:task<id>``. Two environment variables
+    let a dataset other than the published benchmark use its own images:
+
+    * ``COOPERBENCH_REGISTRY`` replaces the registry/namespace for every task.
+    * ``COOPERBENCH_IMAGE_OVERRIDES`` is a path to a JSON object mapping
+      ``"<repo_name>/task<id>"`` to a full image reference. A matching entry wins
+      over the computed name, so only rebuilt tasks need to be listed.
+    """
+    overrides_path = os.environ.get("COOPERBENCH_IMAGE_OVERRIDES")
+    if overrides_path:
+        overrides = _load_image_overrides(overrides_path)
+        image = overrides.get(f"{repo_name}/task{task_id}")
+        if image:
+            return image
+    registry = os.environ.get("COOPERBENCH_REGISTRY") or REGISTRY
     repo_clean = repo_name.replace("_task", "").replace("_", "-")
-    return f"{REGISTRY}/{IMAGE_PREFIX}-{repo_clean}:task{task_id}"
+    return f"{registry}/{IMAGE_PREFIX}-{repo_clean}:task{task_id}"
+
+
+_IMAGE_OVERRIDES_CACHE: dict[str, dict[str, str]] = {}
+
+
+def _load_image_overrides(path: str) -> dict[str, str]:
+    if path not in _IMAGE_OVERRIDES_CACHE:
+        with open(path) as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in data.items()):
+            raise ValueError(f"{path}: COOPERBENCH_IMAGE_OVERRIDES must be a JSON object of string -> string")
+        _IMAGE_OVERRIDES_CACHE[path] = data
+    return _IMAGE_OVERRIDES_CACHE[path]
 
 
 def clean_model_name(model: str) -> str:

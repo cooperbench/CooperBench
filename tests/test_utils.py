@@ -3,6 +3,8 @@
 import threading
 from unittest.mock import MagicMock
 
+import pytest
+
 from cooperbench.utils import (
     IMAGE_PREFIX,
     REGISTRY,
@@ -229,3 +231,33 @@ class TestResourceTracker:
 
         # Should have 500 resources
         assert len(tracker._resources) == 500
+
+
+class TestGetImageNameOverrides:
+    """Environment overrides for get_image_name."""
+
+    def test_default_registry(self, monkeypatch):
+        monkeypatch.delenv("COOPERBENCH_REGISTRY", raising=False)
+        monkeypatch.delenv("COOPERBENCH_IMAGE_OVERRIDES", raising=False)
+        assert get_image_name("pallets_click_task", 2068) == f"{REGISTRY}/{IMAGE_PREFIX}-pallets-click:task2068"
+
+    def test_registry_env(self, monkeypatch):
+        monkeypatch.setenv("COOPERBENCH_REGISTRY", "someone")
+        monkeypatch.delenv("COOPERBENCH_IMAGE_OVERRIDES", raising=False)
+        assert get_image_name("flask_task", 5526) == f"someone/{IMAGE_PREFIX}-flask:task5526"
+
+    def test_overrides_file(self, monkeypatch, tmp_path):
+        path = tmp_path / "images.json"
+        path.write_text('{"flake8_task/task1618": "someone/cooperbench-flake8:task1618-fix"}')
+        monkeypatch.setenv("COOPERBENCH_IMAGE_OVERRIDES", str(path))
+        monkeypatch.delenv("COOPERBENCH_REGISTRY", raising=False)
+        assert get_image_name("flake8_task", 1618) == "someone/cooperbench-flake8:task1618-fix"
+        # tasks not listed fall back to the computed name
+        assert get_image_name("flake8_task", 1732) == f"{REGISTRY}/{IMAGE_PREFIX}-flake8:task1732"
+
+    def test_overrides_file_rejects_non_mapping(self, monkeypatch, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text("[1, 2]")
+        monkeypatch.setenv("COOPERBENCH_IMAGE_OVERRIDES", str(path))
+        with pytest.raises(ValueError):
+            get_image_name("flake8_task", 1618)
