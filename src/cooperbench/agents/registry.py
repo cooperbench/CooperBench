@@ -86,6 +86,10 @@ def _auto_register():
         import cooperbench.agents.codex.adapter  # noqa: F401
     except ImportError:
         pass
+    try:
+        import cooperbench.agents.opencode.adapter  # noqa: F401
+    except ImportError:
+        pass
 
     # External agents via environment variable
     import os

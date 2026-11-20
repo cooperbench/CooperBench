@@ -108,6 +108,7 @@ AGENT_SHORTHANDS = {
     "openhands_sdk": "oh",
     "claude_code": "cc",
     "codex": "cx",
+    "opencode": "oc",
 }
 
 
