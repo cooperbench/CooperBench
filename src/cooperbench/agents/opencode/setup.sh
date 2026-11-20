@@ -4,8 +4,9 @@
 set -e
 
 if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y --no-install-recommends curl ca-certificates git >/dev/null
+    apt-get install -y -qq --no-install-recommends curl ca-certificates git >/dev/null
 elif command -v apk >/dev/null 2>&1; then
     apk add --no-cache curl bash git >/dev/null
 elif command -v yum >/dev/null 2>&1; then
