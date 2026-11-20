@@ -31,7 +31,7 @@ def load_subset(subset_name: str, dataset_dir: Path | str | None = None) -> dict
     tasks = set()
     pairs = {}
     for t in data["tasks"]:
-        key = (t["repo"], t["task_id"])
+        key = (t["repo"], int(t["task_id"]))
         tasks.add(key)
         # If pairs are specified, store them
         if "pairs" in t:
