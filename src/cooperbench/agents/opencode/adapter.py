@@ -33,6 +33,7 @@ API.  Bare names are passed through to opencode unchanged.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shlex
@@ -62,10 +63,33 @@ _PACKAGE_DIR = Path(__file__).parent
 SETUP_SCRIPT_PATH = _PACKAGE_DIR / "setup.sh"
 
 CONTAINER_OPENCODE_LOG = "/tmp/opencode-run.log"
+CONTAINER_OPENCODE_CONFIG = "/root/.config/opencode/opencode.jsonc"
 OPENCODE_BIN = "$HOME/.opencode/bin/opencode"
 
 # Test-time shim — mirrors the convention used by other adapters.
 _build_environment = build_environment
+
+
+def _build_opencode_config(base_url: str, api_key: str) -> str:
+    """Return opencode.jsonc content that routes the openai provider to a custom endpoint.
+
+    opencode does not respect OPENAI_BASE_URL from the shell environment; the
+    base URL must be set via its provider config file.  Writing this file
+    before running opencode ensures vLLM (or any OpenAI-compatible server) is
+    actually called.
+    """
+    cfg: dict[str, Any] = {
+        "$schema": "https://opencode.ai/config.json",
+        "providers": {
+            "openai": {
+                "settings": {
+                    "baseURL": base_url,
+                    "apiKey": api_key or "EMPTY",
+                }
+            }
+        },
+    }
+    return json.dumps(cfg, indent=2)
 
 
 def _resolve_base_url(config: dict[str, Any]) -> str:
@@ -97,11 +121,13 @@ def _build_opencode_command(
 
     env_exports = 'export PATH="$HOME/.opencode/bin:$PATH"; '
 
+    # Anthropic keys are still passed via env var (no base-URL override needed).
+    # For openai-compatible providers the base URL is set via the config file
+    # written by _build_opencode_config; keep the API key export as a fallback.
     if provider == "anthropic" or not base_url:
         if api_key:
             env_exports += f"export ANTHROPIC_API_KEY={shlex.quote(api_key)}; "
     else:
-        env_exports += f"export OPENAI_BASE_URL={shlex.quote(base_url)}; "
         env_exports += f"export OPENAI_API_KEY={shlex.quote(api_key or 'EMPTY')}; "
 
     # Read the instruction from a file to avoid argv-length limits and
@@ -206,15 +232,26 @@ class OpenCodeRunner:
             if install.get("returncode") not in (0, None):
                 raise RuntimeError("opencode install failed: " + (install.get("output") or "")[:2000])
 
-            # 2. Write the instruction and run the agent.
+            # 2. Write opencode provider config so it routes to the custom endpoint.
+            #    opencode does not use OPENAI_BASE_URL from the shell; the base
+            #    URL must be declared in its jsonc config file.
+            if base_url:
+                config_content = _build_opencode_config(base_url, api_key)
+                env.execute(
+                    {"command": "mkdir -p /root/.config/opencode"},
+                    timeout=10,
+                )
+                write_file_in_container(env, CONTAINER_OPENCODE_CONFIG, config_content)
+
+            # 3. Write the instruction and run the agent.
             write_file_in_container(env, CONTAINER_INSTRUCTION_PATH, instruction)
             env.execute({"command": invoke_cmd}, timeout=7200)
 
-            # 3. Ensure patch.txt exists (agent should have written it;
+            # 4. Ensure patch.txt exists (agent should have written it;
             #    fall back to extracting git diff ourselves).
             _ensure_patch(env)
 
-            # 4. Collect outputs.
+            # 5. Collect outputs.
             run_log = read_file_from_container(env, CONTAINER_OPENCODE_LOG)
             patch_text = normalize_patch(read_file_from_container(env, f"{CONTAINER_REPO_PATH}/patch.txt"))
             status = "Submitted"
