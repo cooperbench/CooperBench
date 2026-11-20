@@ -66,26 +66,55 @@ CONTAINER_OPENCODE_LOG = "/tmp/opencode-run.log"
 CONTAINER_OPENCODE_CONFIG = "/root/.config/opencode/opencode.jsonc"
 OPENCODE_BIN = "$HOME/.opencode/bin/opencode"
 
+# opencode provider id used for the custom OpenAI-compatible endpoint (vLLM).
+# The built-in "openai" provider uses @ai-sdk/openai, which targets OpenAI-only
+# endpoints (e.g. /responses) that vLLM does not implement; a dedicated provider
+# backed by @ai-sdk/openai-compatible is required instead.
+CUSTOM_PROVIDER_ID = "vllm"
+OPENAI_COMPATIBLE_NPM = "@ai-sdk/openai-compatible"
+
 # Test-time shim — mirrors the convention used by other adapters.
 _build_environment = build_environment
 
 
-def _build_opencode_config(base_url: str, api_key: str) -> str:
-    """Return opencode.jsonc content that routes the openai provider to a custom endpoint.
+def _model_id(model_name: str) -> str:
+    """Strip any provider prefix, returning the bare model id (vLLM's served name)."""
+    return model_name.split("/")[-1]
 
-    opencode does not respect OPENAI_BASE_URL from the shell environment; the
-    base URL must be set via its provider config file.  Writing this file
-    before running opencode ensures vLLM (or any OpenAI-compatible server) is
-    actually called.
+
+def _opencode_model_arg(model_name: str, base_url: str) -> str:
+    """Return the ``provider/model`` string passed to ``opencode run --model``.
+
+    For a custom OpenAI-compatible endpoint the provider is the dedicated
+    ``vllm`` entry declared in the config; otherwise the model name is passed
+    through unchanged (e.g. ``anthropic/...`` for opencode's built-in support).
     """
+    if base_url:
+        return f"{CUSTOM_PROVIDER_ID}/{_model_id(model_name)}"
+    return model_name
+
+
+def _build_opencode_config(model_name: str, base_url: str, api_key: str) -> str:
+    """Return opencode.jsonc content declaring a custom OpenAI-compatible provider.
+
+    opencode does not respect OPENAI_BASE_URL from the shell environment, and
+    overriding the built-in ``openai`` provider does not work for vLLM because
+    that provider uses the OpenAI-only ``@ai-sdk/openai`` package.  This writes
+    a dedicated provider (``@ai-sdk/openai-compatible``) pointed at the custom
+    endpoint so the model is actually reachable.
+    """
+    model_id = _model_id(model_name)
     cfg: dict[str, Any] = {
         "$schema": "https://opencode.ai/config.json",
-        "providers": {
-            "openai": {
-                "settings": {
+        "provider": {
+            CUSTOM_PROVIDER_ID: {
+                "npm": OPENAI_COMPATIBLE_NPM,
+                "name": CUSTOM_PROVIDER_ID,
+                "options": {
                     "baseURL": base_url,
                     "apiKey": api_key or "EMPTY",
-                }
+                },
+                "models": {model_id: {"name": model_id}},
             }
         },
     }
@@ -121,14 +150,13 @@ def _build_opencode_command(
 
     env_exports = 'export PATH="$HOME/.opencode/bin:$PATH"; '
 
-    # Anthropic keys are still passed via env var (no base-URL override needed).
-    # For openai-compatible providers the base URL is set via the config file
-    # written by _build_opencode_config; keep the API key export as a fallback.
-    if provider == "anthropic" or not base_url:
-        if api_key:
-            env_exports += f"export ANTHROPIC_API_KEY={shlex.quote(api_key)}; "
-    else:
-        env_exports += f"export OPENAI_API_KEY={shlex.quote(api_key or 'EMPTY')}; "
+    # vLLM/openai-compatible endpoints are configured entirely via the config
+    # file written by _build_opencode_config.  Only the Anthropic path still
+    # needs an env-var credential (opencode's built-in anthropic provider).
+    if not base_url and (provider == "anthropic" or provider == "") and api_key:
+        env_exports += f"export ANTHROPIC_API_KEY={shlex.quote(api_key)}; "
+
+    model_arg = _opencode_model_arg(model_name, base_url)
 
     # Read the instruction from a file to avoid argv-length limits and
     # shell-quoting hazards with multi-line prompts.
@@ -137,7 +165,7 @@ def _build_opencode_command(
     return (
         env_exports
         + f"cd {CONTAINER_REPO_PATH} && "
-        + f"opencode run --model {shlex.quote(model_name)} {prompt_expr} "
+        + f"opencode run --model {shlex.quote(model_arg)} {prompt_expr} "
         + f"2>&1 | tee {shlex.quote(CONTAINER_OPENCODE_LOG)}"
     )
 
@@ -236,7 +264,7 @@ class OpenCodeRunner:
             #    opencode does not use OPENAI_BASE_URL from the shell; the base
             #    URL must be declared in its jsonc config file.
             if base_url:
-                config_content = _build_opencode_config(base_url, api_key)
+                config_content = _build_opencode_config(model_name, base_url, api_key)
                 env.execute(
                     {"command": "mkdir -p /root/.config/opencode"},
                     timeout=10,
